@@ -199,6 +199,11 @@ func (m Model) renderMonth() string {
 		return b.String()
 	}
 
+	if totals := m.renderTotals(); totals != "" {
+		b.WriteString("\n")
+		b.WriteString(totals)
+	}
+
 	idx := 0
 	for _, kind := range monthGroups {
 		group := linesForKind(m.lines, kind)
@@ -227,6 +232,35 @@ func (m Model) renderMonth() string {
 		b.WriteString(m.theme.Muted.Render("failed to save: " + m.saveErr.Error()))
 	}
 	return b.String()
+}
+
+// totalCurrencies is the fixed render order for the header's per-currency
+// totals; domain only defines these two.
+var totalCurrencies = [...]domain.Currency{domain.ARS, domain.USD}
+
+// renderTotals renders the month header's net: your share leads household,
+// projected against confirmed, one row pair per currency actually present
+// among this month's lines.
+func (m Model) renderTotals() string {
+	totals := month.ResolveTotals(m.lines)
+	var b strings.Builder
+	for _, cur := range totalCurrencies {
+		projected, ok := totals.Projected[cur]
+		if !ok {
+			continue
+		}
+		rows := [2]struct {
+			label string
+			net   month.Net
+		}{
+			{"projected", projected},
+			{"confirmed", totals.Confirmed[cur]},
+		}
+		for _, row := range rows {
+			fmt.Fprintf(&b, "%s %s  share %12s  household %12s\n", cur, row.label, row.net.Share.StringFixed(2), row.net.Household.StringFixed(2))
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func linesForKind(lines []month.Line, kind catalog.ConceptKind) []month.Line {
