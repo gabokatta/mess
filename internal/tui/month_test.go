@@ -36,13 +36,26 @@ func seedConcept(t *testing.T, db *sql.DB, name string, base int64) catalog.Conc
 	return c
 }
 
-func loadLines(t *testing.T, db *sql.DB, period domain.Period) []month.Line {
+func seedChore(t *testing.T, db *sql.DB, name string) catalog.Chore {
 	t.Helper()
-	lines, err := month.Load(db, period)
+	c, err := catalog.CreateChore(db, catalog.Chore{
+		Name:       name,
+		MonthMask:  domain.Monthly,
+		ActiveFrom: domain.NewPeriod(2026, time.January),
+	})
+	if err != nil {
+		t.Fatalf("CreateChore() unexpected error: %v", err)
+	}
+	return c
+}
+
+func loadLines(t *testing.T, db *sql.DB, period domain.Period) month.Month {
+	t.Helper()
+	loaded, err := month.Load(db, period)
 	if err != nil {
 		t.Fatalf("month.Load() unexpected error: %v", err)
 	}
-	return lines
+	return loaded
 }
 
 func monthModel(t *testing.T, db *sql.DB, period domain.Period) Model {
@@ -50,7 +63,8 @@ func monthModel(t *testing.T, db *sql.DB, period domain.Period) Model {
 	m := New(db)
 	m.width, m.height = 100, 40
 	m.period = period
-	updated, _ := m.Update(monthLoadedMsg{lines: loadLines(t, db, period)})
+	loaded := loadLines(t, db, period)
+	updated, _ := m.Update(monthLoadedMsg{lines: loaded.Lines, chores: loaded.Chores})
 	return updated.(Model)
 }
 
@@ -224,6 +238,70 @@ func TestClearingAmountRemovesOverride(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].Amount != nil {
 		t.Fatalf("MonthEntries() = %+v, want the override cleared", entries)
+	}
+}
+
+func TestCursorMovesFromConceptsOntoChores(t *testing.T) {
+	db := openTestStore(t)
+	seedConcept(t, db, "Alquiler", 785000)
+	seedChore(t, db, "Sacar la basura")
+	period := domain.NewPeriod(2026, time.January)
+
+	m := monthModel(t, db, period)
+
+	updated, _ := m.Update(key("j"))
+	m = updated.(Model)
+	if m.cursor != 1 {
+		t.Fatalf("cursor = %d, want 1 (on the chore row)", m.cursor)
+	}
+
+	updated, _ = m.Update(key("j"))
+	m = updated.(Model)
+	if m.cursor != 1 {
+		t.Fatalf("cursor = %d, want clamped at 1 (last row is the chore)", m.cursor)
+	}
+}
+
+func TestSpaceTogglesChoreDoneWithoutOpeningEdit(t *testing.T) {
+	db := openTestStore(t)
+	c := seedChore(t, db, "Sacar la basura")
+	period := domain.NewPeriod(2026, time.January)
+
+	m := monthModel(t, db, period)
+
+	updated, cmd := m.Update(keySpace())
+	m = updated.(Model)
+	if m.editing != nil {
+		t.Error("ticking a chore should not open the amount edit")
+	}
+	m = settle(t, m, cmd)
+
+	entries, err := catalog.ChoreEntries(db, period)
+	if err != nil {
+		t.Fatalf("ChoreEntries() unexpected error: %v", err)
+	}
+	if len(entries) != 1 || entries[0].ChoreID != c.ID || !entries[0].Done {
+		t.Fatalf("ChoreEntries() = %+v, want %s done=true persisted", entries, c.Name)
+	}
+}
+
+func TestMonthViewRendersChoresGroup(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.FixedExpense, Currency: domain.ARS}
+	trash := catalog.Chore{Name: "Sacar la basura"}
+	updated, _ := m.Update(monthLoadedMsg{
+		lines:  []month.Line{{Concept: rent, Amount: amountFor(t, "785000"), Confirmed: false, Done: false}},
+		chores: []month.ChoreLine{{Chore: trash, Done: true}},
+	})
+	m = updated.(Model)
+	content := m.View().Content
+
+	for _, want := range []string{"Chores", "Sacar la basura"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("month view content missing %q:\n%s", want, content)
+		}
 	}
 }
 

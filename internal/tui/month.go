@@ -20,20 +20,22 @@ var monthGroups = [...]catalog.ConceptKind{catalog.Income, catalog.FixedExpense,
 // monthLoadedMsg is the result of loadMonth's Cmd, delivered back to Update
 // once the database read completes.
 type monthLoadedMsg struct {
-	lines []month.Line
-	err   error
+	lines  []month.Line
+	chores []month.ChoreLine
+	err    error
 }
 
-// loadMonth returns a Cmd that resolves period's lines off the Update loop.
+// loadMonth returns a Cmd that resolves period's lines and chores off the
+// Update loop.
 func loadMonth(db *sql.DB, period domain.Period) tea.Cmd {
 	return func() tea.Msg {
-		lines, err := month.Load(db, period)
-		return monthLoadedMsg{lines: lines, err: err}
+		loaded, err := month.Load(db, period)
+		return monthLoadedMsg{lines: loaded.Lines, chores: loaded.Chores, err: err}
 	}
 }
 
-// entrySavedMsg is the result of a month_entry write (setDone or setAmount),
-// which always triggers a reload so the resolved lines reflect it.
+// entrySavedMsg is the result of a month_entry or chore_entry write, which
+// always triggers a reload so the resolved lines reflect it.
 type entrySavedMsg struct {
 	err error
 }
@@ -41,6 +43,12 @@ type entrySavedMsg struct {
 func setDone(db *sql.DB, conceptID int64, period domain.Period, done bool) tea.Cmd {
 	return func() tea.Msg {
 		return entrySavedMsg{err: catalog.SetMonthEntryDone(db, conceptID, period, done)}
+	}
+}
+
+func setChoreDone(db *sql.DB, choreID int64, period domain.Period, done bool) tea.Cmd {
+	return func() tea.Msg {
+		return entrySavedMsg{err: catalog.SetChoreEntryDone(db, choreID, period, done)}
 	}
 }
 
@@ -67,8 +75,14 @@ func (m Model) orderedLines() []month.Line {
 	return lines
 }
 
+// rowCount is every cursor position in the month view: concept lines then
+// chores, the same order renderMonth walks them in.
+func (m Model) rowCount() int {
+	return len(m.orderedLines()) + len(m.chores)
+}
+
 func (m Model) moveCursor(delta int) int {
-	n := len(m.orderedLines())
+	n := m.rowCount()
 	if n == 0 {
 		return 0
 	}
@@ -82,6 +96,8 @@ func (m Model) moveCursor(delta int) int {
 	return cursor
 }
 
+// cursorLine reports the concept line under the cursor, if the cursor is on
+// one rather than a chore.
 func (m Model) cursorLine() (month.Line, bool) {
 	lines := m.orderedLines()
 	if m.cursor >= len(lines) {
@@ -90,10 +106,24 @@ func (m Model) cursorLine() (month.Line, bool) {
 	return lines[m.cursor], true
 }
 
-// toggleDone flips the done state under the cursor. Ticking a line (false to
-// true) also opens the amount edit, prefilled with the resolved amount, so
-// confirming what you owe and checking it off is one motion.
+// cursorChore reports the chore under the cursor, if the cursor is on one
+// rather than a concept line.
+func (m Model) cursorChore() (month.ChoreLine, bool) {
+	idx := m.cursor - len(m.orderedLines())
+	if idx < 0 || idx >= len(m.chores) {
+		return month.ChoreLine{}, false
+	}
+	return m.chores[idx], true
+}
+
+// toggleDone flips the done state under the cursor. Ticking a concept line
+// (false to true) also opens the amount edit, prefilled with the resolved
+// amount, so confirming what you owe and checking it off is one motion. A
+// chore has no amount, so it only ever flips.
 func (m Model) toggleDone() (Model, tea.Cmd) {
+	if c, ok := m.cursorChore(); ok {
+		return m, setChoreDone(m.db, c.Chore.ID, m.period, !c.Done)
+	}
 	l, ok := m.cursorLine()
 	if !ok {
 		return m, nil
@@ -163,7 +193,7 @@ func (m Model) renderMonth() string {
 		b.WriteString(m.theme.Muted.Render("failed to load: " + m.loadErr.Error()))
 		return b.String()
 	}
-	if len(m.lines) == 0 {
+	if len(m.lines) == 0 && len(m.chores) == 0 {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Muted.Render("no concepts yet — add some in the Concepts view"))
 		return b.String()
@@ -180,6 +210,15 @@ func (m Model) renderMonth() string {
 		for _, l := range group {
 			b.WriteString("\n")
 			b.WriteString(m.renderLine(l, idx == m.cursor))
+			idx++
+		}
+	}
+	if len(m.chores) > 0 {
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Title.Render("Chores"))
+		for _, c := range m.chores {
+			b.WriteString("\n")
+			b.WriteString(m.renderChoreLine(c, idx == m.cursor))
 			idx++
 		}
 	}
@@ -218,4 +257,16 @@ func (m Model) renderLine(l month.Line, selected bool) string {
 	}
 	return fmt.Sprintf("%s [%s] %-20s %s %12s  %s", cursor, check, l.Concept.Name, l.Concept.Currency,
 		l.Amount.StringFixed(2), status)
+}
+
+func (m Model) renderChoreLine(c month.ChoreLine, selected bool) string {
+	cursor := " "
+	if selected {
+		cursor = ">"
+	}
+	check := " "
+	if c.Done {
+		check = "x"
+	}
+	return fmt.Sprintf("%s [%s] %s", cursor, check, c.Chore.Name)
 }

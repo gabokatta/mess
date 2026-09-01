@@ -43,14 +43,39 @@ func TestLoadResolvesCatalogAgainstStore(t *testing.T) {
 		t.Fatalf("SetBaseAmount() unexpected error: %v", err)
 	}
 
-	lines, err := Load(db, domain.NewPeriod(2026, time.September))
+	got, err := Load(db, domain.NewPeriod(2026, time.September))
 	if err != nil {
 		t.Fatalf("Load() unexpected error: %v", err)
 	}
-	if len(lines) != 1 {
-		t.Fatalf("Load() = %d lines, want 1", len(lines))
+	if len(got.Lines) != 1 {
+		t.Fatalf("Load().Lines = %d lines, want 1", len(got.Lines))
 	}
-	if lines[0].Concept.Name != "Alquiler" || !lines[0].Amount.Equal(amount(785000)) || lines[0].Confirmed {
-		t.Errorf("Load()[0] = %+v, want Alquiler at 785000, projected", lines[0])
+	if got.Lines[0].Concept.Name != "Alquiler" || !got.Lines[0].Amount.Equal(amount(785000)) || got.Lines[0].Confirmed {
+		t.Errorf("Load().Lines[0] = %+v, want Alquiler at 785000, projected", got.Lines[0])
+	}
+}
+
+func TestLoadResolvesChoresAgainstStore(t *testing.T) {
+	db := openTestStore(t)
+
+	trash, err := catalog.CreateChore(db, catalog.Chore{
+		Name:       "Sacar la basura",
+		MonthMask:  domain.Monthly,
+		ActiveFrom: domain.NewPeriod(2026, time.January),
+	})
+	if err != nil {
+		t.Fatalf("CreateChore() unexpected error: %v", err)
+	}
+	sept := domain.NewPeriod(2026, time.September)
+	if err := catalog.SetChoreEntryDone(db, trash.ID, sept, true); err != nil {
+		t.Fatalf("SetChoreEntryDone() unexpected error: %v", err)
+	}
+
+	got, err := Load(db, sept)
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if len(got.Chores) != 1 || got.Chores[0].Chore.Name != "Sacar la basura" || !got.Chores[0].Done {
+		t.Errorf("Load().Chores = %+v, want a single done Sacar la basura row", got.Chores)
 	}
 }

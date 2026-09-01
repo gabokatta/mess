@@ -33,6 +33,7 @@ type Model struct {
 	db      *sql.DB
 	period  domain.Period
 	lines   []month.Line
+	chores  []month.ChoreLine
 	loadErr error
 	cursor  int
 	editing *editState
@@ -53,7 +54,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.theme = NewTheme(msg.IsDark())
 
 	case monthLoadedMsg:
-		m.lines, m.loadErr = msg.lines, msg.err
+		m.lines, m.chores, m.loadErr = msg.lines, msg.chores, msg.err
 
 	case entrySavedMsg:
 		m.saveErr = msg.err
