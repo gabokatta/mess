@@ -3,6 +3,7 @@ package tui
 import "charm.land/lipgloss/v2"
 
 type Theme struct {
+	Dark      bool
 	App       lipgloss.Style
 	Title     lipgloss.Style
 	Tab       lipgloss.Style
@@ -21,6 +22,7 @@ func NewTheme(dark bool) Theme {
 	}
 
 	return Theme{
+		Dark: dark,
 		// Uncolored: overlayLogo slices these rows by rune count, and a
 		// color code would throw that count off.
 		App:       lipgloss.NewStyle().Padding(1, 2).Border(lipgloss.RoundedBorder()),

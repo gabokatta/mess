@@ -327,6 +327,26 @@ func TestMonthViewRendersChoresGroup(t *testing.T) {
 	}
 }
 
+func TestMonthViewShowsAssignedProjectsWithProgress(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+	m.period = domain.NewPeriod(2026, time.September)
+
+	updated, _ := m.Update(projectsLoadedMsg{projects: []catalog.Project{
+		{Name: "Venezuela trip", Period: domain.NewPeriod(2026, time.September), BodyMD: "- [x] flights\n- [ ] hotel"},
+		{Name: "Someday list", Period: domain.NewPeriod(2026, time.July)},
+	}})
+	m = updated.(Model)
+	content := m.View().Content
+
+	if !strings.Contains(content, "Venezuela trip") || !strings.Contains(content, "1/2") {
+		t.Errorf("content missing the assigned project and its progress:\n%s", content)
+	}
+	if strings.Contains(content, "Someday list") {
+		t.Errorf("content = %q, want only this period's projects, not other months'", content)
+	}
+}
+
 func TestMonthViewShowsEditBoxForFocusedLine(t *testing.T) {
 	db := openTestStore(t)
 	seedConcept(t, db, "Alquiler", 785000)

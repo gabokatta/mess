@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/dolarapi"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/month"
@@ -44,6 +45,13 @@ type Model struct {
 	fxErr    error
 	year     month.Year
 	yearErr  error
+
+	projects       []catalog.Project
+	projectsErr    error
+	projectCursor  int
+	showClosed     bool
+	projectEditing *projectEditState
+	projectSaveErr error
 }
 
 func New(db *sql.DB) Model {
@@ -61,6 +69,7 @@ func (m Model) Init() tea.Cmd {
 		loadMonth(m.db, m.period),
 		fillCurrentFxRate(m.db, m.fxClient, m.period),
 		loadYear(m.db, m.period.Year()),
+		loadProjects(m.db),
 	)
 }
 
@@ -82,6 +91,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case yearLoadedMsg:
 		m.year, m.yearErr = msg.year, msg.err
 
+	case projectsLoadedMsg:
+		m.projects, m.projectsErr = msg.projects, msg.err
+
+	case projectSavedMsg:
+		m.projectSaveErr = msg.err
+		return m, loadProjects(m.db)
+
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 
@@ -95,6 +111,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.editing != nil {
 		return m.updateEditing(msg)
 	}
+	if m.projectEditing != nil {
+		return m.updateProjectEditing(msg)
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -105,18 +124,37 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case "j", "down":
 		if m.view == viewMonth {
 			m.cursor = m.moveCursor(1)
+		} else if m.view == viewProjects {
+			m.projectCursor = m.moveProjectCursor(1)
 		}
 	case "k", "up":
 		if m.view == viewMonth {
 			m.cursor = m.moveCursor(-1)
+		} else if m.view == viewProjects {
+			m.projectCursor = m.moveProjectCursor(-1)
 		}
 	case "space":
 		if m.view == viewMonth {
 			return m.toggleDone()
+		} else if m.view == viewProjects {
+			return m.toggleProjectCheckbox()
 		}
 	case "enter":
 		if m.view == viewMonth {
 			return m.startEdit()
+		}
+	case "e":
+		if m.view == viewProjects {
+			return m.startProjectEdit()
+		}
+	case "c":
+		if m.view == viewProjects {
+			return m.toggleProjectClosed()
+		}
+	case "f":
+		if m.view == viewProjects {
+			m.showClosed = !m.showClosed
+			m.projectCursor = 0
 		}
 	}
 	return m, nil
@@ -201,6 +239,8 @@ func (m Model) viewContent() string {
 		return m.renderMonth()
 	case viewYear:
 		return m.renderYear()
+	case viewProjects:
+		return m.renderProjects()
 	default:
 		return m.theme.Muted.Render(m.view.String() + " — not built yet")
 	}
@@ -210,8 +250,14 @@ func (m Model) helpText() string {
 	if m.editing != nil {
 		return "enter confirm · esc cancel"
 	}
+	if m.projectEditing != nil {
+		return "ctrl+s save · esc cancel"
+	}
 	if m.view == viewMonth {
 		return "j/k move · space tick · enter edit · tab/shift+tab switch · q quit"
+	}
+	if m.view == viewProjects {
+		return "j/k move · space tick · e edit · c close · f pending/closed · tab/shift+tab switch · q quit"
 	}
 	return "tab/shift+tab switch · q quit"
 }

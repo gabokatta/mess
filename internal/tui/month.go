@@ -12,6 +12,7 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/month"
+	"github.com/gabokatta/mess/internal/project"
 )
 
 // monthGroups is the display order for the month view's sections.
@@ -197,7 +198,8 @@ func (m Model) renderMonth() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Muted.Render("fx quote unavailable: " + m.fxErr.Error()))
 	}
-	if len(m.lines) == 0 && len(m.chores) == 0 {
+	assigned := projectsForPeriod(m.projects, m.period)
+	if len(m.lines) == 0 && len(m.chores) == 0 && len(assigned) == 0 {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Muted.Render("no concepts yet — add some in the Concepts view"))
 		return b.String()
@@ -229,6 +231,14 @@ func (m Model) renderMonth() string {
 			b.WriteString("\n")
 			b.WriteString(m.renderChoreLine(c, idx == m.cursor))
 			idx++
+		}
+	}
+	if len(assigned) > 0 {
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Title.Render("Projects"))
+		for _, p := range assigned {
+			done, total := project.Progress(p.BodyMD)
+			fmt.Fprintf(&b, "\n  %-20s %d/%d", p.Name, done, total)
 		}
 	}
 	if m.saveErr != nil {
@@ -265,6 +275,18 @@ func (m Model) renderTotals() string {
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// projectsForPeriod is the subset of projects stamped to period, in the
+// order Projects() returns them.
+func projectsForPeriod(projects []catalog.Project, period domain.Period) []catalog.Project {
+	var assigned []catalog.Project
+	for _, p := range projects {
+		if p.Period == period {
+			assigned = append(assigned, p)
+		}
+	}
+	return assigned
 }
 
 func linesForKind(lines []month.Line, kind catalog.ConceptKind) []month.Line {
