@@ -3,7 +3,7 @@ package catalog
 import (
 	"database/sql"
 
-	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mess/internal/domain"
 )
 
 // ChoreEntry is the done state for one chore in one period.

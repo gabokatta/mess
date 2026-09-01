@@ -3,8 +3,8 @@ package month
 import (
 	"github.com/shopspring/decimal"
 
-	"github.com/gabokatta/mes/internal/catalog"
-	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
 )
 
 // Net is a net amount in one currency at two altitudes: the full household

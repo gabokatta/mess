@@ -8,9 +8,9 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/gabokatta/mes/internal/catalog"
-	"github.com/gabokatta/mes/internal/domain"
-	"github.com/gabokatta/mes/internal/month"
+	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/month"
 )
 
 func seedConcept(t *testing.T, db *sql.DB, name string, base int64) catalog.Concept {

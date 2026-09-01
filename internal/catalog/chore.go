@@ -3,7 +3,7 @@ package catalog
 import (
 	"database/sql"
 
-	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mess/internal/domain"
 )
 
 // Chore is a monthly checklist item: a done state per period, no amount.

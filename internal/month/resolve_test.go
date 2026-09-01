@@ -6,8 +6,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/gabokatta/mes/internal/catalog"
-	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
 )
 
 func concept(id int64, mask domain.Cadence, from, until domain.Period) catalog.Concept {

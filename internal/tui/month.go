@@ -9,9 +9,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/shopspring/decimal"
 
-	"github.com/gabokatta/mes/internal/catalog"
-	"github.com/gabokatta/mes/internal/domain"
-	"github.com/gabokatta/mes/internal/month"
+	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/month"
 )
 
 // monthGroups is the display order for the month view's sections.

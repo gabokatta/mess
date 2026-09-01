@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gabokatta/mes/internal/catalog"
-	"github.com/gabokatta/mes/internal/dolarapi"
-	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/dolarapi"
+	"github.com/gabokatta/mess/internal/domain"
 )
 
 func TestFillCurrentFxRateWritesQuoteWhenPeriodEmpty(t *testing.T) {

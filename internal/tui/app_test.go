@@ -9,10 +9,10 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/shopspring/decimal"
 
-	"github.com/gabokatta/mes/internal/catalog"
-	"github.com/gabokatta/mes/internal/domain"
-	"github.com/gabokatta/mes/internal/month"
-	"github.com/gabokatta/mes/internal/store"
+	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/month"
+	"github.com/gabokatta/mess/internal/store"
 )
 
 func key(s string) tea.KeyPressMsg {
@@ -36,7 +36,7 @@ func settle(t *testing.T, m tea.Model, cmd tea.Cmd) Model {
 
 func openTestStore(t *testing.T) *sql.DB {
 	t.Helper()
-	s, err := store.Open(filepath.Join(t.TempDir(), "mes.db"))
+	s, err := store.Open(filepath.Join(t.TempDir(), "mess.db"))
 	if err != nil {
 		t.Fatalf("store.Open() unexpected error: %v", err)
 	}

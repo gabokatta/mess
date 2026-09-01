@@ -3,14 +3,14 @@ GOFLAGS := -trimpath
 .PHONY: run build build-all test fmt clean
 
 run:
-	go run ./cmd/mes
+	go run ./cmd/mess
 
 build:
-	go build $(GOFLAGS) -o bin/mes ./cmd/mes
+	go build $(GOFLAGS) -o bin/mess ./cmd/mess
 
 build-all:
-	GOOS=darwin  GOARCH=arm64 go build $(GOFLAGS) -o bin/mes-darwin-arm64 ./cmd/mes
-	GOOS=windows GOARCH=amd64 go build $(GOFLAGS) -o bin/mes-windows-amd64.exe ./cmd/mes
+	GOOS=darwin  GOARCH=arm64 go build $(GOFLAGS) -o bin/mess-darwin-arm64 ./cmd/mess
+	GOOS=windows GOARCH=amd64 go build $(GOFLAGS) -o bin/mess-windows-amd64.exe ./cmd/mess
 
 test:
 	go test ./...

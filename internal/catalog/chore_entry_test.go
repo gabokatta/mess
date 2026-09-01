@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mess/internal/domain"
 )
 
 func mustChore(t *testing.T, db *sql.DB) Chore {

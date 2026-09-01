@@ -7,7 +7,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mess/internal/domain"
 )
 
 func mustConcept(t *testing.T, db *sql.DB) Concept {

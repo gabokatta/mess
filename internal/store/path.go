@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 )
 
-// DefaultPath is os.UserConfigDir()/mes/mes.db, used when --db is not set.
+// DefaultPath is os.UserConfigDir()/mess/mess.db, used when --db is not set.
 func DefaultPath() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("store: resolve config dir: %w", err)
 	}
-	return filepath.Join(dir, "mes", "mes.db"), nil
+	return filepath.Join(dir, "mes", "mess.db"), nil
 }

@@ -6,7 +6,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mess/internal/domain"
 )
 
 type ConceptKind int

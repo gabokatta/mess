@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gabokatta/mes/internal/catalog"
-	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
 )
 
 func chore(id int64, mask domain.Cadence, from, until domain.Period) catalog.Chore {

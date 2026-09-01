@@ -3,8 +3,8 @@ package month
 import (
 	"testing"
 
-	"github.com/gabokatta/mes/internal/catalog"
-	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
 )
 
 func lineOf(kind catalog.ConceptKind, cur domain.Currency, amt int64, share int64, confirmed bool) Line {

@@ -7,7 +7,7 @@ import (
 )
 
 func TestOpenCreatesSchema(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mes.db")
+	path := filepath.Join(t.TempDir(), "mess.db")
 
 	s, err := Open(path)
 	if err != nil {
@@ -30,7 +30,7 @@ func TestOpenCreatesSchema(t *testing.T) {
 }
 
 func TestOpenCreatesParentDir(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nested", "dir", "mes.db")
+	path := filepath.Join(t.TempDir(), "nested", "dir", "mess.db")
 
 	s, err := Open(path)
 	if err != nil {
@@ -44,7 +44,7 @@ func TestOpenCreatesParentDir(t *testing.T) {
 }
 
 func TestOpenIsIdempotentAcrossRestarts(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mes.db")
+	path := filepath.Join(t.TempDir(), "mess.db")
 
 	s, err := Open(path)
 	if err != nil {
@@ -62,7 +62,7 @@ func TestOpenIsIdempotentAcrossRestarts(t *testing.T) {
 }
 
 func TestOpenEnforcesForeignKeys(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mes.db")
+	path := filepath.Join(t.TempDir(), "mess.db")
 
 	s, err := Open(path)
 	if err != nil {
@@ -79,7 +79,7 @@ func TestOpenEnforcesForeignKeys(t *testing.T) {
 }
 
 func TestOpenSecondInstanceFailsWhileLocked(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mes.db")
+	path := filepath.Join(t.TempDir(), "mess.db")
 
 	s, err := Open(path)
 	if err != nil {
@@ -93,7 +93,7 @@ func TestOpenSecondInstanceFailsWhileLocked(t *testing.T) {
 }
 
 func TestOpenAfterCloseReleasesLock(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mes.db")
+	path := filepath.Join(t.TempDir(), "mess.db")
 
 	s, err := Open(path)
 	if err != nil {

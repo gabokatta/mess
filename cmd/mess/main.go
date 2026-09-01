@@ -7,13 +7,13 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/gabokatta/mes/internal/store"
-	"github.com/gabokatta/mes/internal/tui"
+	"github.com/gabokatta/mess/internal/store"
+	"github.com/gabokatta/mess/internal/tui"
 )
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "mes:", err)
+		fmt.Fprintln(os.Stderr, "mess:", err)
 		os.Exit(1)
 	}
 }

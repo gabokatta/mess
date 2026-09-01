@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mess/internal/domain"
 )
 
 func TestCreateAndListChores(t *testing.T) {

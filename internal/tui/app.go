@@ -6,10 +6,11 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
-	"github.com/gabokatta/mes/internal/dolarapi"
-	"github.com/gabokatta/mes/internal/domain"
-	"github.com/gabokatta/mes/internal/month"
+	"github.com/gabokatta/mess/internal/dolarapi"
+	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/month"
 )
 
 type view int
@@ -111,23 +112,65 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) View() tea.View {
-	var b strings.Builder
-	b.WriteString(m.theme.Title.Render("mes"))
-	b.WriteString("  ")
-	b.WriteString(m.tabs())
-	b.WriteString("\n")
-	b.WriteString(m.theme.Rule.Render(strings.Repeat("─", max(m.contentWidth(), 1))))
-	b.WriteString("\n\n")
-	b.WriteString(m.viewContent())
-	b.WriteString("\n\n")
-	b.WriteString(m.theme.Help.Render(m.helpText()))
+// Below this floor renderTooSmall takes over instead of a garbled layout.
+const (
+	minUsableWidth  = 40
+	minUsableHeight = 10
+)
 
-	v := tea.NewView(m.theme.App.Render(b.String()))
+func (m Model) View() tea.View {
+	content := m.renderTooSmall()
+	if content == "" {
+		content = m.renderApp()
+	}
+
+	v := tea.NewView(content)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeNone
-	v.WindowTitle = "mes"
+	v.WindowTitle = "mess"
 	return v
+}
+
+// renderTooSmall reports the "grow your terminal" message once a real,
+// too-small size is known, or "" when the normal layout should render.
+func (m Model) renderTooSmall() string {
+	if m.width == 0 || m.height == 0 {
+		return ""
+	}
+	if m.width >= minUsableWidth && m.height >= minUsableHeight {
+		return ""
+	}
+	msg := m.theme.Muted.Width(m.width).Align(lipgloss.Center).Render("make the terminal bigger to see your mess")
+	return lipgloss.PlaceVertical(m.height, lipgloss.Center, msg)
+}
+
+func (m Model) renderApp() string {
+	footer := m.renderFooter()
+	footerRows := strings.Count(footer, "\n") + 1
+	boxHeight := m.height - footerRows
+	app := m.theme.App
+	if m.width > 0 && boxHeight > 0 {
+		app = app.Width(m.width).Height(boxHeight)
+	}
+	rendered := app.Render(m.viewContent())
+	if m.width >= logoMinWidth && m.height >= logoMinHeight {
+		rendered = overlayLogo(rendered, m.theme.Logo)
+	}
+
+	return rendered + "\n" + footer
+}
+
+// renderFooter is the strip below the box: key legend left, tabs right.
+// They share one row when both fit, else the tabs get a row of their own,
+// still right-aligned.
+func (m Model) renderFooter() string {
+	left := "  " + m.theme.Help.Render(m.helpText())
+	tabs := m.tabs()
+	if lipgloss.Width(left)+lipgloss.Width(tabs) >= m.width {
+		return left + "\n" + lipgloss.NewStyle().Width(m.width).Align(lipgloss.Right).Render(tabs)
+	}
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(tabs)
+	return left + strings.Repeat(" ", gap) + tabs
 }
 
 func (m Model) tabs() string {
@@ -140,11 +183,6 @@ func (m Model) tabs() string {
 		labels[i] = style.Render(name)
 	}
 	return strings.Join(labels, "")
-}
-
-func (m Model) contentWidth() int {
-	const framing = 4
-	return m.width - framing
 }
 
 func (m Model) viewContent() string {

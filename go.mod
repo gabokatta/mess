@@ -1,4 +1,4 @@
-module github.com/gabokatta/mes
+module github.com/gabokatta/mess
 
 go 1.27
 

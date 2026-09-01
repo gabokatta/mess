@@ -17,7 +17,7 @@ func TestDefaultPathIsUnderUserConfigDir(t *testing.T) {
 		t.Fatalf("DefaultPath() unexpected error: %v", err)
 	}
 
-	want := filepath.Join(configDir, "mes", "mes.db")
+	want := filepath.Join(configDir, "mes", "mess.db")
 	if got != want {
 		t.Errorf("DefaultPath() = %q, want %q", got, want)
 	}

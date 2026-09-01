@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gabokatta/mes/internal/catalog"
-	"github.com/gabokatta/mes/internal/domain"
-	"github.com/gabokatta/mes/internal/store"
+	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/store"
 )
 
 func openTestStore(t *testing.T) *sql.DB {
 	t.Helper()
-	s, err := store.Open(filepath.Join(t.TempDir(), "mes.db"))
+	s, err := store.Open(filepath.Join(t.TempDir(), "mess.db"))
 	if err != nil {
 		t.Fatalf("store.Open() unexpected error: %v", err)
 	}
