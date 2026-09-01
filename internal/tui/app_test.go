@@ -19,6 +19,21 @@ func key(s string) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: rune(s[0]), Text: s}
 }
 
+func keySpace() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeySpace, Text: " "} }
+func keyEnter() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeyEnter} }
+func keyEsc() tea.KeyPressMsg   { return tea.KeyPressMsg{Code: tea.KeyEscape} }
+
+// settle drains a Cmd/Update chain to completion, the way the real Bubble
+// Tea loop would deliver each Cmd's Msg back into Update.
+func settle(t *testing.T, m tea.Model, cmd tea.Cmd) Model {
+	t.Helper()
+	for cmd != nil {
+		msg := cmd()
+		m, cmd = m.Update(msg)
+	}
+	return m.(Model)
+}
+
 func openTestStore(t *testing.T) *sql.DB {
 	t.Helper()
 	s, err := store.Open(filepath.Join(t.TempDir(), "mes.db"))

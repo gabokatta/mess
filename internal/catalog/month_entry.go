@@ -17,6 +17,35 @@ type MonthEntry struct {
 	Done      bool
 }
 
+// SetMonthEntryAmount sets the override for concept in period, or clears it
+// when amount is nil, leaving the row's done state untouched.
+func SetMonthEntryAmount(db *sql.DB, conceptID int64, period domain.Period, amount *decimal.Decimal) error {
+	_, err := db.Exec(`
+		INSERT INTO month_entry (concept_id, period, amount, done)
+		VALUES (?, ?, ?, 0)
+		ON CONFLICT (concept_id, period) DO UPDATE SET amount = excluded.amount`,
+		conceptID, period.String(), nullableAmount(amount))
+	return err
+}
+
+// SetMonthEntryDone sets the done state for concept in period, leaving the
+// row's amount override untouched.
+func SetMonthEntryDone(db *sql.DB, conceptID int64, period domain.Period, done bool) error {
+	_, err := db.Exec(`
+		INSERT INTO month_entry (concept_id, period, amount, done)
+		VALUES (?, ?, NULL, ?)
+		ON CONFLICT (concept_id, period) DO UPDATE SET done = excluded.done`,
+		conceptID, period.String(), done)
+	return err
+}
+
+func nullableAmount(amount *decimal.Decimal) any {
+	if amount == nil {
+		return nil
+	}
+	return amount.String()
+}
+
 func MonthEntries(db *sql.DB, period domain.Period) ([]MonthEntry, error) {
 	rows, err := db.Query(`
 		SELECT concept_id, period, amount, done FROM month_entry WHERE period = ?`, period.String())

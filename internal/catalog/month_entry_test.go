@@ -51,6 +51,112 @@ func TestMonthEntriesFiltersByPeriodAndParsesNullableAmount(t *testing.T) {
 	}
 }
 
+func TestSetMonthEntryAmountInsertsWithDoneFalse(t *testing.T) {
+	db := openTestStore(t).DB()
+	c := mustConcept(t, db)
+	sept := domain.NewPeriod(2026, time.September)
+	amount := decimal.NewFromInt(800000)
+
+	if err := SetMonthEntryAmount(db, c.ID, sept, &amount); err != nil {
+		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
+	}
+
+	got, err := MonthEntries(db, sept)
+	if err != nil {
+		t.Fatalf("MonthEntries() unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0].Amount == nil || !got[0].Amount.Equal(amount) {
+		t.Fatalf("MonthEntries() = %+v, want a single 800000 row", got)
+	}
+	if got[0].Done {
+		t.Error("MonthEntries()[0].Done = true, want false (a fresh row must not touch done)")
+	}
+}
+
+func TestSetMonthEntryAmountPreservesExistingDone(t *testing.T) {
+	db := openTestStore(t).DB()
+	c := mustConcept(t, db)
+	sept := domain.NewPeriod(2026, time.September)
+
+	if err := SetMonthEntryDone(db, c.ID, sept, true); err != nil {
+		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
+	}
+	amount := decimal.NewFromInt(800000)
+	if err := SetMonthEntryAmount(db, c.ID, sept, &amount); err != nil {
+		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
+	}
+
+	got, err := MonthEntries(db, sept)
+	if err != nil {
+		t.Fatalf("MonthEntries() unexpected error: %v", err)
+	}
+	if len(got) != 1 || !got[0].Done {
+		t.Fatalf("MonthEntries() = %+v, want done still true after setting the amount", got)
+	}
+}
+
+func TestSetMonthEntryAmountNilClearsOverride(t *testing.T) {
+	db := openTestStore(t).DB()
+	c := mustConcept(t, db)
+	sept := domain.NewPeriod(2026, time.September)
+	amount := decimal.NewFromInt(800000)
+
+	if err := SetMonthEntryAmount(db, c.ID, sept, &amount); err != nil {
+		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
+	}
+	if err := SetMonthEntryAmount(db, c.ID, sept, nil); err != nil {
+		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
+	}
+
+	got, err := MonthEntries(db, sept)
+	if err != nil {
+		t.Fatalf("MonthEntries() unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0].Amount != nil {
+		t.Fatalf("MonthEntries() = %+v, want the override cleared back to nil", got)
+	}
+}
+
+func TestSetMonthEntryDoneInsertsWithNilAmount(t *testing.T) {
+	db := openTestStore(t).DB()
+	c := mustConcept(t, db)
+	sept := domain.NewPeriod(2026, time.September)
+
+	if err := SetMonthEntryDone(db, c.ID, sept, true); err != nil {
+		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
+	}
+
+	got, err := MonthEntries(db, sept)
+	if err != nil {
+		t.Fatalf("MonthEntries() unexpected error: %v", err)
+	}
+	if len(got) != 1 || !got[0].Done || got[0].Amount != nil {
+		t.Fatalf("MonthEntries() = %+v, want done true with no amount", got)
+	}
+}
+
+func TestSetMonthEntryDonePreservesExistingAmount(t *testing.T) {
+	db := openTestStore(t).DB()
+	c := mustConcept(t, db)
+	sept := domain.NewPeriod(2026, time.September)
+	amount := decimal.NewFromInt(800000)
+
+	if err := SetMonthEntryAmount(db, c.ID, sept, &amount); err != nil {
+		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
+	}
+	if err := SetMonthEntryDone(db, c.ID, sept, true); err != nil {
+		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
+	}
+
+	got, err := MonthEntries(db, sept)
+	if err != nil {
+		t.Fatalf("MonthEntries() unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0].Amount == nil || !got[0].Amount.Equal(amount) || !got[0].Done {
+		t.Fatalf("MonthEntries() = %+v, want amount preserved and done true", got)
+	}
+}
+
 func mustExec(t *testing.T, db *sql.DB, query string, args ...any) {
 	t.Helper()
 	if _, err := db.Exec(query, args...); err != nil {
