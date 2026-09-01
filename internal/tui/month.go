@@ -277,8 +277,6 @@ func (m Model) renderTotals() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// projectsForPeriod is the subset of projects stamped to period, in the
-// order Projects() returns them.
 func projectsForPeriod(projects []catalog.Project, period domain.Period) []catalog.Project {
 	var assigned []catalog.Project
 	for _, p := range projects {

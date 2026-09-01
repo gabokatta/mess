@@ -61,7 +61,6 @@ type projectRow struct {
 	checkbox int // index into project.Checkboxes(body.BodyMD); -1 for the project itself
 }
 
-// projectList is the projects the current filter shows, in display order.
 func (m Model) projectList() []catalog.Project {
 	if m.showClosed {
 		return project.Closed(m.projects)
@@ -120,7 +119,6 @@ func (m Model) toggleProjectCheckbox() (Model, tea.Cmd) {
 	return m, saveProjectBody(m.db, row.project.ID, body)
 }
 
-// startProjectEdit opens the raw-body textarea for the cursor's project.
 func (m Model) startProjectEdit() (Model, tea.Cmd) {
 	row, ok := m.cursorProjectRow()
 	if !ok {

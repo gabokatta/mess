@@ -12,8 +12,7 @@ import (
 // only syntax mess treats as a checkbox rather than plain prose or a bullet.
 var checkboxPattern = regexp.MustCompile(`^(\s*[-*]\s\[)([ xX])(\]\s+)(.*)$`)
 
-// Checkbox is one task-list item found in a project's markdown body, in
-// document order.
+// Checkbox is one task-list item found in a project's markdown body.
 type Checkbox struct {
 	Text string
 	Done bool
