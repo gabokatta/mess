@@ -74,6 +74,47 @@ func TestSetBaseAmountUpsertsSameEffectiveFrom(t *testing.T) {
 	}
 }
 
+func TestAllBaseAmountsGroupsByConcept(t *testing.T) {
+	db := openTestStore(t).DB()
+	rent := mustConcept(t, db)
+	cat, err := CreateCategory(db, "Otros", 1)
+	if err != nil {
+		t.Fatalf("CreateCategory() unexpected error: %v", err)
+	}
+	internet, err := CreateConcept(db, Concept{
+		Name:       "Internet",
+		CategoryID: cat.ID,
+		Kind:       FixedExpense,
+		Currency:   domain.ARS,
+		MonthMask:  domain.Monthly,
+		ActiveFrom: domain.NewPeriod(2026, time.January),
+	})
+	if err != nil {
+		t.Fatalf("CreateConcept() unexpected error: %v", err)
+	}
+
+	if err := SetBaseAmount(db, rent.ID, domain.NewPeriod(2026, time.January), decimal.NewFromInt(785000)); err != nil {
+		t.Fatalf("SetBaseAmount() unexpected error: %v", err)
+	}
+	if err := SetBaseAmount(db, rent.ID, domain.NewPeriod(2026, time.June), decimal.NewFromInt(850000)); err != nil {
+		t.Fatalf("SetBaseAmount() unexpected error: %v", err)
+	}
+	if err := SetBaseAmount(db, internet.ID, domain.NewPeriod(2026, time.January), decimal.NewFromInt(15000)); err != nil {
+		t.Fatalf("SetBaseAmount() unexpected error: %v", err)
+	}
+
+	got, err := AllBaseAmounts(db)
+	if err != nil {
+		t.Fatalf("AllBaseAmounts() unexpected error: %v", err)
+	}
+	if len(got[rent.ID]) != 2 {
+		t.Errorf("AllBaseAmounts()[rent] = %+v, want 2 rows", got[rent.ID])
+	}
+	if len(got[internet.ID]) != 1 || !got[internet.ID][0].Amount.Equal(decimal.NewFromInt(15000)) {
+		t.Errorf("AllBaseAmounts()[internet] = %+v, want a single 15000 row", got[internet.ID])
+	}
+}
+
 func TestSetBaseAmountRequiresExistingConcept(t *testing.T) {
 	db := openTestStore(t).DB()
 

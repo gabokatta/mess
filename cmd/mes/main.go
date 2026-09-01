@@ -37,6 +37,6 @@ func run() error {
 	}
 	defer s.Close()
 
-	_, err = tea.NewProgram(tui.New()).Run()
+	_, err = tea.NewProgram(tui.New(s.DB())).Run()
 	return err
 }

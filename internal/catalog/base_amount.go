@@ -33,7 +33,32 @@ func BaseAmounts(db *sql.DB, conceptID int64) ([]BaseAmount, error) {
 		return nil, err
 	}
 	defer rows.Close()
+	return scanBaseAmounts(rows)
+}
 
+// AllBaseAmounts loads every concept's base history in one query, grouped by
+// concept ID and ordered by effective_from — avoids a query per concept.
+func AllBaseAmounts(db *sql.DB) (map[int64][]BaseAmount, error) {
+	rows, err := db.Query(`
+		SELECT concept_id, effective_from, amount FROM base_amount
+		ORDER BY concept_id, effective_from`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	amounts, err := scanBaseAmounts(rows)
+	if err != nil {
+		return nil, err
+	}
+	byConcept := make(map[int64][]BaseAmount)
+	for _, b := range amounts {
+		byConcept[b.ConceptID] = append(byConcept[b.ConceptID], b)
+	}
+	return byConcept, nil
+}
+
+func scanBaseAmounts(rows *sql.Rows) ([]BaseAmount, error) {
 	var amounts []BaseAmount
 	for rows.Next() {
 		var (

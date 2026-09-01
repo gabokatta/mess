@@ -1,14 +1,32 @@
 package tui
 
 import (
+	"database/sql"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/shopspring/decimal"
+
+	"github.com/gabokatta/mes/internal/catalog"
+	"github.com/gabokatta/mes/internal/domain"
+	"github.com/gabokatta/mes/internal/month"
+	"github.com/gabokatta/mes/internal/store"
 )
 
 func key(s string) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: rune(s[0]), Text: s}
+}
+
+func openTestStore(t *testing.T) *sql.DB {
+	t.Helper()
+	s, err := store.Open(filepath.Join(t.TempDir(), "mes.db"))
+	if err != nil {
+		t.Fatalf("store.Open() unexpected error: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s.DB()
 }
 
 func TestViewCycling(t *testing.T) {
@@ -25,7 +43,7 @@ func TestViewCycling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var m tea.Model = New()
+			var m tea.Model = New(openTestStore(t))
 			for _, k := range tt.keys {
 				m, _ = m.Update(k)
 			}
@@ -37,7 +55,7 @@ func TestViewCycling(t *testing.T) {
 }
 
 func TestQuitOnQ(t *testing.T) {
-	var m tea.Model = New()
+	var m tea.Model = New(openTestStore(t))
 	_, cmd := m.Update(key("q"))
 	if cmd == nil {
 		t.Fatal("q returned no command, want tea.Quit")
@@ -48,7 +66,7 @@ func TestQuitOnQ(t *testing.T) {
 }
 
 func TestViewDeclaresTerminalState(t *testing.T) {
-	m := New()
+	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
 	v := m.View()
 
@@ -61,4 +79,48 @@ func TestViewDeclaresTerminalState(t *testing.T) {
 	if !strings.Contains(v.Content, "Month") {
 		t.Error("content does not name the focused view")
 	}
+}
+
+func TestMonthViewRendersGroupedLines(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.FixedExpense, Currency: domain.ARS}
+	salary := catalog.Concept{Name: "Sueldo", Kind: catalog.Income, Currency: domain.ARS}
+	lines := []month.Line{
+		{Concept: salary, Amount: amountFor(t, "450000"), Confirmed: true, Done: true},
+		{Concept: rent, Amount: amountFor(t, "785000"), Confirmed: false, Done: false},
+	}
+
+	updated, _ := m.Update(monthLoadedMsg{lines: lines})
+	m = updated.(Model)
+	content := m.View().Content
+
+	for _, want := range []string{"Income", "Sueldo", "FixedExpense", "Alquiler", "projected"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("month view content missing %q:\n%s", want, content)
+		}
+	}
+}
+
+func TestMonthViewReportsLoadError(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+
+	updated, _ := m.Update(monthLoadedMsg{err: sql.ErrConnDone})
+	m = updated.(Model)
+	content := m.View().Content
+
+	if !strings.Contains(content, "failed to load") {
+		t.Errorf("month view content = %q, want it to surface the load error", content)
+	}
+}
+
+func amountFor(t *testing.T, s string) decimal.Decimal {
+	t.Helper()
+	d, err := decimal.NewFromString(s)
+	if err != nil {
+		t.Fatalf("decimal.NewFromString(%q) unexpected error: %v", s, err)
+	}
+	return d
 }
