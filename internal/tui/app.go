@@ -42,6 +42,8 @@ type Model struct {
 	editing  *editState
 	saveErr  error
 	fxErr    error
+	year     month.Year
+	yearErr  error
 }
 
 func New(db *sql.DB) Model {
@@ -54,7 +56,12 @@ func New(db *sql.DB) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(tea.RequestBackgroundColor, loadMonth(m.db, m.period), fillCurrentFxRate(m.db, m.fxClient, m.period))
+	return tea.Batch(
+		tea.RequestBackgroundColor,
+		loadMonth(m.db, m.period),
+		fillCurrentFxRate(m.db, m.fxClient, m.period),
+		loadYear(m.db, m.period.Year()),
+	)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -71,6 +78,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fxFilledMsg:
 		m.fxErr = msg.err
+
+	case yearLoadedMsg:
+		m.year, m.yearErr = msg.year, msg.err
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -186,10 +196,14 @@ func (m Model) tabs() string {
 }
 
 func (m Model) viewContent() string {
-	if m.view != viewMonth {
+	switch m.view {
+	case viewMonth:
+		return m.renderMonth()
+	case viewYear:
+		return m.renderYear()
+	default:
 		return m.theme.Muted.Render(m.view.String() + " — not built yet")
 	}
-	return m.renderMonth()
 }
 
 func (m Model) helpText() string {

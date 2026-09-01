@@ -10,6 +10,7 @@ type Theme struct {
 	Muted     lipgloss.Style
 	Help      lipgloss.Style
 	Logo      lipgloss.Style
+	Chart     lipgloss.Style
 }
 
 func NewTheme(dark bool) Theme {
@@ -29,5 +30,6 @@ func NewTheme(dark bool) Theme {
 		Muted:     lipgloss.NewStyle().Foreground(muted),
 		Help:      lipgloss.NewStyle().Foreground(muted),
 		Logo:      lipgloss.NewStyle().Foreground(muted),
+		Chart:     lipgloss.NewStyle().Foreground(accent),
 	}
 }
