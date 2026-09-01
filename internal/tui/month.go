@@ -193,6 +193,10 @@ func (m Model) renderMonth() string {
 		b.WriteString(m.theme.Muted.Render("failed to load: " + m.loadErr.Error()))
 		return b.String()
 	}
+	if m.fxErr != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Muted.Render("fx quote unavailable: " + m.fxErr.Error()))
+	}
 	if len(m.lines) == 0 && len(m.chores) == 0 {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Muted.Render("no concepts yet — add some in the Concepts view"))

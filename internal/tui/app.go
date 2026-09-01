@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/gabokatta/mes/internal/dolarapi"
 	"github.com/gabokatta/mes/internal/domain"
 	"github.com/gabokatta/mes/internal/month"
 )
@@ -26,26 +27,33 @@ var viewNames = [...]string{"Month", "Year", "Concepts", "Projects", "Settings"}
 func (v view) String() string { return viewNames[v] }
 
 type Model struct {
-	theme   Theme
-	view    view
-	width   int
-	height  int
-	db      *sql.DB
-	period  domain.Period
-	lines   []month.Line
-	chores  []month.ChoreLine
-	loadErr error
-	cursor  int
-	editing *editState
-	saveErr error
+	theme    Theme
+	view     view
+	width    int
+	height   int
+	db       *sql.DB
+	fxClient *dolarapi.Client
+	period   domain.Period
+	lines    []month.Line
+	chores   []month.ChoreLine
+	loadErr  error
+	cursor   int
+	editing  *editState
+	saveErr  error
+	fxErr    error
 }
 
 func New(db *sql.DB) Model {
-	return Model{theme: NewTheme(true), db: db, period: domain.PeriodFromTime(time.Now())}
+	return Model{
+		theme:    NewTheme(true),
+		db:       db,
+		fxClient: dolarapi.NewClient(),
+		period:   domain.PeriodFromTime(time.Now()),
+	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(tea.RequestBackgroundColor, loadMonth(m.db, m.period))
+	return tea.Batch(tea.RequestBackgroundColor, loadMonth(m.db, m.period), fillCurrentFxRate(m.db, m.fxClient, m.period))
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -59,6 +67,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case entrySavedMsg:
 		m.saveErr = msg.err
 		return m, loadMonth(m.db, m.period)
+
+	case fxFilledMsg:
+		m.fxErr = msg.err
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
