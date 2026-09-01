@@ -1,17 +1,42 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/gabokatta/mes/internal/store"
 	"github.com/gabokatta/mes/internal/tui"
 )
 
 func main() {
-	if _, err := tea.NewProgram(tui.New()).Run(); err != nil {
+	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "mes:", err)
 		os.Exit(1)
 	}
+}
+
+func run() error {
+	dbPath := flag.String("db", "", "database path (default: user config dir)")
+	flag.Parse()
+
+	path := *dbPath
+	if path == "" {
+		p, err := store.DefaultPath()
+		if err != nil {
+			return err
+		}
+		path = p
+	}
+
+	s, err := store.Open(path)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	_, err = tea.NewProgram(tui.New()).Run()
+	return err
 }
