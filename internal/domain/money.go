@@ -1,6 +1,10 @@
 package domain
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/shopspring/decimal"
+)
 
 type Currency int
 
@@ -20,49 +24,53 @@ func (c Currency) String() string {
 	}
 }
 
+func ParseCurrency(s string) (Currency, error) {
+	switch s {
+	case "ARS":
+		return ARS, nil
+	case "USD":
+		return USD, nil
+	default:
+		return 0, fmt.Errorf("domain: invalid currency %q", s)
+	}
+}
+
+const currencyScale = 2
+
 type Money struct {
-	amount   int64
+	amount   decimal.Decimal
 	currency Currency
 }
 
-func NewMoney(amount int64, currency Currency) Money {
+func NewMoney(amount decimal.Decimal, currency Currency) Money {
 	return Money{amount: amount, currency: currency}
 }
 
-func (m Money) Amount() int64      { return m.amount }
-func (m Money) Currency() Currency { return m.currency }
+func (m Money) Amount() decimal.Decimal { return m.amount }
+func (m Money) Currency() Currency      { return m.currency }
+
+func (m Money) Equal(other Money) bool {
+	return m.currency == other.currency && m.amount.Equal(other.amount)
+}
 
 func (m Money) Add(other Money) (Money, error) {
 	if m.currency != other.currency {
 		return Money{}, fmt.Errorf("domain: cannot add %s to %s", other.currency, m.currency)
 	}
-	return Money{amount: m.amount + other.amount, currency: m.currency}, nil
+	return Money{amount: m.amount.Add(other.amount), currency: m.currency}, nil
 }
 
 func (m Money) Sub(other Money) (Money, error) {
 	if m.currency != other.currency {
 		return Money{}, fmt.Errorf("domain: cannot subtract %s from %s", other.currency, m.currency)
 	}
-	return Money{amount: m.amount - other.amount, currency: m.currency}, nil
+	return Money{amount: m.amount.Sub(other.amount), currency: m.currency}, nil
 }
 
 func (m Money) Negate() Money {
-	return Money{amount: -m.amount, currency: m.currency}
+	return Money{amount: m.amount.Neg(), currency: m.currency}
 }
 
-func (m Money) Share(bp int64) Money {
-	return Money{amount: shareHalfUp(m.amount, bp), currency: m.currency}
-}
-
-const basisPointsDenominator = 10000
-
-// Go's integer division truncates toward zero, so half-up on a negative
-// numerator has to round the positive magnitude and negate back, not just
-// add half the denominator before dividing.
-func shareHalfUp(amount, bp int64) int64 {
-	numerator := amount * bp
-	if numerator >= 0 {
-		return (numerator + basisPointsDenominator/2) / basisPointsDenominator
-	}
-	return -((-numerator + basisPointsDenominator/2) / basisPointsDenominator)
+func (m Money) Share(p Percent) Money {
+	return Money{amount: m.amount.Mul(p.Fraction()).Round(currencyScale), currency: m.currency}
 }

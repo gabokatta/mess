@@ -37,6 +37,10 @@ func (p Period) String() string {
 
 func (p Period) index() int { return p.year*12 + int(p.month) }
 
+// IsZero reports whether p is the zero value, used as the "unbounded"
+// sentinel for open-ended active ranges.
+func (p Period) IsZero() bool { return p == Period{} }
+
 func (p Period) Before(other Period) bool { return p.index() < other.index() }
 func (p Period) After(other Period) bool  { return p.index() > other.index() }
 func (p Period) Equal(other Period) bool  { return p.index() == other.index() }

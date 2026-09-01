@@ -5,6 +5,7 @@ go 1.27
 require (
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
+	github.com/shopspring/decimal v1.4.0
 	modernc.org/sqlite v1.57.0
 )
 

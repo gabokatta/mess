@@ -86,3 +86,12 @@ func TestPeriodAddMonths(t *testing.T) {
 		})
 	}
 }
+
+func TestPeriodIsZero(t *testing.T) {
+	if !(Period{}).IsZero() {
+		t.Error("zero-value Period should be IsZero()")
+	}
+	if NewPeriod(2026, time.September).IsZero() {
+		t.Error("2026-09 should not be IsZero()")
+	}
+}
