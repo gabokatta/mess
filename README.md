@@ -1,2 +1,2 @@
 # mes
-monthly tracker for my life
+simple monthly tracker for your life.

@@ -1,0 +1,14 @@
+# Personal data — never publish
+.nest/
+*.db
+*.db-shm
+*.db-wal
+mes-export-*.json
+
+# Build output
+/bin/
+
+# Editors
+.idea/
+.vscode/
+.DS_Store
