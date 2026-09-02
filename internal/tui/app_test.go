@@ -29,19 +29,39 @@ func keyShiftTab() tea.KeyPressMsg {
 }
 
 // settle drains a Cmd/Update chain to completion, the way the real Bubble
-// Tea loop would deliver each Cmd's Msg back into Update.
+// Tea loop would deliver each Cmd's Msg back into Update — including
+// tea.Batch's fan-out, which the real runtime unwraps before Update ever
+// sees it.
 func settle(t *testing.T, m tea.Model, cmd tea.Cmd) Model {
 	t.Helper()
-	for cmd != nil {
+	pending := []tea.Cmd{cmd}
+	for len(pending) > 0 {
+		cmd, pending = pending[0], pending[1:]
+		if cmd == nil {
+			continue
+		}
 		msg := cmd()
-		m, cmd = m.Update(msg)
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			pending = append(pending, batch...)
+			continue
+		}
+		var next tea.Cmd
+		m, next = m.Update(msg)
+		pending = append(pending, next)
 	}
 	return m.(Model)
 }
 
 func openTestStore(t *testing.T) *sql.DB {
 	t.Helper()
-	s, err := store.Open(filepath.Join(t.TempDir(), "mess.db"))
+	return openTestStoreAt(t, filepath.Join(t.TempDir(), "mess.db"))
+}
+
+// openTestStoreAt opens a store at a caller-chosen path, for tests that need
+// to find the database file afterward (backup.Snapshot's sibling file).
+func openTestStoreAt(t *testing.T, path string) *sql.DB {
+	t.Helper()
+	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("store.Open() unexpected error: %v", err)
 	}
@@ -105,7 +125,7 @@ func TestMonthViewRendersGroupedLines(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
 
-	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.FixedExpense, Currency: domain.ARS}
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS}
 	salary := catalog.Concept{Name: "Sueldo", Kind: catalog.Income, Currency: domain.ARS}
 	lines := []month.Line{
 		{Concept: salary, Amount: amountFor(t, "450000"), Confirmed: true, Done: true},
@@ -116,7 +136,7 @@ func TestMonthViewRendersGroupedLines(t *testing.T) {
 	m = updated.(Model)
 	content := m.View().Content
 
-	for _, want := range []string{"Income", "Sueldo", "FixedExpense", "Alquiler", "projected"} {
+	for _, want := range []string{"Income", "Sueldo", "Expense", "Alquiler", "projected"} {
 		if !strings.Contains(content, want) {
 			t.Errorf("month view content missing %q:\n%s", want, content)
 		}

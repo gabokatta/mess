@@ -24,7 +24,7 @@ func TestCreateAndListConcepts(t *testing.T) {
 	c := Concept{
 		Name:        "Alquiler",
 		CategoryID:  cat.ID,
-		Kind:        FixedExpense,
+		Kind:        Expense,
 		Currency:    domain.ARS,
 		MonthMask:   domain.Monthly,
 		Share:       domain.NewPercent(50),
@@ -71,7 +71,7 @@ func TestCreateConceptDefaultsShareToFull(t *testing.T) {
 	c := Concept{
 		Name:       "Internet",
 		CategoryID: cat.ID,
-		Kind:       FixedExpense,
+		Kind:       Expense,
 		Currency:   domain.ARS,
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
@@ -100,7 +100,7 @@ func TestCreateConceptRequiresExistingCategory(t *testing.T) {
 	c := Concept{
 		Name:       "Alquiler",
 		CategoryID: 999,
-		Kind:       FixedExpense,
+		Kind:       Expense,
 		Currency:   domain.ARS,
 		MonthMask:  domain.Monthly,
 		Share:      domain.NewPercent(100),
@@ -118,7 +118,7 @@ func TestUpdateConceptRetiresViaActiveUntil(t *testing.T) {
 	c := Concept{
 		Name:       "Netflix",
 		CategoryID: cat.ID,
-		Kind:       VariableExpense,
+		Kind:       Expense,
 		Currency:   domain.ARS,
 		MonthMask:  domain.Monthly,
 		Share:      domain.NewPercent(100),
@@ -151,8 +151,7 @@ func TestParseConceptKind(t *testing.T) {
 		wantErr bool
 	}{
 		{"income", "Income", Income, false},
-		{"fixed", "FixedExpense", FixedExpense, false},
-		{"variable", "VariableExpense", VariableExpense, false},
+		{"expense", "Expense", Expense, false},
 		{"unknown", "Savings", 0, true},
 	}
 

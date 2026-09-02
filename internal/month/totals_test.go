@@ -22,7 +22,7 @@ func lineOf(kind catalog.ConceptKind, cur domain.Currency, amt int64, share int6
 func TestResolveTotalsNetsIncomeAgainstExpenses(t *testing.T) {
 	lines := []Line{
 		lineOf(catalog.Income, domain.ARS, 1000000, 100, true),
-		lineOf(catalog.FixedExpense, domain.ARS, 785000, 100, false),
+		lineOf(catalog.Expense, domain.ARS, 785000, 100, false),
 	}
 
 	totals := ResolveTotals(lines)
@@ -34,7 +34,7 @@ func TestResolveTotalsNetsIncomeAgainstExpenses(t *testing.T) {
 }
 
 func TestResolveTotalsSharesAppliesConceptShare(t *testing.T) {
-	lines := []Line{lineOf(catalog.FixedExpense, domain.ARS, 785000, 50, true)}
+	lines := []Line{lineOf(catalog.Expense, domain.ARS, 785000, 50, true)}
 
 	totals := ResolveTotals(lines)
 
@@ -46,8 +46,8 @@ func TestResolveTotalsSharesAppliesConceptShare(t *testing.T) {
 
 func TestResolveTotalsConfirmedOnlyCountsOverrides(t *testing.T) {
 	lines := []Line{
-		lineOf(catalog.FixedExpense, domain.ARS, 785000, 100, true),
-		lineOf(catalog.FixedExpense, domain.ARS, 15000, 100, false),
+		lineOf(catalog.Expense, domain.ARS, 785000, 100, true),
+		lineOf(catalog.Expense, domain.ARS, 15000, 100, false),
 	}
 
 	totals := ResolveTotals(lines)
@@ -62,8 +62,8 @@ func TestResolveTotalsConfirmedOnlyCountsOverrides(t *testing.T) {
 
 func TestResolveTotalsGroupsByCurrency(t *testing.T) {
 	lines := []Line{
-		lineOf(catalog.FixedExpense, domain.ARS, 785000, 100, true),
-		lineOf(catalog.FixedExpense, domain.USD, 50, 100, true),
+		lineOf(catalog.Expense, domain.ARS, 785000, 100, true),
+		lineOf(catalog.Expense, domain.USD, 50, 100, true),
 	}
 
 	totals := ResolveTotals(lines)

@@ -89,7 +89,7 @@ func TestExportImportRoundTripsEveryTable(t *testing.T) {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 	concept, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Alquiler", CategoryID: cat.ID, Kind: catalog.FixedExpense,
+		Name: "Alquiler", CategoryID: cat.ID, Kind: catalog.Expense,
 		Currency: domain.ARS, MonthMask: domain.Monthly, ActiveFrom: period,
 	})
 	if err != nil {

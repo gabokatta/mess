@@ -33,6 +33,22 @@ func TestAguinaldoOccursOnlyInJuneAndDecember(t *testing.T) {
 	}
 }
 
+func TestMonthsDecodesNewCadence(t *testing.T) {
+	c := NewCadence(time.December, time.June)
+
+	got := c.Months()
+	want := []time.Month{time.June, time.December}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("Months() = %v, want %v (January first, regardless of construction order)", got, want)
+	}
+}
+
+func TestMonthsOfMonthlyIsAllTwelve(t *testing.T) {
+	if got := Monthly.Months(); len(got) != 12 {
+		t.Errorf("Monthly.Months() = %v, want all 12 months", got)
+	}
+}
+
 func TestOneOffCadenceOccursOnlyInItsMonth(t *testing.T) {
 	fridge := NewCadence(time.March)
 

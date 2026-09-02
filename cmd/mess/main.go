@@ -51,7 +51,7 @@ func runTUI(args []string) error {
 	}
 	defer s.Close()
 
-	_, err = tea.NewProgram(tui.New(s.DB())).Run()
+	_, err = tea.NewProgram(tui.New(s.DB()).WithDBPath(path)).Run()
 	return err
 }
 

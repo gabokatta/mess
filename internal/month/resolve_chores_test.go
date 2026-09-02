@@ -54,6 +54,28 @@ func TestResolveChoresExcludesChoreOutsideMonthMask(t *testing.T) {
 	}
 }
 
+func TestUnfinishedChoresCountsOnlyNotDone(t *testing.T) {
+	lines := []ChoreLine{
+		{Chore: chore(1, domain.Monthly, domain.Period{}, domain.Period{}), Done: true},
+		{Chore: chore(2, domain.Monthly, domain.Period{}, domain.Period{}), Done: false},
+		{Chore: chore(3, domain.Monthly, domain.Period{}, domain.Period{}), Done: false},
+	}
+
+	if got := UnfinishedChores(lines); got != 2 {
+		t.Errorf("UnfinishedChores() = %d, want 2", got)
+	}
+}
+
+func TestUnfinishedChoresZeroWhenAllDone(t *testing.T) {
+	lines := []ChoreLine{
+		{Chore: chore(1, domain.Monthly, domain.Period{}, domain.Period{}), Done: true},
+	}
+
+	if got := UnfinishedChores(lines); got != 0 {
+		t.Errorf("UnfinishedChores() = %d, want 0", got)
+	}
+}
+
 func TestResolveChoresExcludesChoreOutsideActiveRange(t *testing.T) {
 	sept := domain.NewPeriod(2026, time.September)
 	c := chore(1, domain.Monthly, domain.NewPeriod(2026, time.January), domain.NewPeriod(2026, time.August))

@@ -51,6 +51,13 @@ type SavingAllocation struct {
 	Currency    domain.Currency
 }
 
+// DeleteSavingAllocation permanently removes one allocation — the only way
+// to undo a mistaken entry, since allocations otherwise fold forward forever.
+func DeleteSavingAllocation(db *sql.DB, id int64) error {
+	_, err := db.Exec(`DELETE FROM saving_allocation WHERE id = ?`, id)
+	return err
+}
+
 func CreateSavingAllocation(db *sql.DB, a SavingAllocation) (SavingAllocation, error) {
 	res, err := db.Exec(`
 		INSERT INTO saving_allocation (period, destination, amount, currency)

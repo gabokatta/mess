@@ -12,5 +12,5 @@ func DefaultPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("store: resolve config dir: %w", err)
 	}
-	return filepath.Join(dir, "mes", "mess.db"), nil
+	return filepath.Join(dir, "mess", "mess.db"), nil
 }

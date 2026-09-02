@@ -11,6 +11,7 @@ import (
 	"charm.land/huh/v2"
 
 	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/project"
 )
 
@@ -47,16 +48,17 @@ func setProjectClosed(db *sql.DB, id int64, closedAt *time.Time) tea.Cmd {
 	}
 }
 
-func createProject(db *sql.DB, name string) tea.Cmd {
+func createProject(db *sql.DB, name string, period domain.Period) tea.Cmd {
 	return func() tea.Msg {
-		_, err := catalog.CreateProject(db, catalog.Project{Name: name})
+		_, err := catalog.CreateProject(db, catalog.Project{Name: name, Period: period})
 		return projectSavedMsg{err: err}
 	}
 }
 
 // newProjectFormValues is the huh-bound value for the new-project prompt.
 type newProjectFormValues struct {
-	name string
+	name   string
+	period string
 }
 
 type newProjectFormState struct {
@@ -69,13 +71,15 @@ func newProjectForm(theme Theme, width, height int) *newProjectFormState {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().Title("Project name").Value(&v.name).Validate(huh.ValidateNotEmpty()),
+			huh.NewInput().Title("Period").Description("blank = unassigned (YYYY-MM)").
+				Value(&v.period).Validate(validateOptionalPeriod),
 		),
 	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
 	return &newProjectFormState{form: form, values: v}
 }
 
-// startNewProject opens a name-only prompt; the project starts unassigned
-// and bodyless, filled in afterward with 'e'.
+// startNewProject opens a name+period prompt; the project starts bodyless,
+// filled in afterward with 'e'.
 func (m Model) startNewProject() (Model, tea.Cmd) {
 	m.newProject = newProjectForm(m.theme, m.width, m.height)
 	return m, m.newProject.form.Init()
@@ -100,8 +104,12 @@ func (m Model) forwardNewProject(msg tea.Msg) (Model, tea.Cmd) {
 	switch m.newProject.form.State {
 	case huh.StateCompleted:
 		name := m.newProject.values.name
+		var period domain.Period
+		if m.newProject.values.period != "" {
+			period, _ = domain.ParsePeriod(m.newProject.values.period)
+		}
 		m.newProject = nil
-		return m, tea.Batch(cmd, createProject(m.db, name))
+		return m, tea.Batch(cmd, createProject(m.db, name, period))
 	case huh.StateAborted:
 		m.newProject = nil
 		return m, nil
@@ -233,6 +241,76 @@ func (m Model) toggleProjectClosed() (Model, tea.Cmd) {
 	return m, setProjectClosed(m.db, row.project.ID, &now)
 }
 
+func setProjectPeriod(db *sql.DB, id int64, period domain.Period) tea.Cmd {
+	return func() tea.Msg {
+		return projectSavedMsg{err: catalog.SetProjectPeriod(db, id, period)}
+	}
+}
+
+// periodAssignFormValues is the huh-bound value for (re)assigning the
+// cursor's project to a period.
+type periodAssignFormValues struct {
+	period string
+}
+
+type periodAssignFormState struct {
+	form      *huh.Form
+	values    *periodAssignFormValues
+	projectID int64
+}
+
+func newPeriodAssignForm(theme Theme, width, height int, projectID int64, current domain.Period) *periodAssignFormState {
+	v := &periodAssignFormValues{period: periodOrBlank(current)}
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Period").Description("blank = unassigned (YYYY-MM)").
+				Value(&v.period).Validate(validateOptionalPeriod),
+		).Title("Assign period"),
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	return &periodAssignFormState{form: form, values: v, projectID: projectID}
+}
+
+func (m Model) startPeriodAssign() (Model, tea.Cmd) {
+	row, ok := m.cursorProjectRow()
+	if !ok {
+		return m, nil
+	}
+	m.periodAssignForm = newPeriodAssignForm(m.theme, m.width, m.height, row.project.ID, row.project.Period)
+	return m, m.periodAssignForm.form.Init()
+}
+
+func (m Model) updatePeriodAssignForm(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if msg.String() == "esc" {
+		m.periodAssignForm = nil
+		return m, nil
+	}
+	return m.forwardPeriodAssignForm(msg)
+}
+
+// forwardPeriodAssignForm drives the form with any tea.Msg — see
+// forwardConceptForm's comment for why.
+func (m Model) forwardPeriodAssignForm(msg tea.Msg) (Model, tea.Cmd) {
+	updated, cmd := m.periodAssignForm.form.Update(msg)
+	if f, ok := updated.(*huh.Form); ok {
+		m.periodAssignForm.form = f
+	}
+
+	switch m.periodAssignForm.form.State {
+	case huh.StateCompleted:
+		id := m.periodAssignForm.projectID
+		var period domain.Period
+		if m.periodAssignForm.values.period != "" {
+			period, _ = domain.ParsePeriod(m.periodAssignForm.values.period)
+		}
+		m.periodAssignForm = nil
+		return m, tea.Batch(cmd, setProjectPeriod(m.db, id, period))
+	case huh.StateAborted:
+		m.periodAssignForm = nil
+		return m, nil
+	}
+	return m, cmd
+}
+
 func (m Model) renderProjects() string {
 	if m.projectEditing != nil {
 		return m.renderProjectEditor()
@@ -248,6 +326,11 @@ func (m Model) renderProjects() string {
 	if m.newProject != nil {
 		b.WriteString("\n\n")
 		b.WriteString(m.newProject.form.View())
+		return b.String()
+	}
+	if m.periodAssignForm != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.periodAssignForm.form.View())
 		return b.String()
 	}
 

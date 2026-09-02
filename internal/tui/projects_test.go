@@ -273,6 +273,131 @@ func TestCompletingNewProjectFormCreatesUnassignedBodylessProject(t *testing.T) 
 	}
 }
 
+func TestCompletingNewProjectFormWithAPeriodAssignsIt(t *testing.T) {
+	db := openTestStore(t)
+	current := domain.NewPeriod(2026, time.September)
+	m := projectsModel(t, db, current)
+
+	updated, _ := m.Update(key("n"))
+	m = updated.(Model)
+	m.newProject.values.name = "Venezuela trip"
+	m.newProject.values.period = "2026-09"
+	m.newProject.form.State = huh.StateCompleted
+
+	updated, cmd := m.Update(keyEnter())
+	m = updated.(Model)
+	m = settle(t, m, cmd)
+
+	projects, err := catalog.Projects(db)
+	if err != nil {
+		t.Fatalf("catalog.Projects() unexpected error: %v", err)
+	}
+	if len(projects) != 1 || !projects[0].Period.Equal(current) {
+		t.Errorf("Projects() = %+v, want assigned to 2026-09", projects)
+	}
+}
+
+func TestPKeyOpensPeriodAssignFormPrefilledWithTheCurrentAssignment(t *testing.T) {
+	db := openTestStore(t)
+	current := domain.NewPeriod(2026, time.September)
+	seedProject(t, db, catalog.Project{Name: "Buy list", Period: current})
+	m := projectsModel(t, db, current)
+
+	updated, cmd := m.Update(key("p"))
+	m = updated.(Model)
+	if m.periodAssignForm == nil {
+		t.Fatal("periodAssignForm = nil, want a form opened")
+	}
+	if m.periodAssignForm.values.period != "2026-09" {
+		t.Errorf("values.period = %q, want prefilled with the current assignment", m.periodAssignForm.values.period)
+	}
+	m = settle(t, m, cmd)
+
+	content := m.View().Content
+	if !strings.Contains(content, "Assign period") {
+		t.Errorf("content = %q, want the form's title", content)
+	}
+}
+
+func TestCompletingPeriodAssignFormReassignsTheProject(t *testing.T) {
+	db := openTestStore(t)
+	current := domain.NewPeriod(2026, time.September)
+	p := seedProject(t, db, catalog.Project{Name: "Buy list"})
+	m := projectsModel(t, db, current)
+
+	updated, _ := m.Update(key("p"))
+	m = updated.(Model)
+	m.periodAssignForm.values.period = "2026-10"
+	m.periodAssignForm.form.State = huh.StateCompleted
+
+	updated, cmd := m.Update(keyEnter())
+	m = updated.(Model)
+	if m.periodAssignForm != nil {
+		t.Fatal("a completed form should close")
+	}
+	m = settle(t, m, cmd)
+
+	projects, err := catalog.Projects(db)
+	if err != nil {
+		t.Fatalf("catalog.Projects() unexpected error: %v", err)
+	}
+	if len(projects) != 1 || projects[0].ID != p.ID || !projects[0].Period.Equal(domain.NewPeriod(2026, time.October)) {
+		t.Fatalf("Projects() = %+v, want reassigned to 2026-10", projects)
+	}
+}
+
+func TestClearingPeriodAssignFormUnassignsTheProject(t *testing.T) {
+	db := openTestStore(t)
+	current := domain.NewPeriod(2026, time.September)
+	seedProject(t, db, catalog.Project{Name: "Buy list", Period: current})
+	m := projectsModel(t, db, current)
+
+	updated, _ := m.Update(key("p"))
+	m = updated.(Model)
+	m.periodAssignForm.values.period = ""
+	m.periodAssignForm.form.State = huh.StateCompleted
+
+	updated, cmd := m.Update(keyEnter())
+	m = updated.(Model)
+	m = settle(t, m, cmd)
+
+	projects, err := catalog.Projects(db)
+	if err != nil {
+		t.Fatalf("catalog.Projects() unexpected error: %v", err)
+	}
+	if len(projects) != 1 || !projects[0].Period.IsZero() {
+		t.Fatalf("Projects() = %+v, want unassigned", projects)
+	}
+}
+
+func TestEscCancelsPeriodAssignFormWithoutWriting(t *testing.T) {
+	db := openTestStore(t)
+	current := domain.NewPeriod(2026, time.September)
+	seedProject(t, db, catalog.Project{Name: "Buy list", Period: current})
+	m := projectsModel(t, db, current)
+
+	updated, _ := m.Update(key("p"))
+	m = updated.(Model)
+	m.periodAssignForm.values.period = "2026-01"
+
+	updated, cmd := m.Update(keyEsc())
+	m = updated.(Model)
+	if m.periodAssignForm != nil {
+		t.Error("esc should close the form")
+	}
+	if cmd != nil {
+		t.Error("esc should not write anything")
+	}
+
+	projects, err := catalog.Projects(db)
+	if err != nil {
+		t.Fatalf("catalog.Projects() unexpected error: %v", err)
+	}
+	if !projects[0].Period.Equal(current) {
+		t.Errorf("Projects()[0].Period = %v, want unchanged", projects[0].Period)
+	}
+}
+
 func TestEnterWithBlankNameKeepsFormOpen(t *testing.T) {
 	db := openTestStore(t)
 	current := domain.NewPeriod(2026, time.September)

@@ -57,7 +57,7 @@ func FindOrCreateCategory(db *sql.DB, name string) (Category, error) {
 
 // DefaultCategoryNames seeds a new database's category picker so it isn't
 // starting from nothing. FindOrCreateCategory covers anything beyond them.
-var DefaultCategoryNames = []string{"Income", "Home", "Utilities", "Cards", "Other"}
+var DefaultCategoryNames = []string{"Earnings", "Home", "Utilities", "Cards", "Other"}
 
 // EnsureDefaultCategories creates DefaultCategoryNames if the category
 // table is still empty. It never runs against a table that already has

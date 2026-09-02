@@ -42,6 +42,35 @@ func TestCreateAndListSavingAllocations(t *testing.T) {
 	}
 }
 
+func TestDeleteSavingAllocationRemovesOnlyThatRow(t *testing.T) {
+	db := openTestStore(t).DB()
+	sept := domain.NewPeriod(2026, time.September)
+
+	cash, err := CreateSavingAllocation(db, SavingAllocation{
+		Period: sept, Destination: Cash, Amount: decimal.NewFromInt(50000), Currency: domain.ARS,
+	})
+	if err != nil {
+		t.Fatalf("CreateSavingAllocation() unexpected error: %v", err)
+	}
+	if _, err := CreateSavingAllocation(db, SavingAllocation{
+		Period: sept, Destination: Invested, Amount: decimal.NewFromInt(100), Currency: domain.USD,
+	}); err != nil {
+		t.Fatalf("CreateSavingAllocation() unexpected error: %v", err)
+	}
+
+	if err := DeleteSavingAllocation(db, cash.ID); err != nil {
+		t.Fatalf("DeleteSavingAllocation() unexpected error: %v", err)
+	}
+
+	got, err := SavingAllocations(db, sept)
+	if err != nil {
+		t.Fatalf("SavingAllocations() unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0].Destination != Invested {
+		t.Fatalf("SavingAllocations() = %+v, want only the Invested row left", got)
+	}
+}
+
 func TestSavingAllocationsFiltersByPeriod(t *testing.T) {
 	db := openTestStore(t).DB()
 	sept := domain.NewPeriod(2026, time.September)

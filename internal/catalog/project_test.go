@@ -104,3 +104,34 @@ func TestSetProjectClosedSetsAndClears(t *testing.T) {
 		t.Fatalf("Projects() = %+v, want closed_at cleared", got)
 	}
 }
+
+func TestSetProjectPeriodAssignsAndClears(t *testing.T) {
+	db := openTestStore(t).DB()
+	p, err := CreateProject(db, Project{Name: "Someday list"})
+	if err != nil {
+		t.Fatalf("CreateProject() unexpected error: %v", err)
+	}
+
+	sept := domain.NewPeriod(2026, time.September)
+	if err := SetProjectPeriod(db, p.ID, sept); err != nil {
+		t.Fatalf("SetProjectPeriod() unexpected error: %v", err)
+	}
+	got, err := Projects(db)
+	if err != nil {
+		t.Fatalf("Projects() unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0].Period != sept {
+		t.Fatalf("Projects() = %+v, want the period assigned to 2026-09", got)
+	}
+
+	if err := SetProjectPeriod(db, p.ID, domain.Period{}); err != nil {
+		t.Fatalf("SetProjectPeriod() unexpected error: %v", err)
+	}
+	got, err = Projects(db)
+	if err != nil {
+		t.Fatalf("Projects() unexpected error: %v", err)
+	}
+	if len(got) != 1 || !got[0].Period.IsZero() {
+		t.Fatalf("Projects() = %+v, want the period cleared back to unassigned", got)
+	}
+}

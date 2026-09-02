@@ -66,6 +66,13 @@ func SetProjectClosed(db *sql.DB, id int64, closedAt *time.Time) error {
 	return err
 }
 
+// SetProjectPeriod assigns or reassigns which period a project is stamped
+// to. The zero Period clears it back to unassigned.
+func SetProjectPeriod(db *sql.DB, id int64, period domain.Period) error {
+	_, err := db.Exec(`UPDATE project SET period = ? WHERE id = ?`, nullablePeriod(period), id)
+	return err
+}
+
 func scanProject(row *sql.Rows) (Project, error) {
 	var (
 		p        Project

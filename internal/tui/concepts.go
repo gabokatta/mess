@@ -61,15 +61,23 @@ type conceptSavedMsg struct {
 	err error
 }
 
-// createConcept finds or creates category by name, then writes the concept
-// and its opening base amount as one Cmd.
-func createConcept(db *sql.DB, c catalog.Concept, category string, amount decimal.Decimal) tea.Cmd {
+// newCategorySentinel is the Category select's "+ New category" option —
+// the zero value, so a form built with no categories yet defaults there.
+const newCategorySentinel int64 = 0
+
+// createConcept resolves the category — an existing ID reuses it directly,
+// the sentinel finds-or-creates newCategory by name — then writes the
+// concept and its opening base amount as one Cmd.
+func createConcept(db *sql.DB, c catalog.Concept, categoryID int64, newCategory string, amount decimal.Decimal) tea.Cmd {
 	return func() tea.Msg {
-		cat, err := catalog.FindOrCreateCategory(db, category)
-		if err != nil {
-			return conceptSavedMsg{err: err}
+		if categoryID == newCategorySentinel {
+			cat, err := catalog.FindOrCreateCategory(db, newCategory)
+			if err != nil {
+				return conceptSavedMsg{err: err}
+			}
+			categoryID = cat.ID
 		}
-		c.CategoryID = cat.ID
+		c.CategoryID = categoryID
 		created, err := catalog.CreateConcept(db, c)
 		if err != nil {
 			return conceptSavedMsg{err: err}
@@ -79,11 +87,12 @@ func createConcept(db *sql.DB, c catalog.Concept, category string, amount decima
 }
 
 // conceptFormValues are the huh-bound values for the new-concept form. Kind,
-// currency and months are typed directly via Select/MultiSelect; everything
-// else stays a string, parsed once the form completes.
+// currency, category and months are typed directly via Select/MultiSelect;
+// everything else stays a string, parsed once the form completes.
 type conceptFormValues struct {
 	name        string
-	category    string
+	categoryID  int64
+	newCategory string
 	kind        catalog.ConceptKind
 	currency    domain.Currency
 	amount      string
@@ -101,29 +110,27 @@ type conceptFormState struct {
 	values *conceptFormValues
 }
 
-func newConceptForm(theme Theme, width, height int, current domain.Period) *conceptFormState {
+func newConceptForm(theme Theme, width, height int, current domain.Period, categories []catalog.Category) *conceptFormState {
 	v := &conceptFormValues{
 		months:     allMonths(),
 		activeFrom: current.String(),
 	}
-
-	monthOptions := make([]huh.Option[time.Month], 12)
-	for i := range 12 {
-		m := time.Month(i + 1)
-		monthOptions[i] = huh.NewOption(m.String(), m)
+	if len(categories) > 0 {
+		v.categoryID = categories[0].ID
 	}
+
+	categoryOptions := buildCategoryOptions(categories)
+	monthOptions := buildMonthOptions()
 
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().Title("Name").Value(&v.name).Validate(huh.ValidateNotEmpty()),
-			huh.NewInput().Title("Category").
-				Description("an existing name reuses it, a new one creates it").
-				Value(&v.category).Validate(huh.ValidateNotEmpty()),
+			huh.NewSelect[int64]().Title("Category").
+				Options(categoryOptions...).Value(&v.categoryID),
 			huh.NewSelect[catalog.ConceptKind]().Title("Kind").
 				Options(
 					huh.NewOption("Income", catalog.Income),
-					huh.NewOption("Fixed expense", catalog.FixedExpense),
-					huh.NewOption("Variable expense", catalog.VariableExpense),
+					huh.NewOption("Expense", catalog.Expense),
 				).Value(&v.kind),
 			huh.NewSelect[domain.Currency]().Title("Currency").
 				Options(huh.NewOption("ARS", domain.ARS), huh.NewOption("USD", domain.USD)).
@@ -140,9 +147,41 @@ func newConceptForm(theme Theme, width, height int, current domain.Period) *conc
 			huh.NewInput().Title("Active until").Description("blank = open-ended").
 				Value(&v.activeUntil).Validate(validateOptionalPeriod),
 		).Title("New concept"),
+		huh.NewGroup(
+			huh.NewInput().Title("New category name").Value(&v.newCategory).Validate(huh.ValidateNotEmpty()),
+		).Title("New category").WithHideFunc(func() bool { return newCategoryStepHidden(v.categoryID) }),
 	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
 
 	return &conceptFormState{form: form, values: v}
+}
+
+// newCategoryStepHidden reports whether the "New category name" step should
+// be skipped — true whenever Category picked an existing row rather than the
+// sentinel, so the prompt only ever appears when it's actually needed.
+func newCategoryStepHidden(categoryID int64) bool {
+	return categoryID != newCategorySentinel
+}
+
+// buildCategoryOptions is the Category select's option list, shared by the
+// new-concept and edit-concept forms: every existing category, plus the
+// New category sentinel.
+func buildCategoryOptions(categories []catalog.Category) []huh.Option[int64] {
+	options := make([]huh.Option[int64], 0, len(categories)+1)
+	for _, cat := range categories {
+		options = append(options, huh.NewOption(cat.Name, cat.ID))
+	}
+	return append(options, huh.NewOption("New category", newCategorySentinel))
+}
+
+// buildMonthOptions is the Months multi-select's option list, shared by
+// every form that picks a Cadence: concept, chore, and concept-edit.
+func buildMonthOptions() []huh.Option[time.Month] {
+	options := make([]huh.Option[time.Month], 12)
+	for i := range 12 {
+		m := time.Month(i + 1)
+		options[i] = huh.NewOption(m.String(), m)
+	}
+	return options
 }
 
 func allMonths() []time.Month {
@@ -154,7 +193,7 @@ func allMonths() []time.Month {
 }
 
 func (m Model) startNewConcept() (Model, tea.Cmd) {
-	m.conceptForm = newConceptForm(m.theme, m.width, m.height, m.period)
+	m.conceptForm = newConceptForm(m.theme, m.width, m.height, m.period, m.categories)
 	return m, m.conceptForm.form.Init()
 }
 
@@ -177,9 +216,9 @@ func (m Model) forwardConceptForm(msg tea.Msg) (Model, tea.Cmd) {
 
 	switch m.conceptForm.form.State {
 	case huh.StateCompleted:
-		c, category, amount := m.conceptForm.values.build()
+		c, categoryID, newCategory, amount := m.conceptForm.values.build()
 		m.conceptForm = nil
-		return m, tea.Batch(cmd, createConcept(m.db, c, category, amount))
+		return m, tea.Batch(cmd, createConcept(m.db, c, categoryID, newCategory, amount))
 	case huh.StateAborted:
 		m.conceptForm = nil
 		return m, nil
@@ -190,7 +229,7 @@ func (m Model) forwardConceptForm(msg tea.Msg) (Model, tea.Cmd) {
 // build converts the form's validated strings into a Concept. Every parse
 // here already passed the matching field's Validate func, so an error would
 // mean a bug in that pairing rather than bad user input.
-func (v *conceptFormValues) build() (catalog.Concept, string, decimal.Decimal) {
+func (v *conceptFormValues) build() (catalog.Concept, int64, string, decimal.Decimal) {
 	amount, _ := decimal.NewFromString(v.amount)
 
 	var share domain.Percent
@@ -214,12 +253,20 @@ func (v *conceptFormValues) build() (catalog.Concept, string, decimal.Decimal) {
 		Name: v.name, Kind: v.kind, Currency: v.currency, MonthMask: domain.NewCadence(v.months...),
 		Share: share, DueDay: dueDay, ActiveFrom: activeFrom, ActiveUntil: activeUntil,
 	}
-	return c, v.category, amount
+	return c, v.categoryID, v.newCategory, amount
 }
 
 func validateRequiredDecimal(s string) error {
 	if s == "" {
 		return fmt.Errorf("required")
+	}
+	_, err := decimal.NewFromString(s)
+	return err
+}
+
+func validateOptionalDecimal(s string) error {
+	if s == "" {
+		return nil
 	}
 	_, err := decimal.NewFromString(s)
 	return err
@@ -263,6 +310,40 @@ func validateOptionalPeriod(s string) error {
 	return err
 }
 
+// orderedConcepts is m.concepts in the same grouped-by-category order the
+// Concepts view renders, so cursor index and render index always agree.
+func (m Model) orderedConcepts() []catalog.Concept {
+	var out []catalog.Concept
+	for _, cat := range m.categories {
+		out = append(out, conceptsForCategory(m.concepts, cat.ID)...)
+	}
+	return out
+}
+
+func (m Model) moveConceptCursor(delta int) int {
+	n := len(m.orderedConcepts())
+	if n == 0 {
+		return 0
+	}
+	cursor := m.conceptCursor + delta
+	if cursor < 0 {
+		return 0
+	}
+	if cursor >= n {
+		return n - 1
+	}
+	return cursor
+}
+
+// cursorConcept reports the concept under the cursor, if the list isn't empty.
+func (m Model) cursorConcept() (catalog.Concept, bool) {
+	list := m.orderedConcepts()
+	if m.conceptCursor >= len(list) {
+		return catalog.Concept{}, false
+	}
+	return list[m.conceptCursor], true
+}
+
 func (m Model) renderConcepts() string {
 	var b strings.Builder
 	b.WriteString(m.theme.Muted.Render(m.view.String() + " · " + m.period.String()))
@@ -278,6 +359,11 @@ func (m Model) renderConcepts() string {
 		b.WriteString(m.conceptForm.form.View())
 		return b.String()
 	}
+	if m.conceptEditForm != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.conceptEditForm.form.View())
+		return b.String()
+	}
 
 	if len(m.concepts) == 0 {
 		b.WriteString("\n\n")
@@ -285,6 +371,7 @@ func (m Model) renderConcepts() string {
 		return b.String()
 	}
 
+	idx := 0
 	for _, cat := range m.categories {
 		group := conceptsForCategory(m.concepts, cat.ID)
 		if len(group) == 0 {
@@ -294,7 +381,8 @@ func (m Model) renderConcepts() string {
 		b.WriteString(m.theme.Title.Render(cat.Name))
 		for _, c := range group {
 			b.WriteString("\n")
-			b.WriteString(m.renderConceptRow(c))
+			b.WriteString(m.renderConceptRow(c, idx == m.conceptCursor))
+			idx++
 		}
 	}
 
@@ -315,7 +403,11 @@ func conceptsForCategory(concepts []catalog.Concept, categoryID int64) []catalog
 	return out
 }
 
-func (m Model) renderConceptRow(c catalog.Concept) string {
+func (m Model) renderConceptRow(c catalog.Concept, selected bool) string {
+	cursor := " "
+	if selected {
+		cursor = ">"
+	}
 	amount := "—"
 	if latest, ok := catalog.LatestBaseAmount(m.baseAmounts[c.ID]); ok {
 		amount = latest.Amount.StringFixed(2)
@@ -324,5 +416,5 @@ func (m Model) renderConceptRow(c catalog.Concept) string {
 	if !c.ActiveUntil.IsZero() {
 		active += " – " + c.ActiveUntil.String()
 	}
-	return fmt.Sprintf("  %-20s %-14s %s %12s  %s", c.Name, c.Kind, c.Currency, amount, active)
+	return fmt.Sprintf("%s %-20s %-14s %s %12s  %s", cursor, c.Name, c.Kind, c.Currency, amount, active)
 }

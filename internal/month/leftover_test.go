@@ -13,8 +13,8 @@ import (
 func TestAvailableToSaveIsConfirmedArsShare(t *testing.T) {
 	lines := []Line{
 		lineOf(catalog.Income, domain.ARS, 1000000, 100, true),
-		lineOf(catalog.FixedExpense, domain.ARS, 785000, 100, true),
-		lineOf(catalog.FixedExpense, domain.ARS, 50000, 100, false),
+		lineOf(catalog.Expense, domain.ARS, 785000, 100, true),
+		lineOf(catalog.Expense, domain.ARS, 50000, 100, false),
 	}
 
 	got := AvailableToSave(ResolveTotals(lines))
@@ -131,3 +131,52 @@ func TestMonthlyNetsARSZeroOpeningIsEmpty(t *testing.T) {
 }
 
 func ptr(d decimal.Decimal) *decimal.Decimal { return &d }
+
+func TestResolveGapIsAvailableMinusAllocatedInARS(t *testing.T) {
+	sept := domain.NewPeriod(2026, time.September)
+	allocations := []catalog.SavingAllocation{alloc(sept, catalog.Cash, 40000, domain.ARS)}
+
+	got, err := ResolveGap(amount(100000), sept, allocations, nil)
+	if err != nil {
+		t.Fatalf("ResolveGap() unexpected error: %v", err)
+	}
+	if !got.Equal(amount(60000)) {
+		t.Errorf("ResolveGap() = %s, want 60000 (100000 available - 40000 allocated)", got)
+	}
+}
+
+func TestResolveGapGoesNegativeWhenAllocationsExceedAvailable(t *testing.T) {
+	sept := domain.NewPeriod(2026, time.September)
+	allocations := []catalog.SavingAllocation{alloc(sept, catalog.Invested, 150000, domain.ARS)}
+
+	got, err := ResolveGap(amount(100000), sept, allocations, nil)
+	if err != nil {
+		t.Fatalf("ResolveGap() unexpected error: %v", err)
+	}
+	if !got.Equal(amount(-50000)) {
+		t.Errorf("ResolveGap() = %s, want -50000 (allocations exceeded the remainder)", got)
+	}
+}
+
+func TestResolveGapConvertsUsdAllocationsAtTheirOwnRate(t *testing.T) {
+	sept := domain.NewPeriod(2026, time.September)
+	allocations := []catalog.SavingAllocation{alloc(sept, catalog.Invested, 50, domain.USD)}
+	rates := []catalog.FxRate{{Period: sept, Value: amount(1200)}}
+
+	got, err := ResolveGap(amount(100000), sept, allocations, rates)
+	if err != nil {
+		t.Fatalf("ResolveGap() unexpected error: %v", err)
+	}
+	if !got.Equal(amount(40000)) {
+		t.Errorf("ResolveGap() = %s, want 40000 (100000 - 50 USD at 1200)", got)
+	}
+}
+
+func TestResolveGapFailsWithoutRateForUsdAllocation(t *testing.T) {
+	sept := domain.NewPeriod(2026, time.September)
+	allocations := []catalog.SavingAllocation{alloc(sept, catalog.Cash, 50, domain.USD)}
+
+	if _, err := ResolveGap(amount(100000), sept, allocations, nil); err == nil {
+		t.Error("ResolveGap() error = nil, want an error (no fx rate to convert the USD allocation)")
+	}
+}

@@ -14,7 +14,7 @@ func concept(id int64, mask domain.Cadence, from, until domain.Period) catalog.C
 	return catalog.Concept{
 		ID:          id,
 		Name:        "Alquiler",
-		Kind:        catalog.FixedExpense,
+		Kind:        catalog.Expense,
 		Currency:    domain.ARS,
 		MonthMask:   mask,
 		ActiveFrom:  from,

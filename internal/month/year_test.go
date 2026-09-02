@@ -17,7 +17,7 @@ func TestLoadYearResolvesEachPeriodOfTheYear(t *testing.T) {
 	rent, err := catalog.CreateConcept(db, catalog.Concept{
 		Name:       "Alquiler",
 		CategoryID: cat.ID,
-		Kind:       catalog.FixedExpense,
+		Kind:       catalog.Expense,
 		Currency:   domain.ARS,
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
@@ -64,7 +64,7 @@ func TestLoadYearCategoryTotalsSumExpensesOnlyInArs(t *testing.T) {
 	jan := domain.NewPeriod(2026, time.January)
 
 	rent, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Alquiler", CategoryID: servicios.ID, Kind: catalog.FixedExpense,
+		Name: "Alquiler", CategoryID: servicios.ID, Kind: catalog.Expense,
 		Currency: domain.ARS, MonthMask: domain.Monthly, ActiveFrom: jan,
 	})
 	if err != nil {
@@ -75,7 +75,7 @@ func TestLoadYearCategoryTotalsSumExpensesOnlyInArs(t *testing.T) {
 	}
 
 	internet, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Internet", CategoryID: servicios.ID, Kind: catalog.FixedExpense,
+		Name: "Internet", CategoryID: servicios.ID, Kind: catalog.Expense,
 		Currency: domain.ARS, MonthMask: domain.Monthly, ActiveFrom: jan,
 	})
 	if err != nil {
@@ -86,7 +86,7 @@ func TestLoadYearCategoryTotalsSumExpensesOnlyInArs(t *testing.T) {
 	}
 
 	vps, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "VPS", CategoryID: servicios.ID, Kind: catalog.FixedExpense,
+		Name: "VPS", CategoryID: servicios.ID, Kind: catalog.Expense,
 		Currency: domain.USD, MonthMask: domain.Monthly, ActiveFrom: jan,
 	})
 	if err != nil {

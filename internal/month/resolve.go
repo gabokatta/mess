@@ -94,6 +94,18 @@ func ResolveChores(period domain.Period, chores []catalog.Chore, entries map[int
 	return lines
 }
 
+// UnfinishedChores counts lines that never got marked done — the "Last
+// month: N unfinished" the following month's view surfaces.
+func UnfinishedChores(lines []ChoreLine) int {
+	n := 0
+	for _, l := range lines {
+		if !l.Done {
+			n++
+		}
+	}
+	return n
+}
+
 // Month is a period's resolved view: concept lines and chore lines, the two
 // kinds the month view merges.
 type Month struct {

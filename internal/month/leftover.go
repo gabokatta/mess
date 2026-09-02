@@ -51,6 +51,17 @@ func ResolveLeftoverPesos(period domain.Period, opening catalog.OpeningBalances,
 	return total, nil
 }
 
+// ResolveGap is available-to-save minus what period has actually allocated,
+// in ARS. Positive means unallocated remainder; negative means allocations
+// exceeded it — the allocation panel shows this rather than blocking it.
+func ResolveGap(available decimal.Decimal, period domain.Period, allocations []catalog.SavingAllocation, rates []catalog.FxRate) (decimal.Decimal, error) {
+	allocated, err := allocatedARS(period, allocations, rates)
+	if err != nil {
+		return decimal.Decimal{}, err
+	}
+	return available.Sub(allocated), nil
+}
+
 // allocatedARS sums the ARS-equivalent of every allocation recorded in
 // period, converting USD ones at that period's own rate.
 func allocatedARS(period domain.Period, allocations []catalog.SavingAllocation, rates []catalog.FxRate) (decimal.Decimal, error) {

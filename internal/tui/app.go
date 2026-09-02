@@ -46,40 +46,78 @@ type Model struct {
 	year     month.Year
 	yearErr  error
 
-	projects       []catalog.Project
-	projectsErr    error
-	projectCursor  int
-	showClosed     bool
-	projectEditing *projectEditState
-	projectSaveErr error
-	newProject     *newProjectFormState
+	allocations       []catalog.SavingAllocation
+	rates             []catalog.FxRate
+	allocationsErr    error
+	allocationForm    *allocationFormState
+	allocationSaveErr error
 
-	concepts       []catalog.Concept
-	categories     []catalog.Category
-	baseAmounts    map[int64][]catalog.BaseAmount
-	conceptsErr    error
-	conceptForm    *conceptFormState
-	conceptSaveErr error
+	incomeConfirmForm  *incomeConfirmFormState
+	incomeConfirmShown map[domain.Period]bool
+
+	choreForm    *choreFormState
+	choreSaveErr error
+
+	lastMonthUnfinished int
+	lastMonthChoresErr  error
+
+	projects         []catalog.Project
+	projectsErr      error
+	projectCursor    int
+	showClosed       bool
+	projectEditing   *projectEditState
+	projectSaveErr   error
+	newProject       *newProjectFormState
+	periodAssignForm *periodAssignFormState
+
+	concepts        []catalog.Concept
+	categories      []catalog.Category
+	baseAmounts     map[int64][]catalog.BaseAmount
+	conceptsErr     error
+	conceptCursor   int
+	conceptForm     *conceptFormState
+	conceptEditForm *conceptEditFormState
+	conceptSaveErr  error
 
 	settings        catalog.Settings
 	settingsErr     error
 	settingsForm    *settingsFormState
 	settingsSaveErr error
+
+	dbPath     string
+	exportForm *exportFormState
+	importForm *importFormState
+	backupMsg  string
+	backupErr  error
+
+	fxOverrideForm *fxOverrideFormState
+	fxOverrideErr  error
 }
 
 func New(db *sql.DB) Model {
 	return Model{
-		theme:    NewTheme(true),
-		db:       db,
-		fxClient: dolarapi.NewClient(),
-		period:   domain.PeriodFromTime(time.Now()),
+		theme:              NewTheme(true),
+		db:                 db,
+		fxClient:           dolarapi.NewClient(),
+		period:             domain.PeriodFromTime(time.Now()),
+		incomeConfirmShown: make(map[domain.Period]bool),
 	}
+}
+
+// WithDBPath attaches the on-disk database path, which the Settings view's
+// export/import actions need for backup.Snapshot but the rest of the app
+// never touches. Optional: tests that don't exercise backup can skip it.
+func (m Model) WithDBPath(path string) Model {
+	m.dbPath = path
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		tea.RequestBackgroundColor,
 		loadMonth(m.db, m.period),
+		loadAllocations(m.db, m.period),
+		loadLastMonthChores(m.db, m.period),
 		fillCurrentFxRate(m.db, m.fxClient, m.period),
 		loadYear(m.db, m.period.Year()),
 		loadProjects(m.db),
@@ -93,7 +131,7 @@ func (m Model) Init() tea.Cmd {
 func (m Model) loadView(v view) tea.Cmd {
 	switch v {
 	case viewMonth:
-		return loadMonth(m.db, m.period)
+		return tea.Batch(loadMonth(m.db, m.period), loadAllocations(m.db, m.period), loadLastMonthChores(m.db, m.period))
 	case viewYear:
 		return loadYear(m.db, m.period.Year())
 	case viewProjects:
@@ -113,11 +151,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.theme = NewTheme(msg.IsDark())
 
 	case monthLoadedMsg:
-		m.lines, m.chores, m.loadErr = msg.lines, msg.chores, msg.err
+		m.lines, m.loadErr = msg.lines, msg.err
+		m.chores = sortChoresByDueDay(msg.chores)
+		if !m.incomeConfirmShown[m.period] && msg.err == nil {
+			if form := m.maybeIncomeConfirmForm(); form != nil {
+				m.incomeConfirmShown[m.period] = true
+				m.incomeConfirmForm = form
+				return m, form.form.Init()
+			}
+		}
 
 	case entrySavedMsg:
 		m.saveErr = msg.err
 		return m, loadMonth(m.db, m.period)
+
+	case allocationsLoadedMsg:
+		m.allocations, m.rates, m.allocationsErr = msg.allocations, msg.rates, msg.err
+
+	case allocationSavedMsg:
+		m.allocationSaveErr = msg.err
+		return m, loadAllocations(m.db, m.period)
+
+	case lastMonthChoresLoadedMsg:
+		m.lastMonthUnfinished, m.lastMonthChoresErr = msg.unfinished, msg.err
+
+	case incomeConfirmedMsg:
+		return m, loadMonth(m.db, m.period)
+
+	case choreSavedMsg:
+		m.choreSaveErr = msg.err
+		return m, loadMonth(m.db, m.period)
+
+	case backupDoneMsg:
+		m.backupMsg, m.backupErr = msg.message, msg.err
+		return m, loadSettings(m.db)
+
+	case fxOverrideMsg:
+		m.fxOverrideErr = msg.err
 
 	case fxFilledMsg:
 		m.fxErr = msg.err
@@ -167,6 +237,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.newProject != nil {
 			return m.forwardNewProject(msg)
 		}
+		if m.allocationForm != nil {
+			return m.forwardAllocationForm(msg)
+		}
+		if m.incomeConfirmForm != nil {
+			return m.forwardIncomeConfirmForm(msg)
+		}
+		if m.exportForm != nil {
+			return m.forwardExportForm(msg)
+		}
+		if m.importForm != nil {
+			return m.forwardImportForm(msg)
+		}
+		if m.choreForm != nil {
+			return m.forwardChoreForm(msg)
+		}
+		if m.conceptEditForm != nil {
+			return m.forwardConceptEditForm(msg)
+		}
+		if m.fxOverrideForm != nil {
+			return m.forwardFxOverrideForm(msg)
+		}
+		if m.periodAssignForm != nil {
+			return m.forwardPeriodAssignForm(msg)
+		}
 	}
 	return m, nil
 }
@@ -187,6 +281,30 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.settingsForm != nil {
 		return m.updateSettingsForm(msg)
 	}
+	if m.allocationForm != nil {
+		return m.updateAllocationForm(msg)
+	}
+	if m.incomeConfirmForm != nil {
+		return m.updateIncomeConfirmForm(msg)
+	}
+	if m.exportForm != nil {
+		return m.updateExportForm(msg)
+	}
+	if m.importForm != nil {
+		return m.updateImportForm(msg)
+	}
+	if m.choreForm != nil {
+		return m.updateChoreForm(msg)
+	}
+	if m.conceptEditForm != nil {
+		return m.updateConceptEditForm(msg)
+	}
+	if m.fxOverrideForm != nil {
+		return m.updateFxOverrideForm(msg)
+	}
+	if m.periodAssignForm != nil {
+		return m.updatePeriodAssignForm(msg)
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -201,12 +319,24 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.cursor = m.moveCursor(1)
 		} else if m.view == viewProjects {
 			m.projectCursor = m.moveProjectCursor(1)
+		} else if m.view == viewConcepts {
+			m.conceptCursor = m.moveConceptCursor(1)
 		}
 	case "k", "up":
 		if m.view == viewMonth {
 			m.cursor = m.moveCursor(-1)
 		} else if m.view == viewProjects {
 			m.projectCursor = m.moveProjectCursor(-1)
+		} else if m.view == viewConcepts {
+			m.conceptCursor = m.moveConceptCursor(-1)
+		}
+	case "[":
+		if m.view == viewMonth {
+			return m.shiftPeriod(-1)
+		}
+	case "]":
+		if m.view == viewMonth {
+			return m.shiftPeriod(1)
 		}
 	case "space":
 		if m.view == viewMonth {
@@ -223,10 +353,16 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m.startProjectEdit()
 		} else if m.view == viewSettings {
 			return m.startSettingsEdit()
+		} else if m.view == viewConcepts {
+			return m.startConceptEdit()
 		}
 	case "c":
 		if m.view == viewProjects {
 			return m.toggleProjectClosed()
+		}
+	case "p":
+		if m.view == viewProjects {
+			return m.startPeriodAssign()
 		}
 	case "f":
 		if m.view == viewProjects {
@@ -238,6 +374,30 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			return m.startNewProject()
 		} else if m.view == viewConcepts {
 			return m.startNewConcept()
+		} else if m.view == viewMonth {
+			if _, onConceptLine := m.cursorLine(); !onConceptLine {
+				return m.startNewChore()
+			}
+		}
+	case "a":
+		if m.view == viewMonth {
+			return m.startAllocationPanel()
+		}
+	case "d":
+		if m.view == viewMonth {
+			return m.deleteCursorAllocation()
+		}
+	case "x":
+		if m.view == viewSettings {
+			return m.startExport()
+		}
+	case "i":
+		if m.view == viewSettings {
+			return m.startImport()
+		}
+	case "r":
+		if m.view == viewSettings {
+			return m.startFxOverride()
 		}
 	}
 	return m, nil
@@ -340,20 +500,22 @@ func (m Model) helpText() string {
 	if m.projectEditing != nil {
 		return "ctrl+s save · esc cancel"
 	}
-	if m.newProject != nil || m.conceptForm != nil || m.settingsForm != nil {
+	if m.newProject != nil || m.conceptForm != nil || m.settingsForm != nil || m.allocationForm != nil ||
+		m.incomeConfirmForm != nil || m.exportForm != nil || m.importForm != nil || m.choreForm != nil ||
+		m.conceptEditForm != nil || m.fxOverrideForm != nil || m.periodAssignForm != nil {
 		return "esc cancel"
 	}
 	if m.view == viewMonth {
-		return "j/k move · space tick · enter edit · tab/shift+tab switch · q quit"
+		return "j/k move · space tick · enter edit · a allocate · d delete allocation · [/] month · n new chore · tab/shift+tab switch · q quit"
 	}
 	if m.view == viewProjects {
-		return "j/k move · space tick · e edit · c close · f pending/closed · n new · tab/shift+tab switch · q quit"
+		return "j/k move · space tick · e edit · c close · p period · f pending/closed · n new · tab/shift+tab switch · q quit"
 	}
 	if m.view == viewConcepts {
-		return "n new · tab/shift+tab switch · q quit"
+		return "j/k move · e edit · n new · tab/shift+tab switch · q quit"
 	}
 	if m.view == viewSettings {
-		return "e edit · tab/shift+tab switch · q quit"
+		return "e edit · x export · i import · r fx rate · tab/shift+tab switch · q quit"
 	}
 	return "tab/shift+tab switch · q quit"
 }

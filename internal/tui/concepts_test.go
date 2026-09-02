@@ -50,7 +50,7 @@ func TestConceptsViewListsConceptsGroupedByCategory(t *testing.T) {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 	concept, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Alquiler", CategoryID: cat.ID, Kind: catalog.FixedExpense, Currency: domain.ARS,
+		Name: "Alquiler", CategoryID: cat.ID, Kind: catalog.Expense, Currency: domain.ARS,
 		MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(2026, 1),
 	})
 	if err != nil {
@@ -104,8 +104,8 @@ func TestCompletingFormCreatesConceptCategoryAndBaseAmount(t *testing.T) {
 	m = updated.(Model)
 	m = completeConceptForm(m, func(v *conceptFormValues) {
 		v.name = "Alquiler"
-		v.category = "Hogar"
-		v.kind = catalog.FixedExpense
+		v.newCategory = "Hogar"
+		v.kind = catalog.Expense
 		v.currency = domain.ARS
 		v.amount = "785000"
 		v.dueDay = "10"
@@ -129,7 +129,7 @@ func TestCompletingFormCreatesConceptCategoryAndBaseAmount(t *testing.T) {
 		t.Fatalf("Concepts() returned %d rows, want 1", len(concepts))
 	}
 	c := concepts[0]
-	if c.Name != "Alquiler" || c.Kind != catalog.FixedExpense || c.Currency != domain.ARS || c.DueDay != 10 {
+	if c.Name != "Alquiler" || c.Kind != catalog.Expense || c.Currency != domain.ARS || c.DueDay != 10 {
 		t.Errorf("Concepts()[0] = %+v, want the entered fields", c)
 	}
 	if c.MonthMask != domain.Monthly {
@@ -162,7 +162,7 @@ func TestCompletingFormWithDeselectedMonthsWritesPartialCadence(t *testing.T) {
 	m = updated.(Model)
 	m = completeConceptForm(m, func(v *conceptFormValues) {
 		v.name = "Aguinaldo"
-		v.category = "Ingresos"
+		v.newCategory = "Ingresos"
 		v.kind = catalog.Income
 		v.currency = domain.ARS
 		v.amount = "500000"
@@ -180,6 +180,119 @@ func TestCompletingFormWithDeselectedMonthsWritesPartialCadence(t *testing.T) {
 	}
 	if len(concepts) != 1 || concepts[0].MonthMask != domain.Aguinaldo {
 		t.Errorf("Concepts() = %+v, want MonthMask = Aguinaldo (June + December only)", concepts)
+	}
+}
+
+func TestNewConceptFormDefaultsCategoryToTheFirstExisting(t *testing.T) {
+	db := openTestStore(t)
+	cat, err := catalog.CreateCategory(db, "Hogar", 0)
+	if err != nil {
+		t.Fatalf("CreateCategory() unexpected error: %v", err)
+	}
+	m := conceptsModel(t, db, domain.NewPeriod(2026, time.September))
+
+	updated, _ := m.Update(key("n"))
+	m = updated.(Model)
+	if m.conceptForm.values.categoryID != cat.ID {
+		t.Errorf("values.categoryID = %d, want %d (the existing category, not the New category sentinel)", m.conceptForm.values.categoryID, cat.ID)
+	}
+}
+
+func TestCompletingFormWithAnExistingCategorySelectedReusesItById(t *testing.T) {
+	db := openTestStore(t)
+	cat, err := catalog.CreateCategory(db, "Hogar", 0)
+	if err != nil {
+		t.Fatalf("CreateCategory() unexpected error: %v", err)
+	}
+	m := conceptsModel(t, db, domain.NewPeriod(2026, time.September))
+
+	updated, _ := m.Update(key("n"))
+	m = updated.(Model)
+	m = completeConceptForm(m, func(v *conceptFormValues) {
+		v.name = "Alquiler"
+		v.categoryID = cat.ID
+		v.kind = catalog.Expense
+		v.currency = domain.ARS
+		v.amount = "785000"
+		v.activeFrom = "2026-01"
+	})
+
+	updated, cmd := m.Update(keyEnter())
+	m = updated.(Model)
+	m = settle(t, m, cmd)
+
+	categories, err := catalog.Categories(db)
+	if err != nil {
+		t.Fatalf("catalog.Categories() unexpected error: %v", err)
+	}
+	if len(categories) != 1 {
+		t.Fatalf("Categories() = %+v, want the existing Hogar row reused, not a duplicate", categories)
+	}
+
+	concepts, err := catalog.Concepts(db)
+	if err != nil {
+		t.Fatalf("catalog.Concepts() unexpected error: %v", err)
+	}
+	if len(concepts) != 1 || concepts[0].CategoryID != cat.ID {
+		t.Errorf("Concepts()[0].CategoryID = %d, want %d", concepts[0].CategoryID, cat.ID)
+	}
+}
+
+func TestNewCategoryStepHiddenUnlessCategoryIsTheSentinel(t *testing.T) {
+	if !newCategoryStepHidden(42) {
+		t.Error("newCategoryStepHidden(42) = false, want true (an existing category was picked)")
+	}
+	if newCategoryStepHidden(newCategorySentinel) {
+		t.Error("newCategoryStepHidden(sentinel) = true, want false (New category was picked)")
+	}
+}
+
+func TestCompletingFormWithNewCategoryPromptsForItsName(t *testing.T) {
+	db := openTestStore(t)
+	if _, err := catalog.CreateCategory(db, "Hogar", 0); err != nil {
+		t.Fatalf("CreateCategory() unexpected error: %v", err)
+	}
+	m := conceptsModel(t, db, domain.NewPeriod(2026, time.September))
+
+	updated, _ := m.Update(key("n"))
+	m = updated.(Model)
+	m = completeConceptForm(m, func(v *conceptFormValues) {
+		v.name = "Aguinaldo"
+		v.categoryID = newCategorySentinel
+		v.newCategory = "Ingresos"
+		v.kind = catalog.Income
+		v.currency = domain.ARS
+		v.amount = "500000"
+		v.activeFrom = "2026-01"
+	})
+
+	updated, cmd := m.Update(keyEnter())
+	m = updated.(Model)
+	m = settle(t, m, cmd)
+
+	categories, err := catalog.Categories(db)
+	if err != nil {
+		t.Fatalf("catalog.Categories() unexpected error: %v", err)
+	}
+	if len(categories) != 2 {
+		t.Fatalf("Categories() = %+v, want Hogar plus the newly created Ingresos", categories)
+	}
+
+	concepts, err := catalog.Concepts(db)
+	if err != nil {
+		t.Fatalf("catalog.Concepts() unexpected error: %v", err)
+	}
+	if len(concepts) != 1 || concepts[0].Name != "Aguinaldo" {
+		t.Fatalf("Concepts() = %+v, want Aguinaldo created", concepts)
+	}
+	var got catalog.Category
+	for _, c := range categories {
+		if c.ID == concepts[0].CategoryID {
+			got = c
+		}
+	}
+	if got.Name != "Ingresos" {
+		t.Errorf("Concepts()[0]'s category = %+v, want the new Ingresos category", got)
 	}
 }
 

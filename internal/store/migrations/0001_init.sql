@@ -8,7 +8,7 @@ CREATE TABLE concept (
     id           INTEGER PRIMARY KEY,
     name         TEXT NOT NULL,
     category_id  INTEGER NOT NULL REFERENCES category (id),
-    kind         TEXT NOT NULL CHECK (kind IN ('Income', 'FixedExpense', 'VariableExpense')),
+    kind         TEXT NOT NULL CHECK (kind IN ('Income', 'Expense')),
     currency     TEXT NOT NULL CHECK (currency IN ('ARS', 'USD')),
     month_mask   INTEGER NOT NULL,
     share        TEXT NOT NULL DEFAULT '1',

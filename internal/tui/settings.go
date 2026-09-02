@@ -161,6 +161,21 @@ func (m Model) renderSettings() string {
 		b.WriteString(m.settingsForm.form.View())
 		return b.String()
 	}
+	if m.exportForm != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.exportForm.form.View())
+		return b.String()
+	}
+	if m.importForm != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.importForm.form.View())
+		return b.String()
+	}
+	if m.fxOverrideForm != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.fxOverrideForm.form.View())
+		return b.String()
+	}
 
 	fmt.Fprintf(&b, "\n\n  fx house                       %s", m.settings.FxHouse)
 	fmt.Fprintf(&b, "\n  opening period                 %s", periodDisplay(m.settings.Opening.Period))
@@ -172,6 +187,11 @@ func (m Model) renderSettings() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Muted.Render("failed to save: " + m.settingsSaveErr.Error()))
 	}
+	if m.fxOverrideErr != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Muted.Render("failed to set fx rate: " + m.fxOverrideErr.Error()))
+	}
+	b.WriteString(m.renderBackupStatus())
 	return b.String()
 }
 

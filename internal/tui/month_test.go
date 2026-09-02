@@ -22,7 +22,7 @@ func seedConcept(t *testing.T, db *sql.DB, name string, base int64) catalog.Conc
 	c, err := catalog.CreateConcept(db, catalog.Concept{
 		Name:       name,
 		CategoryID: cat.ID,
-		Kind:       catalog.FixedExpense,
+		Kind:       catalog.Expense,
 		Currency:   domain.ARS,
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
@@ -289,7 +289,7 @@ func TestMonthViewRendersProjectedAndConfirmedTotals(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
 
-	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.FixedExpense, Currency: domain.ARS, Share: domain.NewPercent(50)}
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS, Share: domain.NewPercent(50)}
 	salary := catalog.Concept{Name: "Sueldo", Kind: catalog.Income, Currency: domain.ARS, Share: domain.NewPercent(100)}
 	lines := []month.Line{
 		{Concept: salary, Amount: amountFor(t, "1000000"), Confirmed: true, Done: true},
@@ -311,7 +311,7 @@ func TestMonthViewRendersChoresGroup(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
 
-	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.FixedExpense, Currency: domain.ARS}
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS}
 	trash := catalog.Chore{Name: "Sacar la basura"}
 	updated, _ := m.Update(monthLoadedMsg{
 		lines:  []month.Line{{Concept: rent, Amount: amountFor(t, "785000"), Confirmed: false, Done: false}},

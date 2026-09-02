@@ -34,7 +34,7 @@ func TestYearViewRendersGridCategoriesAndSeries(t *testing.T) {
 
 	jan := domain.NewPeriod(2026, time.January)
 	feb := domain.NewPeriod(2026, time.February)
-	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.FixedExpense, Currency: domain.ARS}
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS}
 	servicios := catalog.Category{Name: "Servicios"}
 
 	year := month.Year{

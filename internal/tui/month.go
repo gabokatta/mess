@@ -3,7 +3,9 @@ package tui
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -16,7 +18,7 @@ import (
 )
 
 // monthGroups is the display order for the month view's sections.
-var monthGroups = [...]catalog.ConceptKind{catalog.Income, catalog.FixedExpense, catalog.VariableExpense}
+var monthGroups = [...]catalog.ConceptKind{catalog.Income, catalog.Expense}
 
 // monthLoadedMsg is the result of loadMonth's Cmd, delivered back to Update
 // once the database read completes.
@@ -76,10 +78,10 @@ func (m Model) orderedLines() []month.Line {
 	return lines
 }
 
-// rowCount is every cursor position in the month view: concept lines then
-// chores, the same order renderMonth walks them in.
+// rowCount is every cursor position in the month view: concept lines, then
+// chores, then allocations — the same order renderMonth walks them in.
 func (m Model) rowCount() int {
-	return len(m.orderedLines()) + len(m.chores)
+	return len(m.orderedLines()) + len(m.chores) + len(m.allocations)
 }
 
 func (m Model) moveCursor(delta int) int {
@@ -108,13 +110,23 @@ func (m Model) cursorLine() (month.Line, bool) {
 }
 
 // cursorChore reports the chore under the cursor, if the cursor is on one
-// rather than a concept line.
+// rather than a concept line or an allocation.
 func (m Model) cursorChore() (month.ChoreLine, bool) {
 	idx := m.cursor - len(m.orderedLines())
 	if idx < 0 || idx >= len(m.chores) {
 		return month.ChoreLine{}, false
 	}
 	return m.chores[idx], true
+}
+
+// cursorAllocation reports the allocation under the cursor, if the cursor
+// is on one rather than a concept line or a chore.
+func (m Model) cursorAllocation() (catalog.SavingAllocation, bool) {
+	idx := m.cursor - len(m.orderedLines()) - len(m.chores)
+	if idx < 0 || idx >= len(m.allocations) {
+		return catalog.SavingAllocation{}, false
+	}
+	return m.allocations[idx], true
 }
 
 // toggleDone flips the done state under the cursor. Ticking a concept line
@@ -187,7 +199,7 @@ func (m Model) commitEdit() (Model, tea.Cmd) {
 
 func (m Model) renderMonth() string {
 	var b strings.Builder
-	b.WriteString(m.theme.Muted.Render(m.view.String() + " · " + m.period.String()))
+	b.WriteString(m.theme.Muted.Render(m.view.String() + " · " + m.period.String() + " · " + currentPeriodStatus(m.period).String()))
 
 	if m.loadErr != nil {
 		b.WriteString("\n\n")
@@ -198,10 +210,26 @@ func (m Model) renderMonth() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Muted.Render("fx quote unavailable: " + m.fxErr.Error()))
 	}
+	if m.choreForm != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.choreForm.form.View())
+		return b.String()
+	}
 	assigned := projectsForPeriod(m.projects, m.period)
-	if len(m.lines) == 0 && len(m.chores) == 0 && len(assigned) == 0 {
+	if len(m.lines) == 0 && len(m.chores) == 0 && len(assigned) == 0 && m.choreSaveErr == nil {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Muted.Render("no concepts yet — add some in the Concepts view"))
+		return b.String()
+	}
+
+	if m.incomeConfirmForm != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.incomeConfirmForm.form.View())
+		return b.String()
+	}
+	if m.allocationForm != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.allocationForm.form.View())
 		return b.String()
 	}
 
@@ -233,6 +261,18 @@ func (m Model) renderMonth() string {
 			idx++
 		}
 	}
+	b.WriteString("\n\n")
+	b.WriteString(m.renderAllocations(idx))
+	idx += len(m.allocations)
+
+	if m.lastMonthChoresErr != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Muted.Render("last month's chores unavailable: " + m.lastMonthChoresErr.Error()))
+	} else {
+		b.WriteString("\n\n")
+		fmt.Fprintf(&b, "Last month: %d unfinished", m.lastMonthUnfinished)
+	}
+
 	if len(assigned) > 0 {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Title.Render("Projects"))
@@ -244,6 +284,10 @@ func (m Model) renderMonth() string {
 	if m.saveErr != nil {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Muted.Render("failed to save: " + m.saveErr.Error()))
+	}
+	if m.choreSaveErr != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Muted.Render("failed to save chore: " + m.choreSaveErr.Error()))
 	}
 	return b.String()
 }
@@ -287,6 +331,8 @@ func projectsForPeriod(projects []catalog.Project, period domain.Period) []catal
 	return assigned
 }
 
+// linesForKind filters to kind and orders by due day ascending, unset (0)
+// last — SliceStable so ties keep the catalog's own sort_order/name order.
 func linesForKind(lines []month.Line, kind catalog.ConceptKind) []month.Line {
 	var out []month.Line
 	for _, l := range lines {
@@ -294,7 +340,32 @@ func linesForKind(lines []month.Line, kind catalog.ConceptKind) []month.Line {
 			out = append(out, l)
 		}
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return dueDayRank(out[i].Concept.DueDay) < dueDayRank(out[j].Concept.DueDay)
+	})
 	return out
+}
+
+// dueDayRank sorts after every real day 1-31, so a concept with no due day
+// falls to the end of its group instead of jumping the queue at "day 0".
+func dueDayRank(dueDay int) int {
+	if dueDay == 0 {
+		return 32
+	}
+	return dueDay
+}
+
+// isLate reports whether l's due day has passed within period, and only
+// within the actual current calendar period — a past period is closed by
+// construction, not late, and a future one hasn't arrived yet.
+func isLate(l month.Line, period domain.Period) bool {
+	if l.Concept.DueDay == 0 || l.Done {
+		return false
+	}
+	if currentPeriodStatus(period) != periodCurrent {
+		return false
+	}
+	return time.Now().Day() > l.Concept.DueDay
 }
 
 func (m Model) renderLine(l month.Line, selected bool) string {
@@ -313,8 +384,12 @@ func (m Model) renderLine(l month.Line, selected bool) string {
 	if !l.Confirmed {
 		status = m.theme.Muted.Render("projected")
 	}
-	return fmt.Sprintf("%s [%s] %-20s %s %12s  %s", cursor, check, l.Concept.Name, l.Concept.Currency,
+	line := fmt.Sprintf("%s [%s] %-20s %s %12s  %s", cursor, check, l.Concept.Name, l.Concept.Currency,
 		l.Amount.StringFixed(2), status)
+	if isLate(l, m.period) {
+		line += "  " + m.theme.Muted.Render("late")
+	}
+	return line
 }
 
 func (m Model) renderChoreLine(c month.ChoreLine, selected bool) string {
@@ -326,5 +401,32 @@ func (m Model) renderChoreLine(c month.ChoreLine, selected bool) string {
 	if c.Done {
 		check = "x"
 	}
-	return fmt.Sprintf("%s [%s] %s", cursor, check, c.Chore.Name)
+	line := fmt.Sprintf("%s [%s] %s", cursor, check, c.Chore.Name)
+	if isChoreLate(c, m.period) {
+		line += "  " + m.theme.Muted.Render("late")
+	}
+	return line
+}
+
+// sortChoresByDueDay orders by due day ascending, unset (0) last —
+// SliceStable so ties keep the catalog's own sort_order/name order, the
+// same rule linesForKind applies to concept lines.
+func sortChoresByDueDay(chores []month.ChoreLine) []month.ChoreLine {
+	sorted := make([]month.ChoreLine, len(chores))
+	copy(sorted, chores)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return dueDayRank(sorted[i].Chore.DueDay) < dueDayRank(sorted[j].Chore.DueDay)
+	})
+	return sorted
+}
+
+// isChoreLate is isLate's counterpart for chores.
+func isChoreLate(c month.ChoreLine, period domain.Period) bool {
+	if c.Chore.DueDay == 0 || c.Done {
+		return false
+	}
+	if currentPeriodStatus(period) != periodCurrent {
+		return false
+	}
+	return time.Now().Day() > c.Chore.DueDay
 }

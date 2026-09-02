@@ -72,7 +72,7 @@ func TestOpenEnforcesForeignKeys(t *testing.T) {
 
 	_, err = s.DB().Exec(`INSERT INTO concept
 		(name, category_id, kind, currency, month_mask, active_from)
-		VALUES ('Alquiler', 999, 'FixedExpense', 'ARS', 4095, '2026-01')`)
+		VALUES ('Alquiler', 999, 'Expense', 'ARS', 4095, '2026-01')`)
 	if err == nil {
 		t.Error("insert with dangling category_id should have failed foreign key check")
 	}

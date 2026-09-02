@@ -31,7 +31,7 @@ func TestLoadResolvesCatalogAgainstStore(t *testing.T) {
 	rent, err := catalog.CreateConcept(db, catalog.Concept{
 		Name:       "Alquiler",
 		CategoryID: cat.ID,
-		Kind:       catalog.FixedExpense,
+		Kind:       catalog.Expense,
 		Currency:   domain.ARS,
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),

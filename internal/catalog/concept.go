@@ -13,18 +13,15 @@ type ConceptKind int
 
 const (
 	Income ConceptKind = iota
-	FixedExpense
-	VariableExpense
+	Expense
 )
 
 func (k ConceptKind) String() string {
 	switch k {
 	case Income:
 		return "Income"
-	case FixedExpense:
-		return "FixedExpense"
-	case VariableExpense:
-		return "VariableExpense"
+	case Expense:
+		return "Expense"
 	default:
 		return fmt.Sprintf("ConceptKind(%d)", int(k))
 	}
@@ -34,10 +31,8 @@ func ParseConceptKind(s string) (ConceptKind, error) {
 	switch s {
 	case "Income":
 		return Income, nil
-	case "FixedExpense":
-		return FixedExpense, nil
-	case "VariableExpense":
-		return VariableExpense, nil
+	case "Expense":
+		return Expense, nil
 	default:
 		return 0, fmt.Errorf("catalog: invalid concept kind %q", s)
 	}
