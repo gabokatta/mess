@@ -170,11 +170,11 @@ func TestMonthViewRendersGroupedLines(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
 
-	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS}
-	salary := catalog.Concept{Name: "Sueldo", Kind: catalog.Income, Currency: domain.ARS}
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS}}
+	salary := catalog.Concept{Name: "Sueldo", Kind: catalog.Income, Money: &catalog.MoneyDetails{Currency: domain.ARS}}
 	lines := []month.Line{
-		{Concept: salary, Amount: amountFor(t, "450000"), Confirmed: true, Done: true},
-		{Concept: rent, Amount: amountFor(t, "785000"), Confirmed: false, Done: false},
+		{Concept: salary, Money: &month.LineMoney{Amount: amountFor(t, "450000"), Confirmed: true}, Done: true},
+		{Concept: rent, Money: &month.LineMoney{Amount: amountFor(t, "785000"), Confirmed: false}, Done: false},
 	}
 
 	updated, _ := m.Update(monthLoadedMsg{lines: lines})

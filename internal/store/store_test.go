@@ -17,7 +17,7 @@ func TestOpenCreatesSchema(t *testing.T) {
 
 	tables := []string{
 		"category", "concept", "base_amount", "month_entry",
-		"chore", "chore_entry", "saving_allocation", "project",
+		"saving_allocation", "list",
 		"fx_rate", "settings",
 	}
 	for _, name := range tables {

@@ -9,12 +9,11 @@ import (
 )
 
 // shiftPeriod moves the shown period by delta months and reloads everything
-// that reads off it — both panes' cursors reset since the rows they pointed
-// at belong to the period being left.
+// that reads off it — the cursor resets since the row it pointed at belongs
+// to the period being left.
 func (m Model) shiftPeriod(delta int) (Model, tea.Cmd) {
 	m.period = m.period.AddMonths(delta)
-	m.financeCursor = 0
-	m.choreCursor = 0
+	m.cursor = 0
 	return m, tea.Batch(
 		loadMonth(m.db, m.period),
 		loadAllocations(m.db, m.period),

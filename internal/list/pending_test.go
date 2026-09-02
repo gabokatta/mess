@@ -1,4 +1,4 @@
-package project
+package list
 
 import (
 	"testing"
@@ -10,12 +10,12 @@ import (
 
 func TestPendingOrdersOverdueThenCurrentThenUnassigned(t *testing.T) {
 	current := domain.NewPeriod(2026, time.September)
-	overdue := catalog.Project{Name: "Buy list", Period: domain.NewPeriod(2026, time.July)}
-	ongoing := catalog.Project{Name: "Itinerary", Period: current}
-	unassigned := catalog.Project{Name: "Someday", Period: domain.Period{}}
-	closed := catalog.Project{Name: "Done already", Period: overdue.Period, ClosedAt: closedNow()}
+	overdue := catalog.List{Name: "Buy list", Period: domain.NewPeriod(2026, time.July)}
+	ongoing := catalog.List{Name: "Itinerary", Period: current}
+	unassigned := catalog.List{Name: "Someday", Period: domain.Period{}}
+	closed := catalog.List{Name: "Done already", Period: overdue.Period, ClosedAt: closedNow()}
 
-	got := Pending([]catalog.Project{unassigned, closed, ongoing, overdue}, current)
+	got := Pending([]catalog.List{unassigned, closed, ongoing, overdue}, current)
 
 	want := []string{"Buy list", "Itinerary", "Someday"}
 	if len(got) != len(want) {
@@ -30,21 +30,21 @@ func TestPendingOrdersOverdueThenCurrentThenUnassigned(t *testing.T) {
 
 func TestPendingOrdersOldestOverdueFirst(t *testing.T) {
 	current := domain.NewPeriod(2026, time.September)
-	july := catalog.Project{Name: "July", Period: domain.NewPeriod(2026, time.July)}
-	august := catalog.Project{Name: "August", Period: domain.NewPeriod(2026, time.August)}
+	july := catalog.List{Name: "July", Period: domain.NewPeriod(2026, time.July)}
+	august := catalog.List{Name: "August", Period: domain.NewPeriod(2026, time.August)}
 
-	got := Pending([]catalog.Project{august, july}, current)
+	got := Pending([]catalog.List{august, july}, current)
 
 	if len(got) != 2 || got[0].Name != "July" || got[1].Name != "August" {
 		t.Errorf("Pending() = %+v, want July before August", got)
 	}
 }
 
-func TestClosedReturnsOnlyClosedProjects(t *testing.T) {
-	open := catalog.Project{Name: "Open"}
-	closed := catalog.Project{Name: "Closed", ClosedAt: closedNow()}
+func TestClosedReturnsOnlyClosedLists(t *testing.T) {
+	open := catalog.List{Name: "Open"}
+	closed := catalog.List{Name: "Closed", ClosedAt: closedNow()}
 
-	got := Closed([]catalog.Project{open, closed})
+	got := Closed([]catalog.List{open, closed})
 
 	if len(got) != 1 || got[0].Name != "Closed" {
 		t.Errorf("Closed() = %+v, want only Closed", got)

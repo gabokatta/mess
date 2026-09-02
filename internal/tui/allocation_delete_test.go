@@ -14,11 +14,13 @@ func TestCursorReachesAllocationsAfterConceptLines(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
 	m.period = period
-	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS}
-	trash := catalog.Chore{Name: "Sacar la basura"}
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS}}
+	trash := catalog.Concept{Name: "Sacar la basura", Kind: catalog.Chore}
 	updated, _ := m.Update(monthLoadedMsg{
-		lines:  []month.Line{{Concept: rent, Amount: amountFor(t, "785000")}},
-		chores: []month.ChoreLine{{Chore: trash}},
+		lines: []month.Line{
+			{Concept: rent, Money: &month.LineMoney{Amount: amountFor(t, "785000")}},
+			{Concept: trash},
+		},
 	})
 	m = updated.(Model)
 	updated, _ = m.Update(allocationsLoadedMsg{allocations: []catalog.SavingAllocation{
@@ -28,8 +30,10 @@ func TestCursorReachesAllocationsAfterConceptLines(t *testing.T) {
 
 	updated, _ = m.Update(key("j"))
 	m = updated.(Model)
-	if m.financeCursor != 1 {
-		t.Fatalf("financeCursor = %d, want 1 (the allocation row, right after the one concept line — Chores isn't in this pane's cursor space)", m.financeCursor)
+	updated, _ = m.Update(key("j"))
+	m = updated.(Model)
+	if m.cursor != 2 {
+		t.Fatalf("cursor = %d, want 2 (the allocation row, right after Alquiler and the chore — one shared cursor space)", m.cursor)
 	}
 	a, ok := m.cursorAllocation()
 	if !ok || a.ID != 1 {

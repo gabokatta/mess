@@ -19,9 +19,10 @@ import (
 var fullShareFraction = decimal.NewFromInt(1)
 
 // updateConcept resolves the category the same way createConcept does, then
-// writes the concept's fields and a base amount effective from
-// amountEffective — a new dated row if that date is new, an in-place
-// correction if it matches an existing one.
+// writes the concept's fields and, for a money concept, a base amount
+// effective from amountEffective — a new dated row if that date is new, an
+// in-place correction if it matches an existing one. A Chore has no base
+// amount to write.
 func updateConcept(db *sql.DB, c catalog.Concept, categoryID int64, newCategory string, amount decimal.Decimal, amountEffective domain.Period) tea.Cmd {
 	return func() tea.Msg {
 		if categoryID == newCategorySentinel {
@@ -34,6 +35,9 @@ func updateConcept(db *sql.DB, c catalog.Concept, categoryID int64, newCategory 
 		c.CategoryID = categoryID
 		if err := catalog.UpdateConcept(db, c); err != nil {
 			return conceptSavedMsg{err: err}
+		}
+		if c.Money == nil {
+			return conceptSavedMsg{}
 		}
 		return conceptSavedMsg{err: catalog.SetBaseAmount(db, c.ID, amountEffective, amount)}
 	}
@@ -70,18 +74,20 @@ func newConceptEditForm(theme Theme, width, height int, c catalog.Concept, categ
 		name:       c.Name,
 		categoryID: c.CategoryID,
 		kind:       c.Kind,
-		currency:   c.Currency,
 		months:     c.MonthMask.Months(),
 		activeFrom: c.ActiveFrom.String(),
+	}
+	if c.Money != nil {
+		v.currency = c.Money.Currency
+		if !c.Money.Share.Fraction().Equal(fullShareFraction) {
+			v.share = c.Money.Share.Fraction().Mul(decimal.NewFromInt(100)).String()
+		}
 	}
 	if hasBase {
 		v.amount = latest.Amount.StringFixed(2)
 		v.amountEffective = latest.EffectiveFrom.String()
 	} else {
 		v.amountEffective = c.ActiveFrom.String()
-	}
-	if !c.Share.Fraction().Equal(fullShareFraction) {
-		v.share = c.Share.Fraction().Mul(decimal.NewFromInt(100)).String()
 	}
 	if c.DueDay != 0 {
 		v.dueDay = strconv.Itoa(c.DueDay)
@@ -99,19 +105,10 @@ func newConceptEditForm(theme Theme, width, height int, c catalog.Concept, categ
 			huh.NewSelect[int64]().Title("Category").
 				Options(categoryOptions...).Value(&v.categoryID),
 			huh.NewSelect[catalog.ConceptKind]().Title("Kind").
-				Options(
-					huh.NewOption("Income", catalog.Income),
-					huh.NewOption("Expense", catalog.Expense),
-				).Value(&v.kind),
-			huh.NewSelect[domain.Currency]().Title("Currency").
-				Options(huh.NewOption("ARS", domain.ARS), huh.NewOption("USD", domain.USD)).
-				Value(&v.currency),
-			huh.NewInput().Title("Amount").Value(&v.amount).Validate(validateRequiredDecimal),
-			huh.NewInput().Title("Amount effective from").
-				Description("same date corrects it in place; a new date adds a raise from there").
-				Value(&v.amountEffective).Validate(validateRequiredPeriod),
-			huh.NewInput().Title("Share %").Description("blank = 100%").
-				Value(&v.share).Validate(validateOptionalWholePercent),
+				Options(conceptKindOptions...).Value(&v.kind),
+		).Title("Edit concept"),
+		moneyGroupWithEffectiveDate(&v.currency, &v.amount, &v.amountEffective, &v.share, func() bool { return v.kind == catalog.Chore }),
+		huh.NewGroup(
 			huh.NewMultiSelect[time.Month]().Title("Months").
 				Description("deselect to skip months, e.g. only June + December").
 				Options(monthOptions...).Value(&v.months),
@@ -120,13 +117,29 @@ func newConceptEditForm(theme Theme, width, height int, c catalog.Concept, categ
 			huh.NewInput().Title("Active from").Value(&v.activeFrom).Validate(validateRequiredPeriod),
 			huh.NewInput().Title("Active until").Description("blank = open-ended").
 				Value(&v.activeUntil).Validate(validateOptionalPeriod),
-		).Title("Edit concept"),
+		),
 		huh.NewGroup(
 			huh.NewInput().Title("New category name").Value(&v.newCategory).Validate(huh.ValidateNotEmpty()),
 		).Title("New category").WithHideFunc(func() bool { return newCategoryStepHidden(v.categoryID) }),
 	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 
 	return &conceptEditFormState{form: form, values: v}
+}
+
+// moneyGroupWithEffectiveDate is moneyGroup plus the edit form's one extra
+// field: the date an amount correction takes effect from.
+func moneyGroupWithEffectiveDate(currency *domain.Currency, amount, amountEffective, share *string, hideFunc func() bool) *huh.Group {
+	return huh.NewGroup(
+		huh.NewSelect[domain.Currency]().Title("Currency").
+			Options(huh.NewOption("ARS", domain.ARS), huh.NewOption("USD", domain.USD)).
+			Value(currency),
+		huh.NewInput().Title("Amount").Value(amount).Validate(validateRequiredDecimal),
+		huh.NewInput().Title("Amount effective from").
+			Description("same date corrects it in place; a new date adds a raise from there").
+			Value(amountEffective).Validate(validateRequiredPeriod),
+		huh.NewInput().Title("Share %").Description("blank = 100%").
+			Value(share).Validate(validateOptionalWholePercent),
+	).Title("Money").WithHideFunc(hideFunc)
 }
 
 func (m Model) startConceptEdit() (Model, tea.Cmd) {
@@ -169,17 +182,9 @@ func (m Model) forwardConceptEditForm(msg tea.Msg) (Model, tea.Cmd) {
 
 // build converts the form's validated strings into a Concept. Every parse
 // here already passed the matching field's Validate func, so an error would
-// mean a bug in that pairing rather than bad user input.
+// mean a bug in that pairing rather than bad user input. Money stays nil for
+// a Chore, whatever's left over in the hidden currency/amount/share fields.
 func (v *conceptEditFormValues) build() (catalog.Concept, int64, string, decimal.Decimal, domain.Period) {
-	amount, _ := decimal.NewFromString(v.amount)
-	amountEffective, _ := domain.ParsePeriod(v.amountEffective)
-
-	var share domain.Percent
-	if v.share != "" {
-		wholePercent, _ := strconv.ParseInt(v.share, 10, 64)
-		share = domain.NewPercent(wholePercent)
-	}
-
 	dueDay := 0
 	if v.dueDay != "" {
 		dueDay, _ = strconv.Atoi(v.dueDay)
@@ -192,9 +197,21 @@ func (v *conceptEditFormValues) build() (catalog.Concept, int64, string, decimal
 	}
 
 	c := catalog.Concept{
-		ID: v.conceptID, SortOrder: v.sortOrder, Name: v.name, Kind: v.kind, Currency: v.currency,
-		MonthMask: domain.NewCadence(v.months...), Share: share, DueDay: dueDay,
+		ID: v.conceptID, SortOrder: v.sortOrder, Name: v.name, Kind: v.kind,
+		MonthMask: domain.NewCadence(v.months...), DueDay: dueDay,
 		ActiveFrom: activeFrom, ActiveUntil: activeUntil,
 	}
+	if v.kind == catalog.Chore {
+		return c, v.categoryID, v.newCategory, decimal.Decimal{}, domain.Period{}
+	}
+
+	amount, _ := decimal.NewFromString(v.amount)
+	amountEffective, _ := domain.ParsePeriod(v.amountEffective)
+	var share domain.Percent
+	if v.share != "" {
+		wholePercent, _ := strconv.ParseInt(v.share, 10, 64)
+		share = domain.NewPercent(wholePercent)
+	}
+	c.Money = &catalog.MoneyDetails{Currency: v.currency, Share: share}
 	return c, v.categoryID, v.newCategory, amount, amountEffective
 }

@@ -25,6 +25,6 @@ func loadLastMonthChores(db *sql.DB, period domain.Period) tea.Cmd {
 		if err != nil {
 			return lastMonthChoresLoadedMsg{err: err}
 		}
-		return lastMonthChoresLoadedMsg{unfinished: month.UnfinishedChores(loaded.Chores)}
+		return lastMonthChoresLoadedMsg{unfinished: month.UnfinishedChores(loaded.Lines)}
 	}
 }

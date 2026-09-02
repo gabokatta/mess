@@ -50,7 +50,7 @@ func TestConceptsViewListsConceptsGroupedByCategory(t *testing.T) {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 	concept, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Alquiler", CategoryID: cat.ID, Kind: catalog.Expense, Currency: domain.ARS,
+		Name: "Alquiler", CategoryID: cat.ID, Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS},
 		MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(2026, 1),
 	})
 	if err != nil {
@@ -129,7 +129,7 @@ func TestCompletingFormCreatesConceptCategoryAndBaseAmount(t *testing.T) {
 		t.Fatalf("Concepts() returned %d rows, want 1", len(concepts))
 	}
 	c := concepts[0]
-	if c.Name != "Alquiler" || c.Kind != catalog.Expense || c.Currency != domain.ARS || c.DueDay != 10 {
+	if c.Name != "Alquiler" || c.Kind != catalog.Expense || c.Money == nil || c.Money.Currency != domain.ARS || c.DueDay != 10 {
 		t.Errorf("Concepts()[0] = %+v, want the entered fields", c)
 	}
 	if c.MonthMask != domain.Monthly {

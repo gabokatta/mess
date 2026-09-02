@@ -69,7 +69,7 @@ func TestCompletingEditFormPreservesSortOrder(t *testing.T) {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 	c, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Alquiler", CategoryID: cat.ID, Kind: catalog.Expense, Currency: domain.ARS,
+		Name: "Alquiler", CategoryID: cat.ID, Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS},
 		MonthMask: domain.Monthly, SortOrder: 3, ActiveFrom: domain.NewPeriod(2026, time.January),
 	})
 	if err != nil {
@@ -123,6 +123,30 @@ func TestCompletingEditFormUpdatesTheConceptInPlace(t *testing.T) {
 	}
 	if len(concepts) != 1 || concepts[0].ID != c.ID || concepts[0].Name != "Alquiler nuevo" {
 		t.Fatalf("Concepts() = %+v, want the same row renamed, not a duplicate", concepts)
+	}
+}
+
+func TestEditingKindToChoreDropsMoney(t *testing.T) {
+	db := openTestStore(t)
+	c := seedConcept(t, db, "Alquiler", 785000)
+	m := conceptsModel(t, db, domain.NewPeriod(2026, time.September))
+
+	updated, _ := m.Update(key("e"))
+	m = updated.(Model)
+	m = completeConceptEditForm(m, func(v *conceptEditFormValues) {
+		v.kind = catalog.Chore
+	})
+
+	updated, cmd := m.Update(keyEnter())
+	m = updated.(Model)
+	m = settle(t, m, cmd)
+
+	concepts, err := catalog.Concepts(db)
+	if err != nil {
+		t.Fatalf("catalog.Concepts() unexpected error: %v", err)
+	}
+	if len(concepts) != 1 || concepts[0].ID != c.ID || concepts[0].Kind != catalog.Chore || concepts[0].Money != nil {
+		t.Fatalf("Concepts()[0] = %+v, want %s switched to Chore with Money nil", concepts, c.Name)
 	}
 }
 

@@ -90,7 +90,7 @@ func TestExportImportRoundTripsEveryTable(t *testing.T) {
 	}
 	concept, err := catalog.CreateConcept(db, catalog.Concept{
 		Name: "Alquiler", CategoryID: cat.ID, Kind: catalog.Expense,
-		Currency: domain.ARS, MonthMask: domain.Monthly, ActiveFrom: period,
+		Money: &catalog.MoneyDetails{Currency: domain.ARS}, MonthMask: domain.Monthly, ActiveFrom: period,
 	})
 	if err != nil {
 		t.Fatalf("CreateConcept() unexpected error: %v", err)
@@ -101,20 +101,22 @@ func TestExportImportRoundTripsEveryTable(t *testing.T) {
 	if err := catalog.SetMonthEntryDone(db, concept.ID, period, true); err != nil {
 		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
 	}
-	chore, err := catalog.CreateChore(db, catalog.Chore{Name: "Sacar la basura", MonthMask: domain.Monthly, ActiveFrom: period})
+	chore, err := catalog.CreateConcept(db, catalog.Concept{
+		Name: "Sacar la basura", CategoryID: cat.ID, Kind: catalog.Chore, MonthMask: domain.Monthly, ActiveFrom: period,
+	})
 	if err != nil {
-		t.Fatalf("CreateChore() unexpected error: %v", err)
+		t.Fatalf("CreateConcept() unexpected error: %v", err)
 	}
-	if err := catalog.SetChoreEntryDone(db, chore.ID, period, true); err != nil {
-		t.Fatalf("SetChoreEntryDone() unexpected error: %v", err)
+	if err := catalog.SetMonthEntryDone(db, chore.ID, period, true); err != nil {
+		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
 	}
 	if _, err := catalog.CreateSavingAllocation(db, catalog.SavingAllocation{
 		Period: period, Destination: catalog.Invested, Amount: decimal.NewFromInt(100), Currency: domain.USD,
 	}); err != nil {
 		t.Fatalf("CreateSavingAllocation() unexpected error: %v", err)
 	}
-	if _, err := catalog.CreateProject(db, catalog.Project{Name: "Buy list", BodyMD: "- [x] milk", Period: period}); err != nil {
-		t.Fatalf("CreateProject() unexpected error: %v", err)
+	if _, err := catalog.CreateList(db, catalog.List{Name: "Buy list", BodyMD: "- [x] milk", Period: period}); err != nil {
+		t.Fatalf("CreateList() unexpected error: %v", err)
 	}
 	if err := catalog.SetFxRate(db, period, decimal.NewFromInt(1000)); err != nil {
 		t.Fatalf("SetFxRate() unexpected error: %v", err)
@@ -148,8 +150,8 @@ func TestExportImportRoundTripsEveryTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
-	if len(gotConcepts) != 1 || gotConcepts[0].Name != "Alquiler" {
-		t.Errorf("Concepts() = %+v, want the imported Alquiler row", gotConcepts)
+	if len(gotConcepts) != 2 {
+		t.Fatalf("Concepts() = %+v, want the money concept and the chore both imported", gotConcepts)
 	}
 
 	gotBases, err := catalog.AllBaseAmounts(dst.DB())
@@ -164,24 +166,8 @@ func TestExportImportRoundTripsEveryTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MonthEntries() unexpected error: %v", err)
 	}
-	if len(gotEntries) != 1 || !gotEntries[0].Done {
-		t.Errorf("MonthEntries() = %+v, want the done entry imported", gotEntries)
-	}
-
-	gotChores, err := catalog.Chores(dst.DB())
-	if err != nil {
-		t.Fatalf("Chores() unexpected error: %v", err)
-	}
-	if len(gotChores) != 1 || gotChores[0].Name != "Sacar la basura" {
-		t.Errorf("Chores() = %+v, want the imported chore", gotChores)
-	}
-
-	gotChoreEntries, err := catalog.ChoreEntries(dst.DB(), period)
-	if err != nil {
-		t.Fatalf("ChoreEntries() unexpected error: %v", err)
-	}
-	if len(gotChoreEntries) != 1 || !gotChoreEntries[0].Done {
-		t.Errorf("ChoreEntries() = %+v, want the done chore entry imported", gotChoreEntries)
+	if len(gotEntries) != 2 {
+		t.Fatalf("MonthEntries() = %+v, want both the money entry and the chore entry imported", gotEntries)
 	}
 
 	gotAllocations, err := catalog.AllSavingAllocations(dst.DB())
@@ -192,12 +178,12 @@ func TestExportImportRoundTripsEveryTable(t *testing.T) {
 		t.Errorf("AllSavingAllocations() = %+v, want the imported Invested allocation", gotAllocations)
 	}
 
-	gotProjects, err := catalog.Projects(dst.DB())
+	gotLists, err := catalog.Lists(dst.DB())
 	if err != nil {
-		t.Fatalf("Projects() unexpected error: %v", err)
+		t.Fatalf("Lists() unexpected error: %v", err)
 	}
-	if len(gotProjects) != 1 || gotProjects[0].BodyMD != "- [x] milk" {
-		t.Errorf("Projects() = %+v, want the imported Buy list body", gotProjects)
+	if len(gotLists) != 1 || gotLists[0].BodyMD != "- [x] milk" {
+		t.Errorf("Lists() = %+v, want the imported Buy list body", gotLists)
 	}
 
 	gotRates, err := catalog.FxRates(dst.DB())

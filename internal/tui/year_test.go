@@ -35,14 +35,14 @@ func TestYearViewRendersConceptsCategoriesAndSeries(t *testing.T) {
 	jan := domain.NewPeriod(2026, time.January)
 	feb := domain.NewPeriod(2026, time.February)
 	servicios := catalog.Category{Name: "Servicios"}
-	rent := catalog.Concept{Name: "Alquiler", CategoryID: servicios.ID, Kind: catalog.Expense, Currency: domain.ARS}
+	rent := catalog.Concept{Name: "Alquiler", CategoryID: servicios.ID, Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS}}
 	m.categories = []catalog.Category{servicios}
 
 	year := month.Year{
 		Periods: []domain.Period{jan, feb},
 		Months: []month.Month{
-			{Lines: []month.Line{{Concept: rent, Amount: amountFor(t, "785000")}}},
-			{Lines: []month.Line{{Concept: rent, Amount: amountFor(t, "785000")}}},
+			{Lines: []month.Line{{Concept: rent, Money: &month.LineMoney{Amount: amountFor(t, "785000")}}}},
+			{Lines: []month.Line{{Concept: rent, Money: &month.LineMoney{Amount: amountFor(t, "785000")}}}},
 		},
 		Categories: []month.CategoryTotal{{Category: servicios, Total: amountFor(t, "1570000")}},
 		NetWorth:   []month.NetWorth{{Cash: amountFor(t, "1000")}, {Cash: amountFor(t, "1100")}},
@@ -75,14 +75,14 @@ func TestYearConceptsListShowsAveragePerOccurrenceNotFlatByTwelve(t *testing.T) 
 	m.width, m.height = 120, 50
 	m.view = viewYear
 
-	bonus := catalog.Concept{Name: "Aguinaldo", Kind: catalog.Income, Currency: domain.ARS}
+	bonus := catalog.Concept{Name: "Aguinaldo", Kind: catalog.Income, Money: &catalog.MoneyDetails{Currency: domain.ARS}}
 	m.categories = []catalog.Category{{}}
 
 	year := month.Year{
 		Periods: []domain.Period{domain.NewPeriod(2026, time.June), domain.NewPeriod(2026, time.December)},
 		Months: []month.Month{
-			{Lines: []month.Line{{Concept: bonus, Amount: amountFor(t, "500000")}}},
-			{Lines: []month.Line{{Concept: bonus, Amount: amountFor(t, "500000")}}},
+			{Lines: []month.Line{{Concept: bonus, Money: &month.LineMoney{Amount: amountFor(t, "500000")}}}},
+			{Lines: []month.Line{{Concept: bonus, Money: &month.LineMoney{Amount: amountFor(t, "500000")}}}},
 		},
 		NetWorth: []month.NetWorth{{}, {}},
 		Leftover: []decimal.Decimal{{}, {}},
@@ -106,12 +106,12 @@ func TestEnterOpensDrillDownAndEscReturnsToList(t *testing.T) {
 	m.view = viewYear
 	m.categories = []catalog.Category{{}}
 
-	rent := catalog.Concept{ID: 1, Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS}
+	rent := catalog.Concept{ID: 1, Name: "Alquiler", Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS}}
 	year := month.Year{
 		Periods: []domain.Period{domain.NewPeriod(2026, time.January), domain.NewPeriod(2026, time.February)},
 		Months: []month.Month{
-			{Lines: []month.Line{{Concept: rent, Amount: amountFor(t, "785000")}}},
-			{Lines: []month.Line{{Concept: rent, Amount: amountFor(t, "800000")}}},
+			{Lines: []month.Line{{Concept: rent, Money: &month.LineMoney{Amount: amountFor(t, "785000")}}}},
+			{Lines: []month.Line{{Concept: rent, Money: &month.LineMoney{Amount: amountFor(t, "800000")}}}},
 		},
 		NetWorth: []month.NetWorth{{}, {}},
 		Leftover: []decimal.Decimal{{}, {}},
@@ -150,13 +150,13 @@ func TestJKMovesTheYearConceptCursor(t *testing.T) {
 	m.view = viewYear
 	m.categories = []catalog.Category{{}}
 
-	a := catalog.Concept{ID: 1, Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS}
-	i := catalog.Concept{ID: 2, Name: "Internet", Kind: catalog.Expense, Currency: domain.ARS}
+	a := catalog.Concept{ID: 1, Name: "Alquiler", Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS}}
+	i := catalog.Concept{ID: 2, Name: "Internet", Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS}}
 	year := month.Year{
 		Periods: []domain.Period{domain.NewPeriod(2026, time.January)},
 		Months: []month.Month{{Lines: []month.Line{
-			{Concept: a, Amount: amountFor(t, "785000")},
-			{Concept: i, Amount: amountFor(t, "15000")},
+			{Concept: a, Money: &month.LineMoney{Amount: amountFor(t, "785000")}},
+			{Concept: i, Money: &month.LineMoney{Amount: amountFor(t, "15000")}},
 		}}},
 		NetWorth: []month.NetWorth{{}},
 		Leftover: []decimal.Decimal{{}},

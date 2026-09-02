@@ -15,10 +15,17 @@ func concept(id int64, mask domain.Cadence, from, until domain.Period) catalog.C
 		ID:          id,
 		Name:        "Alquiler",
 		Kind:        catalog.Expense,
-		Currency:    domain.ARS,
+		Money:       &catalog.MoneyDetails{Currency: domain.ARS},
 		MonthMask:   mask,
 		ActiveFrom:  from,
 		ActiveUntil: until,
+	}
+}
+
+func chore(id int64, mask domain.Cadence, from, until domain.Period) catalog.Concept {
+	return catalog.Concept{
+		ID: id, Name: "Sacar la basura", Kind: catalog.Chore,
+		MonthMask: mask, ActiveFrom: from, ActiveUntil: until,
 	}
 }
 
@@ -40,10 +47,10 @@ func TestResolveUsesLatestBaseAtOrBeforePeriod(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("Resolve() = %d lines, want 1", len(lines))
 	}
-	if !lines[0].Amount.Equal(amount(850000)) {
-		t.Errorf("Amount = %s, want 850000 (June base, latest at or before September)", lines[0].Amount)
+	if !lines[0].Money.Amount.Equal(amount(850000)) {
+		t.Errorf("Amount = %s, want 850000 (June base, latest at or before September)", lines[0].Money.Amount)
 	}
-	if lines[0].Confirmed {
+	if lines[0].Money.Confirmed {
 		t.Error("Confirmed = true, want false (no override, resolved from base)")
 	}
 }
@@ -64,10 +71,10 @@ func TestResolveOverrideWinsOverBase(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("Resolve() = %d lines, want 1", len(lines))
 	}
-	if !lines[0].Amount.Equal(override) {
-		t.Errorf("Amount = %s, want %s (override)", lines[0].Amount, override)
+	if !lines[0].Money.Amount.Equal(override) {
+		t.Errorf("Amount = %s, want %s (override)", lines[0].Money.Amount, override)
 	}
-	if !lines[0].Confirmed {
+	if !lines[0].Money.Confirmed {
 		t.Error("Confirmed = false, want true (an override is present)")
 	}
 	if !lines[0].Done {
@@ -84,10 +91,10 @@ func TestResolveNoBaseYetsResolvesToZeroUnconfirmed(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("Resolve() = %d lines, want 1", len(lines))
 	}
-	if !lines[0].Amount.IsZero() {
-		t.Errorf("Amount = %s, want 0 (no base, no override)", lines[0].Amount)
+	if !lines[0].Money.Amount.IsZero() {
+		t.Errorf("Amount = %s, want 0 (no base, no override)", lines[0].Money.Amount)
 	}
-	if lines[0].Confirmed {
+	if lines[0].Money.Confirmed {
 		t.Error("Confirmed = true, want false")
 	}
 }
@@ -148,7 +155,69 @@ func TestResolveIgnoresFutureBases(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("Resolve() = %d lines, want 1", len(lines))
 	}
-	if !lines[0].Amount.IsZero() {
-		t.Errorf("Amount = %s, want 0 (only base is in the future)", lines[0].Amount)
+	if !lines[0].Money.Amount.IsZero() {
+		t.Errorf("Amount = %s, want 0 (only base is in the future)", lines[0].Money.Amount)
+	}
+}
+
+func TestResolveChoreLineHasNoMoney(t *testing.T) {
+	sept := domain.NewPeriod(2026, time.September)
+	c := chore(1, domain.Monthly, domain.NewPeriod(2026, time.January), domain.Period{})
+	entries := map[int64]catalog.MonthEntry{1: {ConceptID: 1, Period: sept, Done: true}}
+
+	lines := Resolve(sept, []catalog.Concept{c}, nil, entries)
+
+	if len(lines) != 1 {
+		t.Fatalf("Resolve() = %d lines, want 1", len(lines))
+	}
+	if lines[0].Money != nil {
+		t.Errorf("Money = %+v, want nil (a chore has no amount)", lines[0].Money)
+	}
+	if !lines[0].Done {
+		t.Error("Done = false, want true")
+	}
+}
+
+func TestResolveChoreDefaultsToNotDoneWithoutEntry(t *testing.T) {
+	sept := domain.NewPeriod(2026, time.September)
+	c := chore(1, domain.Monthly, domain.NewPeriod(2026, time.January), domain.Period{})
+
+	lines := Resolve(sept, []catalog.Concept{c}, nil, nil)
+
+	if len(lines) != 1 || lines[0].Done {
+		t.Errorf("Resolve() = %+v, want a single not-done line", lines)
+	}
+}
+
+func TestUnfinishedChoresCountsOnlyNotDoneChoreLines(t *testing.T) {
+	lines := []Line{
+		{Concept: chore(1, domain.Monthly, domain.Period{}, domain.Period{}), Done: true},
+		{Concept: chore(2, domain.Monthly, domain.Period{}, domain.Period{}), Done: false},
+		{Concept: concept(3, domain.Monthly, domain.Period{}, domain.Period{}), Money: &LineMoney{}, Done: false},
+	}
+
+	if got := UnfinishedChores(lines); got != 1 {
+		t.Errorf("UnfinishedChores() = %d, want 1 (money lines don't count as chores)", got)
+	}
+}
+
+func TestUnfinishedChoresZeroWhenAllDone(t *testing.T) {
+	lines := []Line{{Concept: chore(1, domain.Monthly, domain.Period{}, domain.Period{}), Done: true}}
+
+	if got := UnfinishedChores(lines); got != 0 {
+		t.Errorf("UnfinishedChores() = %d, want 0", got)
+	}
+}
+
+func TestChoresDoneCountsChoreLinesOnly(t *testing.T) {
+	lines := []Line{
+		{Concept: chore(1, domain.Monthly, domain.Period{}, domain.Period{}), Done: true},
+		{Concept: chore(2, domain.Monthly, domain.Period{}, domain.Period{}), Done: false},
+		{Concept: concept(3, domain.Monthly, domain.Period{}, domain.Period{}), Money: &LineMoney{}, Done: true},
+	}
+
+	done, total := ChoresDone(lines)
+	if done != 1 || total != 2 {
+		t.Errorf("ChoresDone() = %d/%d, want 1/2 (the money line doesn't count)", done, total)
 	}
 }

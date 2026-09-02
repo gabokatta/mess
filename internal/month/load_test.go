@@ -32,7 +32,7 @@ func TestLoadResolvesCatalogAgainstStore(t *testing.T) {
 		Name:       "Alquiler",
 		CategoryID: cat.ID,
 		Kind:       catalog.Expense,
-		Currency:   domain.ARS,
+		Money:      &catalog.MoneyDetails{Currency: domain.ARS},
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	})
@@ -50,32 +50,39 @@ func TestLoadResolvesCatalogAgainstStore(t *testing.T) {
 	if len(got.Lines) != 1 {
 		t.Fatalf("Load().Lines = %d lines, want 1", len(got.Lines))
 	}
-	if got.Lines[0].Concept.Name != "Alquiler" || !got.Lines[0].Amount.Equal(amount(785000)) || got.Lines[0].Confirmed {
-		t.Errorf("Load().Lines[0] = %+v, want Alquiler at 785000, projected", got.Lines[0])
+	line := got.Lines[0]
+	if line.Concept.Name != "Alquiler" || line.Money == nil || !line.Money.Amount.Equal(amount(785000)) || line.Money.Confirmed {
+		t.Errorf("Load().Lines[0] = %+v, want Alquiler at 785000, projected", line)
 	}
 }
 
 func TestLoadResolvesChoresAgainstStore(t *testing.T) {
 	db := openTestStore(t)
 
-	trash, err := catalog.CreateChore(db, catalog.Chore{
+	cat, err := catalog.CreateCategory(db, "Hogar", 0)
+	if err != nil {
+		t.Fatalf("CreateCategory() unexpected error: %v", err)
+	}
+	trash, err := catalog.CreateConcept(db, catalog.Concept{
 		Name:       "Sacar la basura",
+		CategoryID: cat.ID,
+		Kind:       catalog.Chore,
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	})
 	if err != nil {
-		t.Fatalf("CreateChore() unexpected error: %v", err)
+		t.Fatalf("CreateConcept() unexpected error: %v", err)
 	}
 	sept := domain.NewPeriod(2026, time.September)
-	if err := catalog.SetChoreEntryDone(db, trash.ID, sept, true); err != nil {
-		t.Fatalf("SetChoreEntryDone() unexpected error: %v", err)
+	if err := catalog.SetMonthEntryDone(db, trash.ID, sept, true); err != nil {
+		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
 	}
 
 	got, err := Load(db, sept)
 	if err != nil {
 		t.Fatalf("Load() unexpected error: %v", err)
 	}
-	if len(got.Chores) != 1 || got.Chores[0].Chore.Name != "Sacar la basura" || !got.Chores[0].Done {
-		t.Errorf("Load().Chores = %+v, want a single done Sacar la basura row", got.Chores)
+	if len(got.Lines) != 1 || got.Lines[0].Concept.Name != "Sacar la basura" || got.Lines[0].Money != nil || !got.Lines[0].Done {
+		t.Errorf("Load().Lines = %+v, want a single done, money-less Sacar la basura line", got.Lines)
 	}
 }

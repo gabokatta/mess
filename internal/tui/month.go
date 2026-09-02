@@ -13,57 +13,32 @@ import (
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/list"
 	"github.com/gabokatta/mess/internal/month"
-	"github.com/gabokatta/mess/internal/project"
 )
 
-// monthGroups is the display order for the month view's sections.
-var monthGroups = [...]catalog.ConceptKind{catalog.Income, catalog.Expense}
-
-// monthPane is the Month view's two panes, toggled with f — the same
-// pattern Projects uses for pending/closed. Splitting the view isn't
-// splitting the data: Finance and Chores share one period, but each gets
-// its own cursor space.
-type monthPane int
-
-const (
-	paneFinance monthPane = iota
-	paneChores
-)
-
-func (p monthPane) String() string {
-	if p == paneChores {
-		return "Chores"
-	}
-	return "Finance"
-}
-
-func togglePane(p monthPane) monthPane {
-	if p == paneFinance {
-		return paneChores
-	}
-	return paneFinance
-}
+// monthGroups is the display order for the month view's sections: one list,
+// one cursor, money and chore concepts alike.
+var monthGroups = [...]catalog.ConceptKind{catalog.Income, catalog.Expense, catalog.Chore}
 
 // monthLoadedMsg is the result of loadMonth's Cmd, delivered back to Update
 // once the database read completes.
 type monthLoadedMsg struct {
-	lines  []month.Line
-	chores []month.ChoreLine
-	err    error
+	lines []month.Line
+	err   error
 }
 
-// loadMonth returns a Cmd that resolves period's lines and chores off the
-// Update loop.
+// loadMonth returns a Cmd that resolves period's lines off the Update loop —
+// money and chore concepts alike, one pipeline since S43.
 func loadMonth(db *sql.DB, period domain.Period) tea.Cmd {
 	return func() tea.Msg {
 		loaded, err := month.Load(db, period)
-		return monthLoadedMsg{lines: loaded.Lines, chores: loaded.Chores, err: err}
+		return monthLoadedMsg{lines: loaded.Lines, err: err}
 	}
 }
 
-// entrySavedMsg is the result of a month_entry or chore_entry write, which
-// always triggers a reload so the resolved lines reflect it.
+// entrySavedMsg is the result of a month_entry write, which always triggers
+// a reload so the resolved lines reflect it.
 type entrySavedMsg struct {
 	err error
 }
@@ -71,12 +46,6 @@ type entrySavedMsg struct {
 func setDone(db *sql.DB, conceptID int64, period domain.Period, done bool) tea.Cmd {
 	return func() tea.Msg {
 		return entrySavedMsg{err: catalog.SetMonthEntryDone(db, conceptID, period, done)}
-	}
-}
-
-func setChoreDone(db *sql.DB, choreID int64, period domain.Period, done bool) tea.Cmd {
-	return func() tea.Msg {
-		return entrySavedMsg{err: catalog.SetChoreEntryDone(db, choreID, period, done)}
 	}
 }
 
@@ -103,35 +72,14 @@ func (m Model) orderedLines() []month.Line {
 	return lines
 }
 
-// financeRowCount is every cursor position in the Finance pane: concept
-// lines, then allocations — the same order renderFinancePane walks them in.
-func (m Model) financeRowCount() int {
+// rowCount is every cursor position in the Month view: every line, then
+// allocations — the same order renderMonthBody walks them in.
+func (m Model) rowCount() int {
 	return len(m.orderedLines()) + len(m.allocations)
 }
 
-func (m Model) moveFinanceCursor(delta int) int {
-	return clampCursor(m.financeCursor+delta, m.financeRowCount())
-}
-
-// choreRowCount is every cursor position in the Chores pane: its own list,
-// independent of Finance's.
-func (m Model) choreRowCount() int {
-	return len(m.chores)
-}
-
-func (m Model) moveChoreCursor(delta int) int {
-	return clampCursor(m.choreCursor+delta, m.choreRowCount())
-}
-
-// moveMonthCursor moves whichever pane's cursor is active — j/k's single
-// entry point, so the caller doesn't need to know which pane it's in.
-func (m Model) moveMonthCursor(delta int) Model {
-	if m.monthPane == paneChores {
-		m.choreCursor = m.moveChoreCursor(delta)
-	} else {
-		m.financeCursor = m.moveFinanceCursor(delta)
-	}
-	return m
+func (m Model) moveCursor(delta int) int {
+	return clampCursor(m.cursor+delta, m.rowCount())
 }
 
 func clampCursor(cursor, n int) int {
@@ -147,46 +95,31 @@ func clampCursor(cursor, n int) int {
 	return cursor
 }
 
-// cursorLine reports the concept line under the Finance pane's cursor, if
-// it's on one rather than an allocation.
+// cursorLine reports the line under the cursor, if it's on one rather than
+// an allocation.
 func (m Model) cursorLine() (month.Line, bool) {
 	lines := m.orderedLines()
-	if m.financeCursor >= len(lines) {
+	if m.cursor >= len(lines) {
 		return month.Line{}, false
 	}
-	return lines[m.financeCursor], true
+	return lines[m.cursor], true
 }
 
-// cursorChore reports the chore under the Chores pane's cursor.
-func (m Model) cursorChore() (month.ChoreLine, bool) {
-	if m.choreCursor >= len(m.chores) {
-		return month.ChoreLine{}, false
-	}
-	return m.chores[m.choreCursor], true
-}
-
-// cursorAllocation reports the allocation under the Finance pane's cursor,
-// if it's on one rather than a concept line.
+// cursorAllocation reports the allocation under the cursor, if it's on one
+// rather than a line.
 func (m Model) cursorAllocation() (catalog.SavingAllocation, bool) {
-	idx := m.financeCursor - len(m.orderedLines())
+	idx := m.cursor - len(m.orderedLines())
 	if idx < 0 || idx >= len(m.allocations) {
 		return catalog.SavingAllocation{}, false
 	}
 	return m.allocations[idx], true
 }
 
-// toggleDone flips the done state under the active pane's cursor and
-// persists it immediately — ticking and editing the amount are separate
-// intents, so this touches nothing else. A chore has no amount, so its
-// shape is the same.
+// toggleDone flips the done state under the cursor and persists it
+// immediately — ticking and editing the amount are separate intents, so
+// this touches nothing else. A chore has no amount, so its shape is the
+// same as a money line.
 func (m Model) toggleDone() (Model, tea.Cmd) {
-	if m.monthPane == paneChores {
-		c, ok := m.cursorChore()
-		if !ok {
-			return m, nil
-		}
-		return m, setChoreDone(m.db, c.Chore.ID, m.period, !c.Done)
-	}
 	l, ok := m.cursorLine()
 	if !ok {
 		return m, nil
@@ -194,9 +127,11 @@ func (m Model) toggleDone() (Model, tea.Cmd) {
 	return m, setDone(m.db, l.Concept.ID, m.period, !l.Done)
 }
 
+// startEdit opens the amount edit for the cursor's line, or is a no-op on a
+// Chore line — there's no amount behind it to edit.
 func (m Model) startEdit() (Model, tea.Cmd) {
 	l, ok := m.cursorLine()
-	if !ok {
+	if !ok || l.Money == nil {
 		return m, nil
 	}
 	return m.beginEdit(l), nil
@@ -204,7 +139,7 @@ func (m Model) startEdit() (Model, tea.Cmd) {
 
 func (m Model) beginEdit(l month.Line) Model {
 	ti := textinput.New()
-	ti.SetValue(l.Amount.StringFixed(2))
+	ti.SetValue(l.Money.Amount.StringFixed(2))
 	ti.CursorEnd()
 	ti.Focus()
 	m.editing = &editState{conceptID: l.Concept.ID, input: ti}
@@ -244,7 +179,7 @@ func (m Model) commitEdit() (Model, tea.Cmd) {
 
 func (m Model) renderMonth() string {
 	var b strings.Builder
-	b.WriteString(m.theme.Muted.Render(m.view.String() + " · " + m.monthPane.String() + " · " + m.period.String() + " · " + currentPeriodStatus(m.period).String()))
+	b.WriteString(m.theme.Muted.Render(m.view.String() + " · " + m.period.String() + " · " + currentPeriodStatus(m.period).String()))
 
 	if m.loadErr != nil {
 		b.WriteString("\n\n")
@@ -255,13 +190,8 @@ func (m Model) renderMonth() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Muted.Render("fx quote unavailable: " + m.fxErr.Error()))
 	}
-	if m.choreForm != nil {
-		b.WriteString("\n\n")
-		b.WriteString(m.choreForm.form.View())
-		return b.String()
-	}
-	assigned := projectsForPeriod(m.projects, m.period)
-	if len(m.lines) == 0 && len(m.chores) == 0 && len(assigned) == 0 && m.choreSaveErr == nil {
+	assigned := listsForPeriod(m.lists, m.period)
+	if len(m.lines) == 0 && len(assigned) == 0 && m.conceptSaveErr == nil {
 		b.WriteString("\n")
 		b.WriteString(m.centerInBox(m.theme.Muted.Render("no concepts yet — add some in the Concepts view")))
 		return b.String()
@@ -278,26 +208,23 @@ func (m Model) renderMonth() string {
 		return b.String()
 	}
 
-	if m.monthPane == paneChores {
-		b.WriteString(m.renderChoresPane())
-	} else {
-		b.WriteString(m.renderFinancePane(assigned))
-	}
+	b.WriteString(m.renderMonthBody(assigned))
 	b.WriteString(m.renderLastMonthUnfinished())
 
 	if m.saveErr != nil {
 		b.WriteString("\n\n")
 		b.WriteString(m.theme.Muted.Render("failed to save: " + m.saveErr.Error()))
 	}
-	if m.choreSaveErr != nil {
+	if m.conceptSaveErr != nil {
 		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render("failed to save chore: " + m.choreSaveErr.Error()))
+		b.WriteString(m.theme.Muted.Render("failed to save: " + m.conceptSaveErr.Error()))
 	}
 	return b.String()
 }
 
-// renderLastMonthUnfinished is the quiet heads-up shared by both panes —
-// visible without switching to Chores just to see it.
+// renderLastMonthUnfinished is the quiet heads-up naming last period's
+// unfinished chores — visible without turning into a to-do list of things
+// from months ago.
 func (m Model) renderLastMonthUnfinished() string {
 	if m.lastMonthChoresErr != nil {
 		return "\n\n" + m.theme.Muted.Render("last month's chores unavailable: "+m.lastMonthChoresErr.Error())
@@ -305,10 +232,10 @@ func (m Model) renderLastMonthUnfinished() string {
 	return fmt.Sprintf("\n\nLast month: %d unfinished", m.lastMonthUnfinished)
 }
 
-// renderFinancePane is the default pane: totals, the concept-line list
-// beside this period's category chart, the allocation panel, and this
-// period's assigned projects.
-func (m Model) renderFinancePane(assigned []catalog.Project) string {
+// renderMonthBody is the Month view's content: totals, the line list beside
+// this period's category chart, the allocation panel, and this period's
+// assigned lists.
+func (m Model) renderMonthBody(assigned []catalog.List) string {
 	var b strings.Builder
 	if totals := m.renderTotals(); totals != "" {
 		b.WriteString("\n")
@@ -323,17 +250,17 @@ func (m Model) renderFinancePane(assigned []catalog.Project) string {
 
 	if len(assigned) > 0 {
 		b.WriteString("\n\n")
-		b.WriteString(m.theme.Title.Render("Projects"))
+		b.WriteString(m.theme.Title.Render("Lists"))
 		for _, p := range assigned {
-			done, total := project.Progress(p.BodyMD)
+			done, total := list.Progress(p.BodyMD)
 			fmt.Fprintf(&b, "\n  %-20s %d/%d", p.Name, done, total)
 		}
 	}
 	return b.String()
 }
 
-// renderFinanceLines is the concept-line list, grouped Income/Expense, the
-// left column of the Finance pane.
+// renderFinanceLines is the line list, grouped Income/Expense/Chore, the
+// left column of the Month view.
 func (m Model) renderFinanceLines() string {
 	var b strings.Builder
 	idx := 0
@@ -348,61 +275,38 @@ func (m Model) renderFinanceLines() string {
 		b.WriteString(m.theme.Title.Render(kind.String()))
 		for _, l := range group {
 			b.WriteString("\n")
-			b.WriteString(m.renderLine(l, idx == m.financeCursor))
+			b.WriteString(m.renderLine(l, idx == m.cursor))
 			idx++
 		}
 	}
 	return b.String()
 }
 
-// renderChoresPane is the Chores pane: its own cursor-addressable list,
-// unrelated to Finance's cursor space.
-func (m Model) renderChoresPane() string {
-	if len(m.chores) == 0 {
-		return "\n" + m.centerInBox(m.theme.Muted.Render("no chores yet — press n to add one"))
-	}
+// renderTotals renders the month header's net: your share leads household,
+// every currency folded into one ARS figure at the period's resolved fx
+// rate — no separate projected total, since a mid-month forecast is rarely
+// the number that ships. A "N of M confirmed" count over money lines and an
+// "X of Y chores done" count over Chore lines say what's left to check.
+func (m Model) renderTotals() string {
+	rate, hasRate := month.ResolveFxRate(m.period, m.rates)
+	header := month.ResolveHeaderNet(m.lines, rate, hasRate)
+	done, total := month.ChoresDone(m.lines)
+
 	var b strings.Builder
-	b.WriteString("\n\n")
-	b.WriteString(m.theme.Title.Render("Chores"))
-	for i, c := range m.chores {
-		b.WriteString("\n")
-		b.WriteString(m.renderChoreLine(c, i == m.choreCursor))
+	fmt.Fprintf(&b, "ARS  share %12s  household %12s", header.Net.Share.StringFixed(2), header.Net.Household.StringFixed(2))
+	if hasRate && !rate.IsZero() {
+		fmt.Fprintf(&b, "  %s", m.theme.Muted.Render("("+header.Net.Share.Div(rate).StringFixed(2)+" USD)"))
+	}
+	fmt.Fprintf(&b, "  ·  %d of %d confirmed", header.Confirmed, header.Lines)
+	if total > 0 {
+		fmt.Fprintf(&b, "  ·  %d of %d chores done", done, total)
 	}
 	return b.String()
 }
 
-// totalCurrencies is the fixed render order for the header's per-currency
-// totals; domain only defines these two.
-var totalCurrencies = [...]domain.Currency{domain.ARS, domain.USD}
-
-// renderTotals renders the month header's net: your share leads household,
-// projected against confirmed, one row pair per currency actually present
-// among this month's lines.
-func (m Model) renderTotals() string {
-	totals := month.ResolveTotals(m.lines)
-	var b strings.Builder
-	for _, cur := range totalCurrencies {
-		projected, ok := totals.Projected[cur]
-		if !ok {
-			continue
-		}
-		rows := [2]struct {
-			label string
-			net   month.Net
-		}{
-			{"projected", projected},
-			{"confirmed", totals.Confirmed[cur]},
-		}
-		for _, row := range rows {
-			fmt.Fprintf(&b, "%s %s  share %12s  household %12s\n", cur, row.label, row.net.Share.StringFixed(2), row.net.Household.StringFixed(2))
-		}
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func projectsForPeriod(projects []catalog.Project, period domain.Period) []catalog.Project {
-	var assigned []catalog.Project
-	for _, p := range projects {
+func listsForPeriod(lists []catalog.List, period domain.Period) []catalog.List {
+	var assigned []catalog.List
+	for _, p := range lists {
 		if p.Period == period {
 			assigned = append(assigned, p)
 		}
@@ -447,6 +351,9 @@ func isLate(l month.Line, period domain.Period) bool {
 	return time.Now().Day() > l.Concept.DueDay
 }
 
+// renderLine renders one line — a money line's currency, amount and
+// confirmed/projected status, or, for a Chore line with no Money, just the
+// check and name. Both share the same cursor/late shape.
 func (m Model) renderLine(l month.Line, selected bool) string {
 	cursor := " "
 	if selected {
@@ -457,56 +364,21 @@ func (m Model) renderLine(l month.Line, selected bool) string {
 		check = "x"
 	}
 	name := categoryStyle(m.categories, l.Concept.CategoryID).Render(fmt.Sprintf("%-20s", l.Concept.Name))
-	if m.editing != nil && m.editing.conceptID == l.Concept.ID {
-		return fmt.Sprintf("%s [%s] %s %s %s", cursor, check, name, l.Concept.Currency, m.editing.input.View())
+	line := fmt.Sprintf("%s [%s] %s", cursor, check, name)
+
+	if l.Money != nil {
+		if m.editing != nil && m.editing.conceptID == l.Concept.ID {
+			line += fmt.Sprintf(" %s %s", l.Concept.Money.Currency, m.editing.input.View())
+		} else {
+			status := "confirmed"
+			if !l.Money.Confirmed {
+				status = m.theme.Muted.Render("projected")
+			}
+			line += fmt.Sprintf(" %s %12s  %s", l.Concept.Money.Currency, l.Money.Amount.StringFixed(2), status)
+		}
 	}
-	status := "confirmed"
-	if !l.Confirmed {
-		status = m.theme.Muted.Render("projected")
-	}
-	line := fmt.Sprintf("%s [%s] %s %s %12s  %s", cursor, check, name, l.Concept.Currency,
-		l.Amount.StringFixed(2), status)
 	if isLate(l, m.period) {
 		line += "  " + m.theme.Muted.Render("late")
 	}
 	return line
-}
-
-func (m Model) renderChoreLine(c month.ChoreLine, selected bool) string {
-	cursor := " "
-	if selected {
-		cursor = ">"
-	}
-	check := " "
-	if c.Done {
-		check = "x"
-	}
-	line := fmt.Sprintf("%s [%s] %s", cursor, check, c.Chore.Name)
-	if isChoreLate(c, m.period) {
-		line += "  " + m.theme.Muted.Render("late")
-	}
-	return line
-}
-
-// sortChoresByDueDay orders by due day ascending, unset (0) last —
-// SliceStable so ties keep the catalog's own sort_order/name order, the
-// same rule linesForKind applies to concept lines.
-func sortChoresByDueDay(chores []month.ChoreLine) []month.ChoreLine {
-	sorted := make([]month.ChoreLine, len(chores))
-	copy(sorted, chores)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		return dueDayRank(sorted[i].Chore.DueDay) < dueDayRank(sorted[j].Chore.DueDay)
-	})
-	return sorted
-}
-
-// isChoreLate is isLate's counterpart for chores.
-func isChoreLate(c month.ChoreLine, period domain.Period) bool {
-	if c.Chore.DueDay == 0 || c.Done {
-		return false
-	}
-	if currentPeriodStatus(period) != periodCurrent {
-		return false
-	}
-	return time.Now().Day() > c.Chore.DueDay
 }

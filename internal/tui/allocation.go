@@ -197,19 +197,30 @@ func (m Model) availableToSaveUSD() (decimal.Decimal, bool) {
 	return m.available().Div(rate), true
 }
 
+// unallocated reports whether there's something to save and nothing decided
+// yet this period — the moment pocket money and available-to-save read as
+// the same number, which looks like "nothing to do here" rather than
+// "you haven't decided yet." Gone the instant any allocation exists.
+func (m Model) unallocated() bool {
+	return m.available().IsPositive() && len(m.allocations) == 0
+}
+
 // renderAllocations renders the Savings section, marking whichever
 // allocation the cursor sits on — startIdx is that row's position in the
-// Finance pane's cursor space, right after the concept lines.
+// month view's shared cursor space, right after the line list.
 func (m Model) renderAllocations(startIdx int) string {
 	var b strings.Builder
 	b.WriteString(m.theme.Title.Render("Savings"))
 	fmt.Fprintf(&b, "\n  available to save  %12s ARS", m.available().StringFixed(2))
 	if usd, ok := m.availableToSaveUSD(); ok {
-		fmt.Fprintf(&b, "  (%s USD)", usd.StringFixed(2))
+		fmt.Fprintf(&b, "  %s", m.theme.Muted.Render("("+usd.StringFixed(2)+" USD)"))
+	}
+	if m.unallocated() {
+		fmt.Fprintf(&b, "\n  %s", m.theme.Highlight.Render(m.available().StringFixed(2)+" unallocated · press a"))
 	}
 	for i, a := range m.allocations {
 		cursor := " "
-		if startIdx+i == m.financeCursor {
+		if startIdx+i == m.cursor {
 			cursor = ">"
 		}
 		fmt.Fprintf(&b, "\n%s %-10s          %12s %s", cursor, a.Destination, a.Amount.StringFixed(2), a.Currency)

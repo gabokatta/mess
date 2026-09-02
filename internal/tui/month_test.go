@@ -23,7 +23,7 @@ func seedConcept(t *testing.T, db *sql.DB, name string, base int64) catalog.Conc
 		Name:       name,
 		CategoryID: cat.ID,
 		Kind:       catalog.Expense,
-		Currency:   domain.ARS,
+		Money:      &catalog.MoneyDetails{Currency: domain.ARS},
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	})
@@ -36,15 +36,21 @@ func seedConcept(t *testing.T, db *sql.DB, name string, base int64) catalog.Conc
 	return c
 }
 
-func seedChore(t *testing.T, db *sql.DB, name string) catalog.Chore {
+func seedChore(t *testing.T, db *sql.DB, name string) catalog.Concept {
 	t.Helper()
-	c, err := catalog.CreateChore(db, catalog.Chore{
+	cat, err := catalog.CreateCategory(db, name, 0)
+	if err != nil {
+		t.Fatalf("CreateCategory() unexpected error: %v", err)
+	}
+	c, err := catalog.CreateConcept(db, catalog.Concept{
 		Name:       name,
+		CategoryID: cat.ID,
+		Kind:       catalog.Chore,
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	})
 	if err != nil {
-		t.Fatalf("CreateChore() unexpected error: %v", err)
+		t.Fatalf("CreateConcept() unexpected error: %v", err)
 	}
 	return c
 }
@@ -64,7 +70,7 @@ func monthModel(t *testing.T, db *sql.DB, period domain.Period) Model {
 	m.width, m.height = 100, 40
 	m.period = period
 	loaded := loadLines(t, db, period)
-	updated, _ := m.Update(monthLoadedMsg{lines: loaded.Lines, chores: loaded.Chores})
+	updated, _ := m.Update(monthLoadedMsg{lines: loaded.Lines})
 	return updated.(Model)
 }
 
@@ -75,26 +81,26 @@ func TestCursorMovesWithJKAndClamps(t *testing.T) {
 	period := domain.NewPeriod(2026, time.January)
 
 	m := monthModel(t, db, period)
-	if m.financeCursor != 0 {
-		t.Fatalf("cursor = %d, want 0 at load", m.financeCursor)
+	if m.cursor != 0 {
+		t.Fatalf("cursor = %d, want 0 at load", m.cursor)
 	}
 
 	updated, _ := m.Update(key("j"))
 	m = updated.(Model)
-	if m.financeCursor != 1 {
-		t.Fatalf("cursor = %d, want 1 after j", m.financeCursor)
+	if m.cursor != 1 {
+		t.Fatalf("cursor = %d, want 1 after j", m.cursor)
 	}
 
 	updated, _ = m.Update(key("j"))
 	m = updated.(Model)
-	if m.financeCursor != 1 {
-		t.Fatalf("cursor = %d, want clamped at 1 (last line)", m.financeCursor)
+	if m.cursor != 1 {
+		t.Fatalf("cursor = %d, want clamped at 1 (last line)", m.cursor)
 	}
 
 	updated, _ = m.Update(key("k"))
 	m = updated.(Model)
-	if m.financeCursor != 0 {
-		t.Fatalf("cursor = %d, want 0 after k", m.financeCursor)
+	if m.cursor != 0 {
+		t.Fatalf("cursor = %d, want 0 after k", m.cursor)
 	}
 }
 
@@ -238,7 +244,7 @@ func TestClearingAmountRemovesOverride(t *testing.T) {
 	}
 }
 
-func TestFinanceCursorNeverReachesChores(t *testing.T) {
+func TestCursorReachesChoreLinesAfterMoneyLines(t *testing.T) {
 	db := openTestStore(t)
 	seedConcept(t, db, "Alquiler", 785000)
 	seedChore(t, db, "Sacar la basura")
@@ -248,34 +254,12 @@ func TestFinanceCursorNeverReachesChores(t *testing.T) {
 
 	updated, _ := m.Update(key("j"))
 	m = updated.(Model)
-	if m.financeCursor != 0 {
-		t.Fatalf("financeCursor = %d, want clamped at 0 — Finance has one line and its own cursor space, unrelated to Chores'", m.financeCursor)
+	if m.cursor != 1 {
+		t.Fatalf("cursor = %d, want 1 (Chore follows Income/Expense in one shared cursor space)", m.cursor)
 	}
-}
-
-func TestChoreCursorMovesAndClampsInItsOwnPane(t *testing.T) {
-	db := openTestStore(t)
-	seedChore(t, db, "Sacar la basura")
-	seedChore(t, db, "Regar plantas")
-	period := domain.NewPeriod(2026, time.January)
-
-	m := monthModel(t, db, period)
-	updated, _ := m.Update(key("f"))
-	m = updated.(Model)
-	if m.monthPane != paneChores {
-		t.Fatalf("monthPane = %v, want paneChores after f", m.monthPane)
-	}
-
-	updated, _ = m.Update(key("j"))
-	m = updated.(Model)
-	if m.choreCursor != 1 {
-		t.Fatalf("choreCursor = %d, want 1 after j", m.choreCursor)
-	}
-
-	updated, _ = m.Update(key("j"))
-	m = updated.(Model)
-	if m.choreCursor != 1 {
-		t.Fatalf("choreCursor = %d, want clamped at 1 (last chore)", m.choreCursor)
+	l, ok := m.cursorLine()
+	if !ok || l.Concept.Name != "Sacar la basura" {
+		t.Fatalf("cursorLine() = %+v, %v, want the chore", l, ok)
 	}
 }
 
@@ -285,8 +269,6 @@ func TestSpaceTogglesChoreDoneWithoutOpeningEdit(t *testing.T) {
 	period := domain.NewPeriod(2026, time.January)
 
 	m := monthModel(t, db, period)
-	updated, _ := m.Update(key("f"))
-	m = updated.(Model)
 
 	updated, cmd := m.Update(keySpace())
 	m = updated.(Model)
@@ -295,87 +277,155 @@ func TestSpaceTogglesChoreDoneWithoutOpeningEdit(t *testing.T) {
 	}
 	m = settle(t, m, cmd)
 
-	entries, err := catalog.ChoreEntries(db, period)
+	entries, err := catalog.MonthEntries(db, period)
 	if err != nil {
-		t.Fatalf("ChoreEntries() unexpected error: %v", err)
+		t.Fatalf("MonthEntries() unexpected error: %v", err)
 	}
-	if len(entries) != 1 || entries[0].ChoreID != c.ID || !entries[0].Done {
-		t.Fatalf("ChoreEntries() = %+v, want %s done=true persisted", entries, c.Name)
+	if len(entries) != 1 || entries[0].ConceptID != c.ID || !entries[0].Done {
+		t.Fatalf("MonthEntries() = %+v, want %s done=true persisted", entries, c.Name)
 	}
 }
 
-func TestMonthViewRendersProjectedAndConfirmedTotals(t *testing.T) {
+func TestEOnAChoreLineIsANoOp(t *testing.T) {
+	db := openTestStore(t)
+	seedChore(t, db, "Sacar la basura")
+	period := domain.NewPeriod(2026, time.January)
+
+	m := monthModel(t, db, period)
+
+	updated, cmd := m.Update(key("e"))
+	m = updated.(Model)
+	if m.editing != nil {
+		t.Error("e on a Chore line should not open the amount edit — there's no amount to edit")
+	}
+	if cmd != nil {
+		t.Error("e on a Chore line should not write anything")
+	}
+}
+
+func TestMonthViewHeaderShowsOneConfirmedARSTotal(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
 
-	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS, Share: domain.NewPercent(50)}
-	salary := catalog.Concept{Name: "Sueldo", Kind: catalog.Income, Currency: domain.ARS, Share: domain.NewPercent(100)}
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(50)}}
+	salary := catalog.Concept{Name: "Sueldo", Kind: catalog.Income, Money: &catalog.MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(100)}}
 	lines := []month.Line{
-		{Concept: salary, Amount: amountFor(t, "1000000"), Confirmed: true, Done: true},
-		{Concept: rent, Amount: amountFor(t, "785000"), Confirmed: false, Done: false},
+		{Concept: salary, Money: &month.LineMoney{Amount: amountFor(t, "1000000"), Confirmed: true}, Done: true},
+		{Concept: rent, Money: &month.LineMoney{Amount: amountFor(t, "785000"), Confirmed: false}, Done: false},
 	}
 
 	updated, _ := m.Update(monthLoadedMsg{lines: lines})
 	m = updated.(Model)
 	content := m.View().Content
 
-	for _, want := range []string{"215000.00", "607500.00", "1000000.00"} {
-		if !strings.Contains(content, want) {
-			t.Errorf("month view content missing %q (projected/confirmed totals):\n%s", want, content)
-		}
-	}
-}
-
-func TestMonthViewRendersChoresGroupInChoresPane(t *testing.T) {
-	m := New(openTestStore(t))
-	m.width, m.height = 100, 40
-	m.monthPane = paneChores
-
-	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS}
-	trash := catalog.Chore{Name: "Sacar la basura"}
-	updated, _ := m.Update(monthLoadedMsg{
-		lines:  []month.Line{{Concept: rent, Amount: amountFor(t, "785000"), Confirmed: false, Done: false}},
-		chores: []month.ChoreLine{{Chore: trash, Done: true}},
-	})
-	m = updated.(Model)
-	content := m.View().Content
-
-	for _, want := range []string{"Chores", "Sacar la basura"} {
+	for _, want := range []string{"1000000.00", "1 of 2 confirmed"} {
 		if !strings.Contains(content, want) {
 			t.Errorf("month view content missing %q:\n%s", want, content)
 		}
 	}
-	if strings.Contains(content, "Alquiler") {
-		t.Errorf("content = %q, want the Chores pane to hide Finance's concept lines", content)
+	if strings.Contains(content, "projected  share") {
+		t.Errorf("content = %q, want no separate projected total row in the header", content)
 	}
 }
 
-func TestFKeyTogglesMonthPane(t *testing.T) {
+func TestMonthViewHeaderShowsUSDEquivalentWhenRateKnown(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
-	if m.monthPane != paneFinance {
-		t.Fatalf("monthPane = %v, want paneFinance by default", m.monthPane)
-	}
 
-	updated, _ := m.Update(key("f"))
+	salary := catalog.Concept{Name: "Sueldo", Kind: catalog.Income, Money: &catalog.MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(100)}}
+	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
+		{Concept: salary, Money: &month.LineMoney{Amount: amountFor(t, "1000000"), Confirmed: true}, Done: true},
+	}})
 	m = updated.(Model)
-	if m.monthPane != paneChores {
-		t.Fatalf("monthPane = %v, want paneChores after f", m.monthPane)
-	}
+	updated, _ = m.Update(allocationsLoadedMsg{rates: []catalog.FxRate{{Period: m.period, Value: amountFor(t, "1000")}}})
+	m = updated.(Model)
 
-	updated, _ = m.Update(key("f"))
-	m = updated.(Model)
-	if m.monthPane != paneFinance {
-		t.Fatalf("monthPane = %v, want paneFinance after a second f", m.monthPane)
+	content := m.View().Content
+	if !strings.Contains(content, "1000.00 USD") {
+		t.Errorf("month view content missing the USD equivalent:\n%s", content)
 	}
 }
 
-func TestMonthViewShowsAssignedProjectsWithProgress(t *testing.T) {
+func TestMonthViewHeaderFoldsUSDLineIntoTheARSTotal(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+
+	allowance := catalog.Concept{Name: "Family", Kind: catalog.Income, Money: &catalog.MoneyDetails{Currency: domain.USD, Share: domain.NewPercent(100)}}
+	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
+		{Concept: allowance, Money: &month.LineMoney{Amount: amountFor(t, "450"), Confirmed: true}, Done: true},
+	}})
+	m = updated.(Model)
+	updated, _ = m.Update(allocationsLoadedMsg{rates: []catalog.FxRate{{Period: m.period, Value: amountFor(t, "1000")}}})
+	m = updated.(Model)
+
+	content := m.View().Content
+	if !strings.Contains(content, "450000.00") {
+		t.Errorf("month view content = %q, want the USD line folded into the ARS total at rate (450 * 1000)", content)
+	}
+}
+
+func TestMonthViewHeaderShowsChoresDoneCount(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+
+	done := catalog.Concept{Name: "Sacar la basura", Kind: catalog.Chore}
+	pending := catalog.Concept{Name: "Regar plantas", Kind: catalog.Chore}
+	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
+		{Concept: done, Done: true},
+		{Concept: pending, Done: false},
+	}})
+	m = updated.(Model)
+
+	content := m.View().Content
+	if !strings.Contains(content, "1 of 2 chores done") {
+		t.Errorf("month view content missing the chores-done count:\n%s", content)
+	}
+}
+
+func TestMonthViewHeaderOmitsChoresDoneCountWithNoChores(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS}}
+	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
+		{Concept: rent, Money: &month.LineMoney{Amount: amountFor(t, "785000")}},
+	}})
+	m = updated.(Model)
+
+	content := m.View().Content
+	if strings.Contains(content, "chores done") {
+		t.Errorf("content = %q, want no chores-done count when the month has no chores", content)
+	}
+}
+
+func TestMonthViewRendersChoreGroupAlongsideIncomeAndExpense(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS}}
+	trash := catalog.Concept{Name: "Sacar la basura", Kind: catalog.Chore}
+	updated, _ := m.Update(monthLoadedMsg{
+		lines: []month.Line{
+			{Concept: rent, Money: &month.LineMoney{Amount: amountFor(t, "785000"), Confirmed: false}, Done: false},
+			{Concept: trash, Done: true},
+		},
+	})
+	m = updated.(Model)
+	content := m.View().Content
+
+	for _, want := range []string{"Expense", "Alquiler", "Chore", "Sacar la basura"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("month view content missing %q:\n%s", want, content)
+		}
+	}
+}
+
+func TestMonthViewShowsAssignedListsWithProgress(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
 	m.period = domain.NewPeriod(2026, time.September)
 
-	updated, _ := m.Update(projectsLoadedMsg{projects: []catalog.Project{
+	updated, _ := m.Update(listsLoadedMsg{lists: []catalog.List{
 		{Name: "Venezuela trip", Period: domain.NewPeriod(2026, time.September), BodyMD: "- [x] flights\n- [ ] hotel"},
 		{Name: "Someday list", Period: domain.NewPeriod(2026, time.July)},
 	}})
@@ -383,10 +433,10 @@ func TestMonthViewShowsAssignedProjectsWithProgress(t *testing.T) {
 	content := m.View().Content
 
 	if !strings.Contains(content, "Venezuela trip") || !strings.Contains(content, "1/2") {
-		t.Errorf("content missing the assigned project and its progress:\n%s", content)
+		t.Errorf("content missing the assigned list and its progress:\n%s", content)
 	}
 	if strings.Contains(content, "Someday list") {
-		t.Errorf("content = %q, want only this period's projects, not other months'", content)
+		t.Errorf("content = %q, want only this period's lists, not other months'", content)
 	}
 }
 

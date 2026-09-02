@@ -25,9 +25,8 @@ func TestCreateAndListConcepts(t *testing.T) {
 		Name:        "Alquiler",
 		CategoryID:  cat.ID,
 		Kind:        Expense,
-		Currency:    domain.ARS,
+		Money:       &MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(50)},
 		MonthMask:   domain.Monthly,
-		Share:       domain.NewPercent(50),
 		DueDay:      10,
 		SortOrder:   1,
 		ActiveFrom:  domain.NewPeriod(2026, time.January),
@@ -53,10 +52,10 @@ func TestCreateAndListConcepts(t *testing.T) {
 	want := created
 	g := got[0]
 	if g.ID != want.ID || g.Name != want.Name || g.CategoryID != want.CategoryID ||
-		g.Kind != want.Kind || g.Currency != want.Currency || g.MonthMask != want.MonthMask ||
+		g.Kind != want.Kind || g.Money.Currency != want.Money.Currency || g.MonthMask != want.MonthMask ||
 		g.DueDay != want.DueDay || g.SortOrder != want.SortOrder ||
 		!g.ActiveFrom.Equal(want.ActiveFrom) || !g.ActiveUntil.Equal(want.ActiveUntil) ||
-		!g.Share.Fraction().Equal(want.Share.Fraction()) {
+		!g.Money.Share.Fraction().Equal(want.Money.Share.Fraction()) {
 		t.Errorf("Concepts()[0] = %+v, want %+v", g, want)
 	}
 	if !got[0].ActiveUntil.IsZero() {
@@ -72,7 +71,7 @@ func TestCreateConceptDefaultsShareToFull(t *testing.T) {
 		Name:       "Internet",
 		CategoryID: cat.ID,
 		Kind:       Expense,
-		Currency:   domain.ARS,
+		Money:      &MoneyDetails{Currency: domain.ARS},
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	}
@@ -81,16 +80,16 @@ func TestCreateConceptDefaultsShareToFull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateConcept() unexpected error: %v", err)
 	}
-	if !created.Share.Fraction().Equal(domain.NewPercent(100).Fraction()) {
-		t.Errorf("CreateConcept() with Share unset = %s, want %s (100%%)", created.Share.Fraction(), domain.NewPercent(100).Fraction())
+	if !created.Money.Share.Fraction().Equal(domain.NewPercent(100).Fraction()) {
+		t.Errorf("CreateConcept() with Share unset = %s, want %s (100%%)", created.Money.Share.Fraction(), domain.NewPercent(100).Fraction())
 	}
 
 	got, err := Concepts(db)
 	if err != nil {
 		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
-	if len(got) != 1 || !got[0].Share.Fraction().Equal(domain.NewPercent(100).Fraction()) {
-		t.Errorf("Concepts()[0].Share = %s, want %s (100%%)", got[0].Share.Fraction(), domain.NewPercent(100).Fraction())
+	if len(got) != 1 || !got[0].Money.Share.Fraction().Equal(domain.NewPercent(100).Fraction()) {
+		t.Errorf("Concepts()[0].Money.Share = %s, want %s (100%%)", got[0].Money.Share.Fraction(), domain.NewPercent(100).Fraction())
 	}
 }
 
@@ -101,9 +100,8 @@ func TestCreateConceptRequiresExistingCategory(t *testing.T) {
 		Name:       "Alquiler",
 		CategoryID: 999,
 		Kind:       Expense,
-		Currency:   domain.ARS,
+		Money:      &MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(100)},
 		MonthMask:  domain.Monthly,
-		Share:      domain.NewPercent(100),
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	}
 	if _, err := CreateConcept(db, c); err == nil {
@@ -119,9 +117,8 @@ func TestUpdateConceptRetiresViaActiveUntil(t *testing.T) {
 		Name:       "Netflix",
 		CategoryID: cat.ID,
 		Kind:       Expense,
-		Currency:   domain.ARS,
+		Money:      &MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(100)},
 		MonthMask:  domain.Monthly,
-		Share:      domain.NewPercent(100),
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	}
 	created, err := CreateConcept(db, c)
@@ -143,6 +140,34 @@ func TestUpdateConceptRetiresViaActiveUntil(t *testing.T) {
 	}
 }
 
+func TestCreateChoreConceptHasNoMoney(t *testing.T) {
+	db := openTestStore(t).DB()
+	cat := mustCategory(t, db)
+
+	c := Concept{
+		Name:       "Sacar la basura",
+		CategoryID: cat.ID,
+		Kind:       Chore,
+		MonthMask:  domain.Monthly,
+		ActiveFrom: domain.NewPeriod(2026, time.January),
+	}
+	created, err := CreateConcept(db, c)
+	if err != nil {
+		t.Fatalf("CreateConcept() unexpected error: %v", err)
+	}
+	if created.Money != nil {
+		t.Errorf("created.Money = %+v, want nil for a Chore", created.Money)
+	}
+
+	got, err := Concepts(db)
+	if err != nil {
+		t.Fatalf("Concepts() unexpected error: %v", err)
+	}
+	if len(got) != 1 || got[0].Money != nil {
+		t.Errorf("Concepts()[0] = %+v, want a money-less Chore round-tripped", got)
+	}
+}
+
 func TestParseConceptKind(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -152,6 +177,7 @@ func TestParseConceptKind(t *testing.T) {
 	}{
 		{"income", "Income", Income, false},
 		{"expense", "Expense", Expense, false},
+		{"chore", "Chore", Chore, false},
 		{"unknown", "Savings", 0, true},
 	}
 

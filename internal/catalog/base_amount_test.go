@@ -17,9 +17,8 @@ func mustConcept(t *testing.T, db *sql.DB) Concept {
 		Name:       "Alquiler",
 		CategoryID: cat.ID,
 		Kind:       Expense,
-		Currency:   domain.ARS,
+		Money:      &MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(50)},
 		MonthMask:  domain.Monthly,
-		Share:      domain.NewPercent(50),
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	})
 	if err != nil {
@@ -85,7 +84,7 @@ func TestAllBaseAmountsGroupsByConcept(t *testing.T) {
 		Name:       "Internet",
 		CategoryID: cat.ID,
 		Kind:       Expense,
-		Currency:   domain.ARS,
+		Money:      &MoneyDetails{Currency: domain.ARS},
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	})

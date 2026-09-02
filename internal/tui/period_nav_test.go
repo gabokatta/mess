@@ -36,16 +36,15 @@ func TestBracketKeysShiftTheMonthPeriodAndReload(t *testing.T) {
 	m := New(db)
 	m.width, m.height = 100, 40
 	m.period = period
-	m.financeCursor = 1
-	m.choreCursor = 1
+	m.cursor = 1
 
 	updated, cmd := m.Update(key("["))
 	m = updated.(Model)
 	if !m.period.Equal(domain.NewPeriod(2026, time.August)) {
 		t.Errorf("period = %v, want August after [", m.period)
 	}
-	if m.financeCursor != 0 || m.choreCursor != 0 {
-		t.Errorf("financeCursor = %d, choreCursor = %d, want both reset to 0 after a period shift", m.financeCursor, m.choreCursor)
+	if m.cursor != 0 {
+		t.Errorf("cursor = %d, want reset to 0 after a period shift", m.cursor)
 	}
 	if cmd == nil {
 		t.Fatal("[ returned no Cmd, want a reload")

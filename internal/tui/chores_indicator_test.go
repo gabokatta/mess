@@ -13,8 +13,8 @@ import (
 func TestMonthViewRendersLastMonthUnfinishedCount(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
-	trash := catalog.Chore{Name: "Sacar la basura"}
-	updated, _ := m.Update(monthLoadedMsg{chores: []month.ChoreLine{{Chore: trash, Done: true}}})
+	trash := catalog.Concept{Name: "Sacar la basura", Kind: catalog.Chore}
+	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{{Concept: trash, Done: true}}})
 	m = updated.(Model)
 	updated, _ = m.Update(lastMonthChoresLoadedMsg{unfinished: 3})
 	m = updated.(Model)
@@ -31,8 +31,8 @@ func TestLoadLastMonthChoresCountsUndoneFromThePriorPeriod(t *testing.T) {
 	current := domain.NewPeriod(2026, time.September)
 	a := seedChore(t, db, "Sacar la basura")
 	seedChore(t, db, "Regar las plantas")
-	if err := catalog.SetChoreEntryDone(db, a.ID, prior, true); err != nil {
-		t.Fatalf("SetChoreEntryDone() unexpected error: %v", err)
+	if err := catalog.SetMonthEntryDone(db, a.ID, prior, true); err != nil {
+		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
 	}
 
 	cmd := loadLastMonthChores(db, current)

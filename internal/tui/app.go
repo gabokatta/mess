@@ -20,11 +20,11 @@ const (
 	viewMonth view = iota
 	viewYear
 	viewConcepts
-	viewProjects
+	viewLists
 	viewSettings
 )
 
-var viewNames = [...]string{"Month", "Year", "Concepts", "Projects", "Settings"}
+var viewNames = [...]string{"Month", "Year", "Concepts", "Lists", "Settings"}
 
 func (v view) String() string { return viewNames[v] }
 
@@ -37,11 +37,8 @@ type Model struct {
 	fxClient          *dolarapi.Client
 	period            domain.Period
 	lines             []month.Line
-	chores            []month.ChoreLine
 	loadErr           error
-	monthPane         monthPane
-	financeCursor     int
-	choreCursor       int
+	cursor            int
 	editing           *editState
 	saveErr           error
 	fxErr             error
@@ -60,19 +57,16 @@ type Model struct {
 	incomeConfirmForm  *incomeConfirmFormState
 	incomeConfirmShown map[domain.Period]bool
 
-	choreForm    *choreFormState
-	choreSaveErr error
-
 	lastMonthUnfinished int
 	lastMonthChoresErr  error
 
-	projects         []catalog.Project
-	projectsErr      error
-	projectCursor    int
+	lists            []catalog.List
+	listsErr         error
+	listCursor       int
 	showClosed       bool
-	projectEditing   *projectEditState
-	projectSaveErr   error
-	newProject       *newProjectFormState
+	listEditing      *listEditState
+	listSaveErr      error
+	newList          *newListFormState
 	periodAssignForm *periodAssignFormState
 
 	concepts        []catalog.Concept
@@ -125,7 +119,7 @@ func (m Model) Init() tea.Cmd {
 		loadLastMonthChores(m.db, m.period),
 		fillCurrentFxRate(m.db, m.fxClient, m.period),
 		loadYear(m.db, m.period.Year()),
-		loadProjects(m.db),
+		loadLists(m.db),
 		ensureDefaultCategories(m.db),
 		loadConcepts(m.db),
 		loadSettings(m.db),
@@ -140,8 +134,8 @@ func (m Model) loadView(v view) tea.Cmd {
 		return tea.Batch(loadMonth(m.db, m.period), loadAllocations(m.db, m.period), loadLastMonthChores(m.db, m.period))
 	case viewYear:
 		return loadYear(m.db, m.period.Year())
-	case viewProjects:
-		return loadProjects(m.db)
+	case viewLists:
+		return loadLists(m.db)
 	case viewConcepts:
 		return loadConcepts(m.db)
 	case viewSettings:
@@ -158,7 +152,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case monthLoadedMsg:
 		m.lines, m.loadErr = msg.lines, msg.err
-		m.chores = sortChoresByDueDay(msg.chores)
 		if !m.incomeConfirmShown[m.period] && msg.err == nil {
 			if form := m.maybeIncomeConfirmForm(); form != nil {
 				m.incomeConfirmShown[m.period] = true
@@ -184,10 +177,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case incomeConfirmedMsg:
 		return m, loadMonth(m.db, m.period)
 
-	case choreSavedMsg:
-		m.choreSaveErr = msg.err
-		return m, loadMonth(m.db, m.period)
-
 	case backupDoneMsg:
 		m.backupMsg, m.backupErr = msg.message, msg.err
 		return m, loadSettings(m.db)
@@ -201,12 +190,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case yearLoadedMsg:
 		m.year, m.yearErr = msg.year, msg.err
 
-	case projectsLoadedMsg:
-		m.projects, m.projectsErr = msg.projects, msg.err
+	case listsLoadedMsg:
+		m.lists, m.listsErr = msg.lists, msg.err
 
-	case projectSavedMsg:
-		m.projectSaveErr = msg.err
-		return m, loadProjects(m.db)
+	case listSavedMsg:
+		m.listSaveErr = msg.err
+		return m, loadLists(m.db)
 
 	case categoriesSeededMsg:
 		return m, loadConcepts(m.db)
@@ -216,7 +205,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case conceptSavedMsg:
 		m.conceptSaveErr = msg.err
-		return m, loadConcepts(m.db)
+		return m, tea.Batch(loadConcepts(m.db), loadMonth(m.db, m.period))
 
 	case settingsLoadedMsg:
 		m.settings, m.settingsErr = msg.settings, msg.err
@@ -240,8 +229,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.settingsForm != nil {
 			return m.forwardSettingsForm(msg)
 		}
-		if m.newProject != nil {
-			return m.forwardNewProject(msg)
+		if m.newList != nil {
+			return m.forwardNewList(msg)
 		}
 		if m.allocationForm != nil {
 			return m.forwardAllocationForm(msg)
@@ -254,9 +243,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.importForm != nil {
 			return m.forwardImportForm(msg)
-		}
-		if m.choreForm != nil {
-			return m.forwardChoreForm(msg)
 		}
 		if m.conceptEditForm != nil {
 			return m.forwardConceptEditForm(msg)
@@ -275,11 +261,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.editing != nil {
 		return m.updateEditing(msg)
 	}
-	if m.projectEditing != nil {
-		return m.updateProjectEditing(msg)
+	if m.listEditing != nil {
+		return m.updateListEditing(msg)
 	}
-	if m.newProject != nil {
-		return m.updateNewProject(msg)
+	if m.newList != nil {
+		return m.updateNewList(msg)
 	}
 	if m.conceptForm != nil {
 		return m.updateConceptForm(msg)
@@ -298,9 +284,6 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	}
 	if m.importForm != nil {
 		return m.updateImportForm(msg)
-	}
-	if m.choreForm != nil {
-		return m.updateChoreForm(msg)
 	}
 	if m.conceptEditForm != nil {
 		return m.updateConceptEditForm(msg)
@@ -325,9 +308,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, m.loadView(m.view)
 	case "j", "down":
 		if m.view == viewMonth {
-			m = m.moveMonthCursor(1)
-		} else if m.view == viewProjects {
-			m.projectCursor = m.moveProjectCursor(1)
+			m.cursor = m.moveCursor(1)
+		} else if m.view == viewLists {
+			m.listCursor = m.moveListCursor(1)
 		} else if m.view == viewConcepts {
 			m.conceptCursor = m.moveConceptCursor(1)
 		} else if m.view == viewYear {
@@ -335,9 +318,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 	case "k", "up":
 		if m.view == viewMonth {
-			m = m.moveMonthCursor(-1)
-		} else if m.view == viewProjects {
-			m.projectCursor = m.moveProjectCursor(-1)
+			m.cursor = m.moveCursor(-1)
+		} else if m.view == viewLists {
+			m.listCursor = m.moveListCursor(-1)
 		} else if m.view == viewConcepts {
 			m.conceptCursor = m.moveConceptCursor(-1)
 		} else if m.view == viewYear {
@@ -354,48 +337,44 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case "space":
 		if m.view == viewMonth {
 			return m.toggleDone()
-		} else if m.view == viewProjects {
-			return m.toggleProjectCheckbox()
+		} else if m.view == viewLists {
+			return m.toggleListCheckbox()
 		}
 	case "e":
-		if m.view == viewMonth && m.monthPane == paneFinance {
+		if m.view == viewMonth {
 			return m.startEdit()
-		} else if m.view == viewProjects {
-			return m.startProjectEdit()
+		} else if m.view == viewLists {
+			return m.startListEdit()
 		} else if m.view == viewSettings {
 			return m.startSettingsEdit()
 		} else if m.view == viewConcepts {
 			return m.startConceptEdit()
 		}
 	case "c":
-		if m.view == viewProjects {
-			return m.toggleProjectClosed()
+		if m.view == viewLists {
+			return m.toggleListClosed()
 		}
 	case "p":
-		if m.view == viewProjects {
+		if m.view == viewLists {
 			return m.startPeriodAssign()
 		}
 	case "f":
-		if m.view == viewProjects {
+		if m.view == viewLists {
 			m.showClosed = !m.showClosed
-			m.projectCursor = 0
-		} else if m.view == viewMonth {
-			m.monthPane = togglePane(m.monthPane)
+			m.listCursor = 0
 		}
 	case "n":
-		if m.view == viewProjects {
-			return m.startNewProject()
+		if m.view == viewLists {
+			return m.startNewList()
 		} else if m.view == viewConcepts {
 			return m.startNewConcept()
-		} else if m.view == viewMonth && m.monthPane == paneChores {
-			return m.startNewChore()
 		}
 	case "a":
-		if m.view == viewMonth && m.monthPane == paneFinance {
+		if m.view == viewMonth {
 			return m.startAllocationPanel()
 		}
 	case "d":
-		if m.view == viewMonth && m.monthPane == paneFinance {
+		if m.view == viewMonth {
 			return m.deleteCursorAllocation()
 		}
 	case "s":
@@ -516,8 +495,8 @@ func (m Model) viewContent() string {
 		body = m.renderMonth()
 	case viewYear:
 		body = m.renderYear()
-	case viewProjects:
-		body = m.renderProjects()
+	case viewLists:
+		body = m.renderLists()
 	case viewConcepts:
 		body = m.renderConcepts()
 	case viewSettings:
@@ -532,21 +511,18 @@ func (m Model) helpText() string {
 	if m.editing != nil {
 		return "enter confirm · esc cancel"
 	}
-	if m.projectEditing != nil {
+	if m.listEditing != nil {
 		return "ctrl+s save · esc cancel"
 	}
-	if m.newProject != nil || m.conceptForm != nil || m.settingsForm != nil || m.allocationForm != nil ||
-		m.incomeConfirmForm != nil || m.exportForm != nil || m.importForm != nil || m.choreForm != nil ||
+	if m.newList != nil || m.conceptForm != nil || m.settingsForm != nil || m.allocationForm != nil ||
+		m.incomeConfirmForm != nil || m.exportForm != nil || m.importForm != nil ||
 		m.conceptEditForm != nil || m.fxOverrideForm != nil || m.periodAssignForm != nil {
 		return "esc cancel"
 	}
-	if m.view == viewMonth && m.monthPane == paneChores {
-		return "↑/↓ move · space tick · n new chore · f finance · [/] month · tab/shift+tab switch · q quit"
-	}
 	if m.view == viewMonth {
-		return "↑/↓ move · space tick · e edit · a allocate · d delete allocation · f chores · [/] month · tab/shift+tab switch · q quit"
+		return "↑/↓ move · space tick · e edit · a allocate · d delete allocation · [/] month · tab/shift+tab switch · q quit"
 	}
-	if m.view == viewProjects {
+	if m.view == viewLists {
 		return "↑/↓ move · space tick · e edit · c close · p period · f pending/closed · n new · tab/shift+tab switch · q quit"
 	}
 	if m.view == viewConcepts {

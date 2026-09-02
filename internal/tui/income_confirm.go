@@ -57,7 +57,7 @@ func newIncomeConfirmForm(theme Theme, width, height int, income []month.Line) *
 	fields := make([]huh.Field, len(income))
 	for i, l := range income {
 		v.conceptIDs[i] = l.Concept.ID
-		v.amounts[i] = l.Amount.StringFixed(2)
+		v.amounts[i] = l.Money.Amount.StringFixed(2)
 		fields[i] = huh.NewInput().Title(l.Concept.Name).Value(&v.amounts[i]).Validate(validateOptionalDecimal)
 	}
 
@@ -82,7 +82,7 @@ func (m Model) maybeIncomeConfirmForm() *incomeConfirmFormState {
 
 func hasConfirmedIncome(lines []month.Line) bool {
 	for _, l := range lines {
-		if l.Concept.Kind == catalog.Income && l.Confirmed {
+		if l.Concept.Kind == catalog.Income && l.Money != nil && l.Money.Confirmed {
 			return true
 		}
 	}

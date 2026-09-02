@@ -230,17 +230,21 @@ func (m Model) renderYearConceptRow(c catalog.Concept, avg decimal.Decimal, sele
 		cursor = ">"
 	}
 	name := categoryStyle(m.categories, c.CategoryID).Render(fmt.Sprintf("%-20s", c.Name))
-	return fmt.Sprintf("%s %s %s %12s", cursor, name, c.Currency, avg.StringFixed(2))
+	return fmt.Sprintf("%s %s %s %12s", cursor, name, c.Money.Currency, avg.StringFixed(2))
 }
 
 // conceptYearAverages sums each concept's resolved amounts across months
-// and divides by the count it actually occurred in.
+// and divides by the count it actually occurred in. A Chore line has no
+// Money to sum, so it doesn't contribute.
 func conceptYearAverages(months []month.Month) map[int64]decimal.Decimal {
 	sums := make(map[int64]decimal.Decimal)
 	counts := make(map[int64]int)
 	for _, mo := range months {
 		for _, l := range mo.Lines {
-			sums[l.Concept.ID] = sums[l.Concept.ID].Add(l.Amount)
+			if l.Money == nil {
+				continue
+			}
+			sums[l.Concept.ID] = sums[l.Concept.ID].Add(l.Money.Amount)
 			counts[l.Concept.ID]++
 		}
 	}
@@ -298,13 +302,15 @@ func (m Model) updateYearDrillDown(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 }
 
 // conceptTwelveMonths is one concept's resolved amount for each of months,
-// zero where it didn't occur that month.
+// zero where it didn't occur that month. Only ever called with a money
+// concept's ID — yearConcepts excludes Chores from the rows a drill-down
+// can be opened on.
 func conceptTwelveMonths(months []month.Month, conceptID int64) []decimal.Decimal {
 	values := make([]decimal.Decimal, len(months))
 	for i, mo := range months {
 		for _, l := range mo.Lines {
-			if l.Concept.ID == conceptID {
-				values[i] = l.Amount
+			if l.Concept.ID == conceptID && l.Money != nil {
+				values[i] = l.Money.Amount
 				break
 			}
 		}
@@ -326,17 +332,19 @@ func (m Model) renderYearDrillDown() string {
 	return b.String()
 }
 
-// yearConcepts is the union of every concept resolved in any month of the
-// year, ordered the same way the catalog is: sort_order, then name.
+// yearConcepts is the union of every money concept resolved in any month of
+// the year, ordered the same way the catalog is: sort_order, then name.
+// Chore-kind concepts are excluded — there's no amount to average.
 func yearConcepts(months []month.Month) []catalog.Concept {
 	seen := make(map[int64]bool)
 	var concepts []catalog.Concept
 	for _, mo := range months {
 		for _, l := range mo.Lines {
-			if !seen[l.Concept.ID] {
-				seen[l.Concept.ID] = true
-				concepts = append(concepts, l.Concept)
+			if l.Concept.Kind == catalog.Chore || seen[l.Concept.ID] {
+				continue
 			}
+			seen[l.Concept.ID] = true
+			concepts = append(concepts, l.Concept)
 		}
 	}
 	sort.Slice(concepts, func(i, j int) bool {

@@ -23,7 +23,7 @@ func TestOpeningMonthWithNoConfirmedIncomePromptsToConfirm(t *testing.T) {
 	m.period = period
 	loaded := loadLines(t, db, period)
 
-	updated, cmd := m.Update(monthLoadedMsg{lines: loaded.Lines, chores: loaded.Chores})
+	updated, cmd := m.Update(monthLoadedMsg{lines: loaded.Lines})
 	m = updated.(Model)
 	if m.incomeConfirmForm == nil {
 		t.Fatal("incomeConfirmForm = nil, want the prompt opened")
@@ -75,7 +75,7 @@ func TestIncomeConfirmDoesNotReopenAfterDismissal(t *testing.T) {
 	}
 
 	loaded := loadLines(t, db, period)
-	updated, _ = m.Update(monthLoadedMsg{lines: loaded.Lines, chores: loaded.Chores})
+	updated, _ = m.Update(monthLoadedMsg{lines: loaded.Lines})
 	m = updated.(Model)
 	if m.incomeConfirmForm != nil {
 		t.Error("the prompt should not reopen on a later reload within the same session")
@@ -149,7 +149,7 @@ func seedConceptOfKind(t *testing.T, db *sql.DB, name string, kind catalog.Conce
 		Name:       name,
 		CategoryID: cat.ID,
 		Kind:       kind,
-		Currency:   domain.ARS,
+		Money:      &catalog.MoneyDetails{Currency: domain.ARS},
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	})

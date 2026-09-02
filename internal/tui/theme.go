@@ -15,6 +15,7 @@ type Theme struct {
 	Help      lipgloss.Style
 	Logo      lipgloss.Style
 	Chart     lipgloss.Style
+	Highlight lipgloss.Style
 }
 
 func NewTheme(dark bool) Theme {
@@ -36,6 +37,10 @@ func NewTheme(dark bool) Theme {
 		Help:      lipgloss.NewStyle().Foreground(muted),
 		Logo:      lipgloss.NewStyle().Foreground(muted),
 		Chart:     lipgloss.NewStyle().Foreground(accent),
+		// Reverse, not just bold — a section that hasn't been decided yet
+		// needs to look different from an ordinary header, not just carry
+		// extra text next to one.
+		Highlight: lipgloss.NewStyle().Bold(true).Foreground(accent).Reverse(true),
 	}
 }
 

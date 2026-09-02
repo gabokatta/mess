@@ -18,7 +18,7 @@ func TestLoadYearResolvesEachPeriodOfTheYear(t *testing.T) {
 		Name:       "Alquiler",
 		CategoryID: cat.ID,
 		Kind:       catalog.Expense,
-		Currency:   domain.ARS,
+		Money:      &catalog.MoneyDetails{Currency: domain.ARS},
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	})
@@ -45,7 +45,7 @@ func TestLoadYearResolvesEachPeriodOfTheYear(t *testing.T) {
 	}
 	for i, p := range got.Periods {
 		lines := got.Months[i].Lines
-		if len(lines) != 1 || !lines[0].Amount.Equal(amount(785000)) {
+		if len(lines) != 1 || !lines[0].Money.Amount.Equal(amount(785000)) {
 			t.Errorf("Months[%d] (%s) lines = %+v, want Alquiler at 785000", i, p, lines)
 		}
 	}
@@ -65,7 +65,7 @@ func TestLoadYearCategoryTotalsSumExpensesOnlyInArs(t *testing.T) {
 
 	rent, err := catalog.CreateConcept(db, catalog.Concept{
 		Name: "Alquiler", CategoryID: servicios.ID, Kind: catalog.Expense,
-		Currency: domain.ARS, MonthMask: domain.Monthly, ActiveFrom: jan,
+		Money: &catalog.MoneyDetails{Currency: domain.ARS}, MonthMask: domain.Monthly, ActiveFrom: jan,
 	})
 	if err != nil {
 		t.Fatalf("CreateConcept(rent) unexpected error: %v", err)
@@ -76,7 +76,7 @@ func TestLoadYearCategoryTotalsSumExpensesOnlyInArs(t *testing.T) {
 
 	internet, err := catalog.CreateConcept(db, catalog.Concept{
 		Name: "Internet", CategoryID: servicios.ID, Kind: catalog.Expense,
-		Currency: domain.ARS, MonthMask: domain.Monthly, ActiveFrom: jan,
+		Money: &catalog.MoneyDetails{Currency: domain.ARS}, MonthMask: domain.Monthly, ActiveFrom: jan,
 	})
 	if err != nil {
 		t.Fatalf("CreateConcept(internet) unexpected error: %v", err)
@@ -87,7 +87,7 @@ func TestLoadYearCategoryTotalsSumExpensesOnlyInArs(t *testing.T) {
 
 	vps, err := catalog.CreateConcept(db, catalog.Concept{
 		Name: "VPS", CategoryID: servicios.ID, Kind: catalog.Expense,
-		Currency: domain.USD, MonthMask: domain.Monthly, ActiveFrom: jan,
+		Money: &catalog.MoneyDetails{Currency: domain.USD}, MonthMask: domain.Monthly, ActiveFrom: jan,
 	})
 	if err != nil {
 		t.Fatalf("CreateConcept(vps) unexpected error: %v", err)
@@ -98,7 +98,7 @@ func TestLoadYearCategoryTotalsSumExpensesOnlyInArs(t *testing.T) {
 
 	salary, err := catalog.CreateConcept(db, catalog.Concept{
 		Name: "Sueldo", CategoryID: ingresos.ID, Kind: catalog.Income,
-		Currency: domain.ARS, MonthMask: domain.Monthly, ActiveFrom: jan,
+		Money: &catalog.MoneyDetails{Currency: domain.ARS}, MonthMask: domain.Monthly, ActiveFrom: jan,
 	})
 	if err != nil {
 		t.Fatalf("CreateConcept(salary) unexpected error: %v", err)

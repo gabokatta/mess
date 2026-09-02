@@ -1,6 +1,6 @@
-// Package project holds the pure logic over a project's markdown body: the
+// Package list holds the pure logic over a list's markdown body: the
 // only structure mess imposes on that text is its task-list checkboxes.
-package project
+package list
 
 import (
 	"regexp"
@@ -12,7 +12,7 @@ import (
 // only syntax mess treats as a checkbox rather than plain prose or a bullet.
 var checkboxPattern = regexp.MustCompile(`^(\s*[-*]\s\[)([ xX])(\]\s+)(.*)$`)
 
-// Checkbox is one task-list item found in a project's markdown body.
+// Checkbox is one task-list item found in a list's markdown body.
 type Checkbox struct {
 	Text string
 	Done bool
@@ -30,7 +30,7 @@ func Checkboxes(body string) []Checkbox {
 	return boxes
 }
 
-// Progress counts done checkboxes against the total, for a project's "3/7"
+// Progress counts done checkboxes against the total, for a list's "3/7"
 // summary.
 func Progress(body string) (done, total int) {
 	for _, c := range Checkboxes(body) {

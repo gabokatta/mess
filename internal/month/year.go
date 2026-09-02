@@ -101,14 +101,15 @@ func categoryTotals(categories []catalog.Category, months []Month) []CategoryTot
 // CategoryTotals sums lines' ARS expense amounts by category, dropping
 // categories with nothing to show. Shared by the Year breakdown (every
 // month's lines pooled together) and the Month view's own single-period
-// breakdown, which passes just that one period's lines.
+// breakdown, which passes just that one period's lines. A Chore line has no
+// Money, so Kind != Expense already excludes it along with Income.
 func CategoryTotals(categories []catalog.Category, lines []Line) []CategoryTotal {
 	sums := make(map[int64]decimal.Decimal, len(categories))
 	for _, l := range lines {
-		if l.Concept.Kind == catalog.Income || l.Concept.Currency != domain.ARS {
+		if l.Concept.Kind != catalog.Expense || l.Concept.Money.Currency != domain.ARS {
 			continue
 		}
-		sums[l.Concept.CategoryID] = sums[l.Concept.CategoryID].Add(l.Amount)
+		sums[l.Concept.CategoryID] = sums[l.Concept.CategoryID].Add(l.Money.Amount)
 	}
 	var totals []CategoryTotal
 	for _, c := range categories {

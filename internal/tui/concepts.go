@@ -67,7 +67,8 @@ const newCategorySentinel int64 = 0
 
 // createConcept resolves the category — an existing ID reuses it directly,
 // the sentinel finds-or-creates newCategory by name — then writes the
-// concept and its opening base amount as one Cmd.
+// concept and, for a money concept, its opening base amount as one Cmd. A
+// Chore has no base amount to set.
 func createConcept(db *sql.DB, c catalog.Concept, categoryID int64, newCategory string, amount decimal.Decimal) tea.Cmd {
 	return func() tea.Msg {
 		if categoryID == newCategorySentinel {
@@ -81,6 +82,9 @@ func createConcept(db *sql.DB, c catalog.Concept, categoryID int64, newCategory 
 		created, err := catalog.CreateConcept(db, c)
 		if err != nil {
 			return conceptSavedMsg{err: err}
+		}
+		if created.Money == nil {
+			return conceptSavedMsg{}
 		}
 		return conceptSavedMsg{err: catalog.SetBaseAmount(db, created.ID, c.ActiveFrom, amount)}
 	}
@@ -128,16 +132,10 @@ func newConceptForm(theme Theme, width, height int, current domain.Period, categ
 			huh.NewSelect[int64]().Title("Category").
 				Options(categoryOptions...).Value(&v.categoryID),
 			huh.NewSelect[catalog.ConceptKind]().Title("Kind").
-				Options(
-					huh.NewOption("Income", catalog.Income),
-					huh.NewOption("Expense", catalog.Expense),
-				).Value(&v.kind),
-			huh.NewSelect[domain.Currency]().Title("Currency").
-				Options(huh.NewOption("ARS", domain.ARS), huh.NewOption("USD", domain.USD)).
-				Value(&v.currency),
-			huh.NewInput().Title("Base amount").Value(&v.amount).Validate(validateRequiredDecimal),
-			huh.NewInput().Title("Share %").Description("blank = 100%").
-				Value(&v.share).Validate(validateOptionalWholePercent),
+				Options(conceptKindOptions...).Value(&v.kind),
+		).Title("New concept"),
+		moneyGroup(&v.currency, &v.amount, &v.share, "Base amount", func() bool { return v.kind == catalog.Chore }),
+		huh.NewGroup(
 			huh.NewMultiSelect[time.Month]().Title("Months").
 				Description("deselect to skip months, e.g. only June + December").
 				Options(monthOptions...).Value(&v.months),
@@ -146,13 +144,37 @@ func newConceptForm(theme Theme, width, height int, current domain.Period, categ
 			huh.NewInput().Title("Active from").Value(&v.activeFrom).Validate(validateRequiredPeriod),
 			huh.NewInput().Title("Active until").Description("blank = open-ended").
 				Value(&v.activeUntil).Validate(validateOptionalPeriod),
-		).Title("New concept"),
+		),
 		huh.NewGroup(
 			huh.NewInput().Title("New category name").Value(&v.newCategory).Validate(huh.ValidateNotEmpty()),
 		).Title("New category").WithHideFunc(func() bool { return newCategoryStepHidden(v.categoryID) }),
 	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 
 	return &conceptFormState{form: form, values: v}
+}
+
+// conceptKindOptions is the Kind select's option list, shared by the
+// new-concept and edit-concept forms.
+var conceptKindOptions = []huh.Option[catalog.ConceptKind]{
+	huh.NewOption("Income", catalog.Income),
+	huh.NewOption("Expense", catalog.Expense),
+	huh.NewOption("Chore", catalog.Chore),
+}
+
+// moneyGroup is the currency/amount/share fields shared by the new-concept
+// and edit-concept forms, hidden by hideFunc when Kind: Chore is selected —
+// a chore has no money to enter. amountTitle differs between the two forms
+// ("Base amount" for a new concept, "Amount" alongside its effective date
+// for an edit).
+func moneyGroup(currency *domain.Currency, amount, share *string, amountTitle string, hideFunc func() bool) *huh.Group {
+	return huh.NewGroup(
+		huh.NewSelect[domain.Currency]().Title("Currency").
+			Options(huh.NewOption("ARS", domain.ARS), huh.NewOption("USD", domain.USD)).
+			Value(currency),
+		huh.NewInput().Title(amountTitle).Value(amount).Validate(validateRequiredDecimal),
+		huh.NewInput().Title("Share %").Description("blank = 100%").
+			Value(share).Validate(validateOptionalWholePercent),
+	).Title("Money").WithHideFunc(hideFunc)
 }
 
 // newCategoryStepHidden reports whether the "New category name" step should
@@ -228,16 +250,9 @@ func (m Model) forwardConceptForm(msg tea.Msg) (Model, tea.Cmd) {
 
 // build converts the form's validated strings into a Concept. Every parse
 // here already passed the matching field's Validate func, so an error would
-// mean a bug in that pairing rather than bad user input.
+// mean a bug in that pairing rather than bad user input. Money stays nil for
+// a Chore, whatever's left over in the hidden currency/amount/share fields.
 func (v *conceptFormValues) build() (catalog.Concept, int64, string, decimal.Decimal) {
-	amount, _ := decimal.NewFromString(v.amount)
-
-	var share domain.Percent
-	if v.share != "" {
-		wholePercent, _ := strconv.ParseInt(v.share, 10, 64)
-		share = domain.NewPercent(wholePercent)
-	}
-
 	dueDay := 0
 	if v.dueDay != "" {
 		dueDay, _ = strconv.Atoi(v.dueDay)
@@ -250,9 +265,20 @@ func (v *conceptFormValues) build() (catalog.Concept, int64, string, decimal.Dec
 	}
 
 	c := catalog.Concept{
-		Name: v.name, Kind: v.kind, Currency: v.currency, MonthMask: domain.NewCadence(v.months...),
-		Share: share, DueDay: dueDay, ActiveFrom: activeFrom, ActiveUntil: activeUntil,
+		Name: v.name, Kind: v.kind, MonthMask: domain.NewCadence(v.months...),
+		DueDay: dueDay, ActiveFrom: activeFrom, ActiveUntil: activeUntil,
 	}
+	if v.kind == catalog.Chore {
+		return c, v.categoryID, v.newCategory, decimal.Decimal{}
+	}
+
+	amount, _ := decimal.NewFromString(v.amount)
+	var share domain.Percent
+	if v.share != "" {
+		wholePercent, _ := strconv.ParseInt(v.share, 10, 64)
+		share = domain.NewPercent(wholePercent)
+	}
+	c.Money = &catalog.MoneyDetails{Currency: v.currency, Share: share}
 	return c, v.categoryID, v.newCategory, amount
 }
 
@@ -408,14 +434,18 @@ func (m Model) renderConceptRow(c catalog.Concept, selected bool) string {
 	if selected {
 		cursor = ">"
 	}
+	currency := "—"
 	amount := "—"
-	if latest, ok := catalog.LatestBaseAmount(m.baseAmounts[c.ID]); ok {
-		amount = latest.Amount.StringFixed(2)
+	if c.Money != nil {
+		currency = c.Money.Currency.String()
+		if latest, ok := catalog.LatestBaseAmount(m.baseAmounts[c.ID]); ok {
+			amount = latest.Amount.StringFixed(2)
+		}
 	}
 	active := c.ActiveFrom.String()
 	if !c.ActiveUntil.IsZero() {
 		active += " – " + c.ActiveUntil.String()
 	}
 	name := categoryStyle(m.categories, c.CategoryID).Render(fmt.Sprintf("%-20s", c.Name))
-	return fmt.Sprintf("%s %s %-14s %s %12s  %s", cursor, name, c.Kind, c.Currency, amount, active)
+	return fmt.Sprintf("%s %s %-14s %s %12s  %s", cursor, name, c.Kind, currency, amount, active)
 }

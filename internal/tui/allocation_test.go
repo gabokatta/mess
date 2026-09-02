@@ -15,9 +15,9 @@ import (
 func TestAKeyOpensAllocationFormWithAvailableToSave(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
-	salary := catalog.Concept{Kind: catalog.Income, Currency: domain.ARS, Share: domain.NewPercent(100)}
+	salary := catalog.Concept{Kind: catalog.Income, Money: &catalog.MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(100)}}
 	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
-		{Concept: salary, Amount: amountFor(t, "1000000"), Confirmed: true},
+		{Concept: salary, Money: &month.LineMoney{Amount: amountFor(t, "1000000"), Confirmed: true}},
 	}})
 	m = updated.(Model)
 
@@ -48,9 +48,9 @@ func TestAllocationFormPercentSplitsAvailableIntoARS(t *testing.T) {
 	m := New(db)
 	m.width, m.height = 100, 40
 	m.period = period
-	salary := catalog.Concept{Kind: catalog.Income, Currency: domain.ARS, Share: domain.NewPercent(100)}
+	salary := catalog.Concept{Kind: catalog.Income, Money: &catalog.MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(100)}}
 	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
-		{Concept: salary, Amount: amountFor(t, "100000"), Confirmed: true},
+		{Concept: salary, Money: &month.LineMoney{Amount: amountFor(t, "100000"), Confirmed: true}},
 	}})
 	m = updated.(Model)
 
@@ -186,9 +186,9 @@ func TestMonthViewRendersPocketMoneyBetweenAvailableAndAllocated(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
 	m.period = period
-	salary := catalog.Concept{Kind: catalog.Income, Currency: domain.ARS, Share: domain.NewPercent(100)}
+	salary := catalog.Concept{Kind: catalog.Income, Money: &catalog.MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(100)}}
 	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
-		{Concept: salary, Amount: amountFor(t, "100000"), Confirmed: true},
+		{Concept: salary, Money: &month.LineMoney{Amount: amountFor(t, "100000"), Confirmed: true}},
 	}})
 	m = updated.(Model)
 	updated, _ = m.Update(allocationsLoadedMsg{allocations: []catalog.SavingAllocation{
@@ -221,14 +221,62 @@ func TestAllocationFormDefaultsCurrencyToUSD(t *testing.T) {
 	}
 }
 
+func TestSavingsSectionHintsWhenNothingAllocatedYet(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+	salary := catalog.Concept{Kind: catalog.Income, Money: &catalog.MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(100)}}
+	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
+		{Concept: salary, Money: &month.LineMoney{Amount: amountFor(t, "3834000"), Confirmed: true}},
+	}})
+	m = updated.(Model)
+
+	content := m.View().Content
+	if !strings.Contains(content, "3834000.00 unallocated") || !strings.Contains(content, "press a") {
+		t.Errorf("content = %q, want an unallocated hint naming the amount and the a key", content)
+	}
+}
+
+func TestSavingsSectionHintGoesAwayOnceAnyAllocationExists(t *testing.T) {
+	period := domain.NewPeriod(2026, time.September)
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+	m.period = period
+	salary := catalog.Concept{Kind: catalog.Income, Money: &catalog.MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(100)}}
+	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
+		{Concept: salary, Money: &month.LineMoney{Amount: amountFor(t, "3834000"), Confirmed: true}},
+	}})
+	m = updated.(Model)
+	updated, _ = m.Update(allocationsLoadedMsg{allocations: []catalog.SavingAllocation{
+		{Period: period, Destination: catalog.Cash, Amount: amountFor(t, "1000"), Currency: domain.ARS},
+	}})
+	m = updated.(Model)
+
+	content := m.View().Content
+	if strings.Contains(content, "unallocated") {
+		t.Errorf("content = %q, want the hint gone once an allocation exists", content)
+	}
+}
+
+func TestSavingsSectionNoHintWhenNothingAvailable(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+	updated, _ := m.Update(monthLoadedMsg{})
+	m = updated.(Model)
+
+	content := m.View().Content
+	if strings.Contains(content, "unallocated") {
+		t.Errorf("content = %q, want no hint when there's nothing available to save", content)
+	}
+}
+
 func TestAllocationFormShowsAvailableInUSDWhenRateKnown(t *testing.T) {
 	period := domain.NewPeriod(2026, time.September)
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
 	m.period = period
-	salary := catalog.Concept{Kind: catalog.Income, Currency: domain.ARS, Share: domain.NewPercent(100)}
+	salary := catalog.Concept{Kind: catalog.Income, Money: &catalog.MoneyDetails{Currency: domain.ARS, Share: domain.NewPercent(100)}}
 	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
-		{Concept: salary, Amount: amountFor(t, "1000"), Confirmed: true},
+		{Concept: salary, Money: &month.LineMoney{Amount: amountFor(t, "1000"), Confirmed: true}},
 	}})
 	m = updated.(Model)
 	updated, _ = m.Update(allocationsLoadedMsg{rates: []catalog.FxRate{

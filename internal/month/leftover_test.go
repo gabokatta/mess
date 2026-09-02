@@ -90,7 +90,7 @@ func TestMonthlyNetsARSResolvesEachPeriodInRange(t *testing.T) {
 		Name:       "Sueldo",
 		CategoryID: cat.ID,
 		Kind:       catalog.Income,
-		Currency:   domain.ARS,
+		Money:      &catalog.MoneyDetails{Currency: domain.ARS},
 		MonthMask:  domain.Monthly,
 		ActiveFrom: domain.NewPeriod(2026, time.January),
 	})

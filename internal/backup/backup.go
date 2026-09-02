@@ -22,10 +22,8 @@ var tableOrder = []string{
 	"concept",
 	"base_amount",
 	"month_entry",
-	"chore",
-	"chore_entry",
 	"saving_allocation",
-	"project",
+	"list",
 	"fx_rate",
 	"settings",
 }

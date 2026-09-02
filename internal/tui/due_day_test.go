@@ -54,45 +54,10 @@ func TestIsLateOnlyWithinTheActualCurrentPeriod(t *testing.T) {
 	if isLate(stillLate, pastPeriod) {
 		t.Error("isLate() = true, want false (a past period is closed, not late)")
 	}
-}
 
-func TestSortChoresByDueDayOrdersUnsetLast(t *testing.T) {
-	chores := []month.ChoreLine{
-		{Chore: catalog.Chore{Name: "Basura", DueDay: 20}},
-		{Chore: catalog.Chore{Name: "Plantas", DueDay: 0}},
-		{Chore: catalog.Chore{Name: "Filtro", DueDay: 5}},
-	}
-
-	got := sortChoresByDueDay(chores)
-	want := []string{"Filtro", "Basura", "Plantas"}
-	for i, name := range want {
-		if got[i].Chore.Name != name {
-			t.Errorf("order[%d] = %q, want %q (due day 5, 20, then unset)", i, got[i].Chore.Name, name)
-		}
-	}
-}
-
-func TestIsChoreLateOnlyWithinTheActualCurrentPeriod(t *testing.T) {
-	today := time.Now()
-	if today.Day() < 2 {
-		t.Skip("this test needs a due day that has already passed today")
-	}
-	past := today.Day() - 1
-	current := domain.PeriodFromTime(today)
-
-	late := month.ChoreLine{Chore: catalog.Chore{DueDay: past}, Done: false}
-	if !isChoreLate(late, current) {
-		t.Error("isChoreLate() = false, want true (due day passed, unticked, current period)")
-	}
-
-	done := month.ChoreLine{Chore: catalog.Chore{DueDay: past}, Done: true}
-	if isChoreLate(done, current) {
-		t.Error("isChoreLate() = true, want false (already done)")
-	}
-
-	pastPeriod := current.AddMonths(-1)
-	if isChoreLate(late, pastPeriod) {
-		t.Error("isChoreLate() = true, want false (a past period is closed, not late)")
+	choreLate := month.Line{Concept: catalog.Concept{Kind: catalog.Chore, DueDay: past}, Done: false}
+	if !isLate(choreLate, current) {
+		t.Error("isLate() = false, want true (a Chore line has no Money, but isLate never touches it)")
 	}
 }
 
@@ -105,9 +70,9 @@ func TestMonthViewRendersLateMarkerForAnOverdueUnconfirmedLine(t *testing.T) {
 	m.width, m.height = 100, 40
 	m.period = domain.PeriodFromTime(today)
 
-	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS, DueDay: today.Day() - 1}
+	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS}, DueDay: today.Day() - 1}
 	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
-		{Concept: rent, Amount: amountFor(t, "785000"), Done: false},
+		{Concept: rent, Money: &month.LineMoney{Amount: amountFor(t, "785000")}, Done: false},
 	}})
 	m = updated.(Model)
 

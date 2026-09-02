@@ -9,17 +9,26 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// Line is one concept resolved for a period, with whether its amount was
-// confirmed (an override) or projected (from the base).
-type Line struct {
-	Concept   catalog.Concept
+// LineMoney is a resolved line's amount and whether it was confirmed (an
+// override) or projected (from the base) — nil on a Chore line, which has
+// nothing to resolve an amount for.
+type LineMoney struct {
 	Amount    decimal.Decimal
 	Confirmed bool
-	Done      bool
+}
+
+// Line is one concept resolved for a period. Money is nil for a Chore line;
+// Done applies to every kind alike, since ticking a line already means "I
+// did this" regardless of whether it also carries an amount.
+type Line struct {
+	Concept catalog.Concept
+	Money   *LineMoney
+	Done    bool
 }
 
 // Resolve projects concepts onto period per the resolution rules: occursIn
-// gates inclusion, resolveAmount picks the value.
+// gates inclusion, resolveAmount picks the value for a money concept. One
+// pipeline for every kind — a Chore differs only in carrying no Money.
 func Resolve(period domain.Period, concepts []catalog.Concept, bases map[int64][]catalog.BaseAmount, entries map[int64]catalog.MonthEntry) []Line {
 	var lines []Line
 	for _, c := range concepts {
@@ -27,8 +36,12 @@ func Resolve(period domain.Period, concepts []catalog.Concept, bases map[int64][
 			continue
 		}
 		entry := entries[c.ID]
-		amt, confirmed := resolveAmount(period, bases[c.ID], entry)
-		lines = append(lines, Line{Concept: c, Amount: amt, Confirmed: confirmed, Done: entry.Done})
+		line := Line{Concept: c, Done: entry.Done}
+		if c.Money != nil {
+			amt, confirmed := resolveAmount(period, bases[c.ID], entry)
+			line.Money = &LineMoney{Amount: amt, Confirmed: confirmed}
+		}
+		lines = append(lines, line)
 	}
 	return lines
 }
@@ -36,23 +49,13 @@ func Resolve(period domain.Period, concepts []catalog.Concept, bases map[int64][
 // occursIn reports whether c generates a line at all in p, per its
 // month_mask and active range.
 func occursIn(c catalog.Concept, p domain.Period) bool {
-	return occursInRange(c.MonthMask, c.ActiveFrom, c.ActiveUntil, p)
-}
-
-// choreOccursIn is occursIn's counterpart for chores, which carry the same
-// month_mask/active range shape but aren't a Concept.
-func choreOccursIn(c catalog.Chore, p domain.Period) bool {
-	return occursInRange(c.MonthMask, c.ActiveFrom, c.ActiveUntil, p)
-}
-
-func occursInRange(mask domain.Cadence, from, until, p domain.Period) bool {
-	if !mask.Occurs(p) {
+	if !c.MonthMask.Occurs(p) {
 		return false
 	}
-	if p.Before(from) {
+	if p.Before(c.ActiveFrom) {
 		return false
 	}
-	if !until.IsZero() && p.After(until) {
+	if !c.ActiveUntil.IsZero() && p.After(c.ActiveUntil) {
 		return false
 	}
 	return true
@@ -74,47 +77,42 @@ func resolveAmount(p domain.Period, bases []catalog.BaseAmount, entry catalog.Mo
 	return amount, false
 }
 
-// ChoreLine is one chore resolved for a period. Chores carry no amount, so
-// they don't share Line's shape with concepts.
-type ChoreLine struct {
-	Chore catalog.Chore
-	Done  bool
-}
-
-// ResolveChores projects chores onto period the same way Resolve projects
-// concepts: choreOccursIn gates inclusion, the entry (if any) supplies Done.
-func ResolveChores(period domain.Period, chores []catalog.Chore, entries map[int64]catalog.ChoreEntry) []ChoreLine {
-	var lines []ChoreLine
-	for _, c := range chores {
-		if !choreOccursIn(c, period) {
-			continue
-		}
-		lines = append(lines, ChoreLine{Chore: c, Done: entries[c.ID].Done})
-	}
-	return lines
-}
-
-// UnfinishedChores counts lines that never got marked done — the "Last
-// month: N unfinished" the following month's view surfaces.
-func UnfinishedChores(lines []ChoreLine) int {
+// UnfinishedChores counts Chore-kind lines that never got marked done — the
+// "Last month: N unfinished" the following month's view surfaces.
+func UnfinishedChores(lines []Line) int {
 	n := 0
 	for _, l := range lines {
-		if !l.Done {
+		if l.Concept.Kind == catalog.Chore && !l.Done {
 			n++
 		}
 	}
 	return n
 }
 
-// Month is a period's resolved view: concept lines and chore lines, the two
-// kinds the month view merges.
-type Month struct {
-	Lines  []Line
-	Chores []ChoreLine
+// ChoresDone counts how many of this period's Chore-kind lines are done,
+// out of how many there are — the "X of Y chores done" the month header
+// surfaces alongside the money lines' confirmed count.
+func ChoresDone(lines []Line) (done, total int) {
+	for _, l := range lines {
+		if l.Concept.Kind != catalog.Chore {
+			continue
+		}
+		total++
+		if l.Done {
+			done++
+		}
+	}
+	return done, total
 }
 
-// Load resolves every active concept and chore for period, reading the
-// catalog and that period's entries from db.
+// Month is a period's resolved view: every active concept's line, money and
+// chore alike.
+type Month struct {
+	Lines []Line
+}
+
+// Load resolves every active concept for period, reading the catalog and
+// that period's entries from db.
 func Load(db *sql.DB, period domain.Period) (Month, error) {
 	concepts, err := catalog.Concepts(db)
 	if err != nil {
@@ -133,21 +131,5 @@ func Load(db *sql.DB, period domain.Period) (Month, error) {
 		entries[e.ConceptID] = e
 	}
 
-	chores, err := catalog.Chores(db)
-	if err != nil {
-		return Month{}, err
-	}
-	choreEntryRows, err := catalog.ChoreEntries(db, period)
-	if err != nil {
-		return Month{}, err
-	}
-	choreEntries := make(map[int64]catalog.ChoreEntry, len(choreEntryRows))
-	for _, e := range choreEntryRows {
-		choreEntries[e.ChoreID] = e
-	}
-
-	return Month{
-		Lines:  Resolve(period, concepts, bases, entries),
-		Chores: ResolveChores(period, chores, choreEntries),
-	}, nil
+	return Month{Lines: Resolve(period, concepts, bases, entries)}, nil
 }
