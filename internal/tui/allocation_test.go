@@ -181,7 +181,7 @@ func TestEscCancelsAllocationFormWithoutWriting(t *testing.T) {
 	}
 }
 
-func TestMonthViewRendersGapBetweenAvailableAndAllocated(t *testing.T) {
+func TestMonthViewRendersPocketMoneyBetweenAvailableAndAllocated(t *testing.T) {
 	period := domain.NewPeriod(2026, time.September)
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
@@ -197,9 +197,50 @@ func TestMonthViewRendersGapBetweenAvailableAndAllocated(t *testing.T) {
 	m = updated.(Model)
 
 	content := m.View().Content
-	for _, want := range []string{"Savings", "100000.00", "40000.00", "60000.00"} {
+	for _, want := range []string{"Savings", "pocket money", "100000.00", "40000.00", "60000.00"} {
 		if !strings.Contains(content, want) {
-			t.Errorf("content missing %q (available/allocated/gap):\n%s", want, content)
+			t.Errorf("content missing %q (available/allocated/pocket money):\n%s", want, content)
 		}
+	}
+}
+
+func TestAllocationFormDefaultsCurrencyToUSD(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+
+	updated, _ := m.Update(key("a"))
+	m = updated.(Model)
+	if m.allocationForm == nil {
+		t.Fatal("allocationForm = nil, want a form opened")
+	}
+	if m.allocationForm.values.investedCurrency != domain.USD {
+		t.Errorf("investedCurrency = %v, want USD default", m.allocationForm.values.investedCurrency)
+	}
+	if m.allocationForm.values.cashCurrency != domain.USD {
+		t.Errorf("cashCurrency = %v, want USD default", m.allocationForm.values.cashCurrency)
+	}
+}
+
+func TestAllocationFormShowsAvailableInUSDWhenRateKnown(t *testing.T) {
+	period := domain.NewPeriod(2026, time.September)
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+	m.period = period
+	salary := catalog.Concept{Kind: catalog.Income, Currency: domain.ARS, Share: domain.NewPercent(100)}
+	updated, _ := m.Update(monthLoadedMsg{lines: []month.Line{
+		{Concept: salary, Amount: amountFor(t, "1000"), Confirmed: true},
+	}})
+	m = updated.(Model)
+	updated, _ = m.Update(allocationsLoadedMsg{rates: []catalog.FxRate{
+		{Period: period, Value: amountFor(t, "1000")},
+	}})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(key("a"))
+	m = updated.(Model)
+	m = settle(t, m, cmd)
+	content := m.allocationForm.form.View()
+	if !strings.Contains(content, "1.00 USD") {
+		t.Errorf("form content = %q, want available-to-save shown in USD too", content)
 	}
 }

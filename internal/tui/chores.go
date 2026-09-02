@@ -61,7 +61,7 @@ func newChoreForm(theme Theme, width, height int, current domain.Period) *choreF
 			huh.NewInput().Title("Active until").Description("blank = open-ended").
 				Value(&v.activeUntil).Validate(validateOptionalPeriod),
 		).Title("New chore"),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 
 	return &choreFormState{form: form, values: v}
 }

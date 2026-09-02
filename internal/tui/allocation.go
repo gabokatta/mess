@@ -86,12 +86,16 @@ type allocationFormState struct {
 	values *allocationFormValues
 }
 
-func newAllocationForm(theme Theme, width, height int, available decimal.Decimal) *allocationFormState {
-	v := &allocationFormValues{}
+func newAllocationForm(theme Theme, width, height int, available, availableUSD decimal.Decimal, hasUSD bool) *allocationFormState {
+	v := &allocationFormValues{investedCurrency: domain.USD, cashCurrency: domain.USD}
+	desc := available.StringFixed(2) + " ARS"
+	if hasUSD {
+		desc += fmt.Sprintf("  (%s USD)", availableUSD.StringFixed(2))
+	}
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewNote().Title("Available to save").
-				Description(available.StringFixed(2)+" ARS"),
+				Description(desc),
 			huh.NewInput().Title("Invested %").Description("blank = skip; always % of the ARS remainder above").
 				Value(&v.investedPercent).Validate(validateOptionalWholePercent),
 			huh.NewInput().Title("Invested amount").Description("blank = skip; ignored if % is set").
@@ -109,13 +113,14 @@ func newAllocationForm(theme Theme, width, height int, available decimal.Decimal
 				Options(huh.NewOption("ARS", domain.ARS), huh.NewOption("USD", domain.USD)).
 				Value(&v.cashCurrency),
 		).Title("Allocate"),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 
 	return &allocationFormState{form: form, values: v}
 }
 
 func (m Model) startAllocationPanel() (Model, tea.Cmd) {
-	m.allocationForm = newAllocationForm(m.theme, m.width, m.height, m.available())
+	usd, ok := m.availableToSaveUSD()
+	m.allocationForm = newAllocationForm(m.theme, m.width, m.height, m.available(), usd, ok)
 	return m, m.allocationForm.form.Init()
 }
 
@@ -180,24 +185,39 @@ func (m Model) available() decimal.Decimal {
 	return month.AvailableToSave(month.ResolveTotals(m.lines))
 }
 
+// availableToSaveUSD converts available() at period's resolved fx rate,
+// purely for display alongside the ARS figure — the allocation itself
+// always stores whatever currency was actually typed, so this conversion is
+// never persisted. ok is false when no rate is resolvable yet.
+func (m Model) availableToSaveUSD() (decimal.Decimal, bool) {
+	rate, ok := month.ResolveFxRate(m.period, m.rates)
+	if !ok || rate.IsZero() {
+		return decimal.Decimal{}, false
+	}
+	return m.available().Div(rate), true
+}
+
 // renderAllocations renders the Savings section, marking whichever
 // allocation the cursor sits on — startIdx is that row's position in the
-// month view's shared cursor space, following the concept lines and chores.
+// Finance pane's cursor space, right after the concept lines.
 func (m Model) renderAllocations(startIdx int) string {
 	var b strings.Builder
 	b.WriteString(m.theme.Title.Render("Savings"))
 	fmt.Fprintf(&b, "\n  available to save  %12s ARS", m.available().StringFixed(2))
+	if usd, ok := m.availableToSaveUSD(); ok {
+		fmt.Fprintf(&b, "  (%s USD)", usd.StringFixed(2))
+	}
 	for i, a := range m.allocations {
 		cursor := " "
-		if startIdx+i == m.cursor {
+		if startIdx+i == m.financeCursor {
 			cursor = ">"
 		}
 		fmt.Fprintf(&b, "\n%s %-10s          %12s %s", cursor, a.Destination, a.Amount.StringFixed(2), a.Currency)
 	}
-	if gap, err := month.ResolveGap(m.available(), m.period, m.allocations, m.rates); err != nil {
-		b.WriteString("\n  " + m.theme.Muted.Render("gap unavailable: "+err.Error()))
+	if pocket, err := month.ResolveGap(m.available(), m.period, m.allocations, m.rates); err != nil {
+		b.WriteString("\n  " + m.theme.Muted.Render("pocket money unavailable: "+err.Error()))
 	} else {
-		fmt.Fprintf(&b, "\n  gap                 %12s ARS", gap.StringFixed(2))
+		fmt.Fprintf(&b, "\n  pocket money         %12s ARS", pocket.StringFixed(2))
 	}
 	if m.allocationsErr != nil {
 		b.WriteString("\n  " + m.theme.Muted.Render("failed to load: "+m.allocationsErr.Error()))

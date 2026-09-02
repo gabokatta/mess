@@ -124,7 +124,7 @@ func newConceptEditForm(theme Theme, width, height int, c catalog.Concept, categ
 		huh.NewGroup(
 			huh.NewInput().Title("New category name").Value(&v.newCategory).Validate(huh.ValidateNotEmpty()),
 		).Title("New category").WithHideFunc(func() bool { return newCategoryStepHidden(v.categoryID) }),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 
 	return &conceptEditFormState{form: form, values: v}
 }

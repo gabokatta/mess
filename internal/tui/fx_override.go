@@ -42,7 +42,7 @@ func newFxOverrideForm(theme Theme, width, height int, current domain.Period) *f
 			huh.NewInput().Title("Rate").Description("ARS per USD; replaces whatever is stored, fetched or manual").
 				Value(&v.value).Validate(validateRequiredDecimal),
 		).Title("Set FX rate"),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 
 	return &fxOverrideFormState{form: form, values: v}
 }

@@ -81,7 +81,7 @@ func newSettingsForm(theme Theme, width, height int, current catalog.Settings) *
 			huh.NewInput().Title("Opening invested (USD)").
 				Value(&v.openingInvested).Validate(validateRequiredDecimal),
 		).Title("Settings"),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 
 	return &settingsFormState{form: form, values: v}
 }
@@ -177,21 +177,25 @@ func (m Model) renderSettings() string {
 		return b.String()
 	}
 
-	fmt.Fprintf(&b, "\n\n  fx house                       %s", m.settings.FxHouse)
-	fmt.Fprintf(&b, "\n  opening period                 %s", periodDisplay(m.settings.Opening.Period))
-	fmt.Fprintf(&b, "\n  opening leftover pesos (ARS)   %s", m.settings.Opening.LeftoverPesos.StringFixed(2))
-	fmt.Fprintf(&b, "\n  opening cash (USD)             %s", m.settings.Opening.CashUSD.StringFixed(2))
-	fmt.Fprintf(&b, "\n  opening invested (USD)         %s", m.settings.Opening.InvestedUSD.StringFixed(2))
+	var fields strings.Builder
+	fmt.Fprintf(&fields, "fx house                       %s", m.settings.FxHouse)
+	fmt.Fprintf(&fields, "\nopening period                 %s", periodDisplay(m.settings.Opening.Period))
+	fmt.Fprintf(&fields, "\nopening leftover pesos (ARS)   %s", m.settings.Opening.LeftoverPesos.StringFixed(2))
+	fmt.Fprintf(&fields, "\nopening cash (USD)             %s", m.settings.Opening.CashUSD.StringFixed(2))
+	fmt.Fprintf(&fields, "\nopening invested (USD)         %s", m.settings.Opening.InvestedUSD.StringFixed(2))
 
 	if m.settingsSaveErr != nil {
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render("failed to save: " + m.settingsSaveErr.Error()))
+		fmt.Fprintf(&fields, "\n\n%s", m.theme.Muted.Render("failed to save: "+m.settingsSaveErr.Error()))
 	}
 	if m.fxOverrideErr != nil {
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render("failed to set fx rate: " + m.fxOverrideErr.Error()))
+		fmt.Fprintf(&fields, "\n\n%s", m.theme.Muted.Render("failed to set fx rate: "+m.fxOverrideErr.Error()))
 	}
-	b.WriteString(m.renderBackupStatus())
+	if status := m.renderBackupStatus(); status != "" {
+		fields.WriteString(status)
+	}
+
+	b.WriteString("\n")
+	b.WriteString(m.centerInBox(fields.String()))
 	return b.String()
 }
 

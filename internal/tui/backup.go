@@ -79,7 +79,7 @@ func newExportForm(theme Theme, width, height int) *exportFormState {
 		huh.NewGroup(
 			huh.NewInput().Title("Export to file").Value(&v.path).Validate(huh.ValidateNotEmpty()),
 		).Title("Export"),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 	return &exportFormState{form: form, values: v}
 }
 
@@ -136,7 +136,7 @@ func newImportForm(theme Theme, width, height int) *importFormState {
 			huh.NewConfirm().Title("This replaces every table with the backup. Continue?").
 				Affirmative("Yes").Negative("No").Value(&v.confirmed),
 		).Title("Import"),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 	return &importFormState{form: form, values: v}
 }
 

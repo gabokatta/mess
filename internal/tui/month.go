@@ -20,6 +20,31 @@ import (
 // monthGroups is the display order for the month view's sections.
 var monthGroups = [...]catalog.ConceptKind{catalog.Income, catalog.Expense}
 
+// monthPane is the Month view's two panes, toggled with f — the same
+// pattern Projects uses for pending/closed. Splitting the view isn't
+// splitting the data: Finance and Chores share one period, but each gets
+// its own cursor space.
+type monthPane int
+
+const (
+	paneFinance monthPane = iota
+	paneChores
+)
+
+func (p monthPane) String() string {
+	if p == paneChores {
+		return "Chores"
+	}
+	return "Finance"
+}
+
+func togglePane(p monthPane) monthPane {
+	if p == paneFinance {
+		return paneChores
+	}
+	return paneFinance
+}
+
 // monthLoadedMsg is the result of loadMonth's Cmd, delivered back to Update
 // once the database read completes.
 type monthLoadedMsg struct {
@@ -78,18 +103,41 @@ func (m Model) orderedLines() []month.Line {
 	return lines
 }
 
-// rowCount is every cursor position in the month view: concept lines, then
-// chores, then allocations — the same order renderMonth walks them in.
-func (m Model) rowCount() int {
-	return len(m.orderedLines()) + len(m.chores) + len(m.allocations)
+// financeRowCount is every cursor position in the Finance pane: concept
+// lines, then allocations — the same order renderFinancePane walks them in.
+func (m Model) financeRowCount() int {
+	return len(m.orderedLines()) + len(m.allocations)
 }
 
-func (m Model) moveCursor(delta int) int {
-	n := m.rowCount()
+func (m Model) moveFinanceCursor(delta int) int {
+	return clampCursor(m.financeCursor+delta, m.financeRowCount())
+}
+
+// choreRowCount is every cursor position in the Chores pane: its own list,
+// independent of Finance's.
+func (m Model) choreRowCount() int {
+	return len(m.chores)
+}
+
+func (m Model) moveChoreCursor(delta int) int {
+	return clampCursor(m.choreCursor+delta, m.choreRowCount())
+}
+
+// moveMonthCursor moves whichever pane's cursor is active — j/k's single
+// entry point, so the caller doesn't need to know which pane it's in.
+func (m Model) moveMonthCursor(delta int) Model {
+	if m.monthPane == paneChores {
+		m.choreCursor = m.moveChoreCursor(delta)
+	} else {
+		m.financeCursor = m.moveFinanceCursor(delta)
+	}
+	return m
+}
+
+func clampCursor(cursor, n int) int {
 	if n == 0 {
 		return 0
 	}
-	cursor := m.cursor + delta
 	if cursor < 0 {
 		return 0
 	}
@@ -99,54 +147,51 @@ func (m Model) moveCursor(delta int) int {
 	return cursor
 }
 
-// cursorLine reports the concept line under the cursor, if the cursor is on
-// one rather than a chore.
+// cursorLine reports the concept line under the Finance pane's cursor, if
+// it's on one rather than an allocation.
 func (m Model) cursorLine() (month.Line, bool) {
 	lines := m.orderedLines()
-	if m.cursor >= len(lines) {
+	if m.financeCursor >= len(lines) {
 		return month.Line{}, false
 	}
-	return lines[m.cursor], true
+	return lines[m.financeCursor], true
 }
 
-// cursorChore reports the chore under the cursor, if the cursor is on one
-// rather than a concept line or an allocation.
+// cursorChore reports the chore under the Chores pane's cursor.
 func (m Model) cursorChore() (month.ChoreLine, bool) {
-	idx := m.cursor - len(m.orderedLines())
-	if idx < 0 || idx >= len(m.chores) {
+	if m.choreCursor >= len(m.chores) {
 		return month.ChoreLine{}, false
 	}
-	return m.chores[idx], true
+	return m.chores[m.choreCursor], true
 }
 
-// cursorAllocation reports the allocation under the cursor, if the cursor
-// is on one rather than a concept line or a chore.
+// cursorAllocation reports the allocation under the Finance pane's cursor,
+// if it's on one rather than a concept line.
 func (m Model) cursorAllocation() (catalog.SavingAllocation, bool) {
-	idx := m.cursor - len(m.orderedLines()) - len(m.chores)
+	idx := m.financeCursor - len(m.orderedLines())
 	if idx < 0 || idx >= len(m.allocations) {
 		return catalog.SavingAllocation{}, false
 	}
 	return m.allocations[idx], true
 }
 
-// toggleDone flips the done state under the cursor. Ticking a concept line
-// (false to true) also opens the amount edit, prefilled with the resolved
-// amount, so confirming what you owe and checking it off is one motion. A
-// chore has no amount, so it only ever flips.
+// toggleDone flips the done state under the active pane's cursor and
+// persists it immediately — ticking and editing the amount are separate
+// intents, so this touches nothing else. A chore has no amount, so its
+// shape is the same.
 func (m Model) toggleDone() (Model, tea.Cmd) {
-	if c, ok := m.cursorChore(); ok {
+	if m.monthPane == paneChores {
+		c, ok := m.cursorChore()
+		if !ok {
+			return m, nil
+		}
 		return m, setChoreDone(m.db, c.Chore.ID, m.period, !c.Done)
 	}
 	l, ok := m.cursorLine()
 	if !ok {
 		return m, nil
 	}
-	done := !l.Done
-	cmd := setDone(m.db, l.Concept.ID, m.period, done)
-	if done {
-		m = m.beginEdit(l)
-	}
-	return m, cmd
+	return m, setDone(m.db, l.Concept.ID, m.period, !l.Done)
 }
 
 func (m Model) startEdit() (Model, tea.Cmd) {
@@ -199,7 +244,7 @@ func (m Model) commitEdit() (Model, tea.Cmd) {
 
 func (m Model) renderMonth() string {
 	var b strings.Builder
-	b.WriteString(m.theme.Muted.Render(m.view.String() + " · " + m.period.String() + " · " + currentPeriodStatus(m.period).String()))
+	b.WriteString(m.theme.Muted.Render(m.view.String() + " · " + m.monthPane.String() + " · " + m.period.String() + " · " + currentPeriodStatus(m.period).String()))
 
 	if m.loadErr != nil {
 		b.WriteString("\n\n")
@@ -217,8 +262,8 @@ func (m Model) renderMonth() string {
 	}
 	assigned := projectsForPeriod(m.projects, m.period)
 	if len(m.lines) == 0 && len(m.chores) == 0 && len(assigned) == 0 && m.choreSaveErr == nil {
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render("no concepts yet — add some in the Concepts view"))
+		b.WriteString("\n")
+		b.WriteString(m.centerInBox(m.theme.Muted.Render("no concepts yet — add some in the Concepts view")))
 		return b.String()
 	}
 
@@ -233,45 +278,48 @@ func (m Model) renderMonth() string {
 		return b.String()
 	}
 
+	if m.monthPane == paneChores {
+		b.WriteString(m.renderChoresPane())
+	} else {
+		b.WriteString(m.renderFinancePane(assigned))
+	}
+	b.WriteString(m.renderLastMonthUnfinished())
+
+	if m.saveErr != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Muted.Render("failed to save: " + m.saveErr.Error()))
+	}
+	if m.choreSaveErr != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.theme.Muted.Render("failed to save chore: " + m.choreSaveErr.Error()))
+	}
+	return b.String()
+}
+
+// renderLastMonthUnfinished is the quiet heads-up shared by both panes —
+// visible without switching to Chores just to see it.
+func (m Model) renderLastMonthUnfinished() string {
+	if m.lastMonthChoresErr != nil {
+		return "\n\n" + m.theme.Muted.Render("last month's chores unavailable: "+m.lastMonthChoresErr.Error())
+	}
+	return fmt.Sprintf("\n\nLast month: %d unfinished", m.lastMonthUnfinished)
+}
+
+// renderFinancePane is the default pane: totals, the concept-line list
+// beside this period's category chart, the allocation panel, and this
+// period's assigned projects.
+func (m Model) renderFinancePane(assigned []catalog.Project) string {
+	var b strings.Builder
 	if totals := m.renderTotals(); totals != "" {
 		b.WriteString("\n")
 		b.WriteString(totals)
 	}
 
-	idx := 0
-	for _, kind := range monthGroups {
-		group := linesForKind(m.lines, kind)
-		if len(group) == 0 {
-			continue
-		}
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Title.Render(kind.String()))
-		for _, l := range group {
-			b.WriteString("\n")
-			b.WriteString(m.renderLine(l, idx == m.cursor))
-			idx++
-		}
-	}
-	if len(m.chores) > 0 {
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Title.Render("Chores"))
-		for _, c := range m.chores {
-			b.WriteString("\n")
-			b.WriteString(m.renderChoreLine(c, idx == m.cursor))
-			idx++
-		}
-	}
 	b.WriteString("\n\n")
-	b.WriteString(m.renderAllocations(idx))
-	idx += len(m.allocations)
+	b.WriteString(m.renderFinanceColumns())
 
-	if m.lastMonthChoresErr != nil {
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render("last month's chores unavailable: " + m.lastMonthChoresErr.Error()))
-	} else {
-		b.WriteString("\n\n")
-		fmt.Fprintf(&b, "Last month: %d unfinished", m.lastMonthUnfinished)
-	}
+	b.WriteString("\n\n")
+	b.WriteString(m.renderAllocations(len(m.orderedLines())))
 
 	if len(assigned) > 0 {
 		b.WriteString("\n\n")
@@ -281,13 +329,44 @@ func (m Model) renderMonth() string {
 			fmt.Fprintf(&b, "\n  %-20s %d/%d", p.Name, done, total)
 		}
 	}
-	if m.saveErr != nil {
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render("failed to save: " + m.saveErr.Error()))
+	return b.String()
+}
+
+// renderFinanceLines is the concept-line list, grouped Income/Expense, the
+// left column of the Finance pane.
+func (m Model) renderFinanceLines() string {
+	var b strings.Builder
+	idx := 0
+	for i, kind := range monthGroups {
+		group := linesForKind(m.lines, kind)
+		if len(group) == 0 {
+			continue
+		}
+		if i > 0 || b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(m.theme.Title.Render(kind.String()))
+		for _, l := range group {
+			b.WriteString("\n")
+			b.WriteString(m.renderLine(l, idx == m.financeCursor))
+			idx++
+		}
 	}
-	if m.choreSaveErr != nil {
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render("failed to save chore: " + m.choreSaveErr.Error()))
+	return b.String()
+}
+
+// renderChoresPane is the Chores pane: its own cursor-addressable list,
+// unrelated to Finance's cursor space.
+func (m Model) renderChoresPane() string {
+	if len(m.chores) == 0 {
+		return "\n" + m.centerInBox(m.theme.Muted.Render("no chores yet — press n to add one"))
+	}
+	var b strings.Builder
+	b.WriteString("\n\n")
+	b.WriteString(m.theme.Title.Render("Chores"))
+	for i, c := range m.chores {
+		b.WriteString("\n")
+		b.WriteString(m.renderChoreLine(c, i == m.choreCursor))
 	}
 	return b.String()
 }
@@ -377,14 +456,15 @@ func (m Model) renderLine(l month.Line, selected bool) string {
 	if l.Done {
 		check = "x"
 	}
+	name := categoryStyle(m.categories, l.Concept.CategoryID).Render(fmt.Sprintf("%-20s", l.Concept.Name))
 	if m.editing != nil && m.editing.conceptID == l.Concept.ID {
-		return fmt.Sprintf("%s [%s] %-20s %s %s", cursor, check, l.Concept.Name, l.Concept.Currency, m.editing.input.View())
+		return fmt.Sprintf("%s [%s] %s %s %s", cursor, check, name, l.Concept.Currency, m.editing.input.View())
 	}
 	status := "confirmed"
 	if !l.Confirmed {
 		status = m.theme.Muted.Render("projected")
 	}
-	line := fmt.Sprintf("%s [%s] %-20s %s %12s  %s", cursor, check, l.Concept.Name, l.Concept.Currency,
+	line := fmt.Sprintf("%s [%s] %s %s %12s  %s", cursor, check, name, l.Concept.Currency,
 		l.Amount.StringFixed(2), status)
 	if isLate(l, m.period) {
 		line += "  " + m.theme.Muted.Render("late")

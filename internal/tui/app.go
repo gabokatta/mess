@@ -29,22 +29,27 @@ var viewNames = [...]string{"Month", "Year", "Concepts", "Projects", "Settings"}
 func (v view) String() string { return viewNames[v] }
 
 type Model struct {
-	theme    Theme
-	view     view
-	width    int
-	height   int
-	db       *sql.DB
-	fxClient *dolarapi.Client
-	period   domain.Period
-	lines    []month.Line
-	chores   []month.ChoreLine
-	loadErr  error
-	cursor   int
-	editing  *editState
-	saveErr  error
-	fxErr    error
-	year     month.Year
-	yearErr  error
+	theme             Theme
+	view              view
+	width             int
+	height            int
+	db                *sql.DB
+	fxClient          *dolarapi.Client
+	period            domain.Period
+	lines             []month.Line
+	chores            []month.ChoreLine
+	loadErr           error
+	monthPane         monthPane
+	financeCursor     int
+	choreCursor       int
+	editing           *editState
+	saveErr           error
+	fxErr             error
+	year              month.Year
+	yearErr           error
+	yearSeries        trendSeries
+	yearConceptCursor int
+	yearDrillDown     *catalog.Concept
 
 	allocations       []catalog.SavingAllocation
 	rates             []catalog.FxRate
@@ -122,6 +127,7 @@ func (m Model) Init() tea.Cmd {
 		loadYear(m.db, m.period.Year()),
 		loadProjects(m.db),
 		ensureDefaultCategories(m.db),
+		loadConcepts(m.db),
 		loadSettings(m.db),
 	)
 }
@@ -305,6 +311,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.periodAssignForm != nil {
 		return m.updatePeriodAssignForm(msg)
 	}
+	if m.yearDrillDown != nil {
+		return m.updateYearDrillDown(msg)
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -316,19 +325,23 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, m.loadView(m.view)
 	case "j", "down":
 		if m.view == viewMonth {
-			m.cursor = m.moveCursor(1)
+			m = m.moveMonthCursor(1)
 		} else if m.view == viewProjects {
 			m.projectCursor = m.moveProjectCursor(1)
 		} else if m.view == viewConcepts {
 			m.conceptCursor = m.moveConceptCursor(1)
+		} else if m.view == viewYear {
+			m.yearConceptCursor = m.moveYearConceptCursor(1)
 		}
 	case "k", "up":
 		if m.view == viewMonth {
-			m.cursor = m.moveCursor(-1)
+			m = m.moveMonthCursor(-1)
 		} else if m.view == viewProjects {
 			m.projectCursor = m.moveProjectCursor(-1)
 		} else if m.view == viewConcepts {
 			m.conceptCursor = m.moveConceptCursor(-1)
+		} else if m.view == viewYear {
+			m.yearConceptCursor = m.moveYearConceptCursor(-1)
 		}
 	case "[":
 		if m.view == viewMonth {
@@ -344,12 +357,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		} else if m.view == viewProjects {
 			return m.toggleProjectCheckbox()
 		}
-	case "enter":
-		if m.view == viewMonth {
-			return m.startEdit()
-		}
 	case "e":
-		if m.view == viewProjects {
+		if m.view == viewMonth && m.monthPane == paneFinance {
+			return m.startEdit()
+		} else if m.view == viewProjects {
 			return m.startProjectEdit()
 		} else if m.view == viewSettings {
 			return m.startSettingsEdit()
@@ -368,24 +379,32 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		if m.view == viewProjects {
 			m.showClosed = !m.showClosed
 			m.projectCursor = 0
+		} else if m.view == viewMonth {
+			m.monthPane = togglePane(m.monthPane)
 		}
 	case "n":
 		if m.view == viewProjects {
 			return m.startNewProject()
 		} else if m.view == viewConcepts {
 			return m.startNewConcept()
-		} else if m.view == viewMonth {
-			if _, onConceptLine := m.cursorLine(); !onConceptLine {
-				return m.startNewChore()
-			}
+		} else if m.view == viewMonth && m.monthPane == paneChores {
+			return m.startNewChore()
 		}
 	case "a":
-		if m.view == viewMonth {
+		if m.view == viewMonth && m.monthPane == paneFinance {
 			return m.startAllocationPanel()
 		}
 	case "d":
-		if m.view == viewMonth {
+		if m.view == viewMonth && m.monthPane == paneFinance {
 			return m.deleteCursorAllocation()
+		}
+	case "s":
+		if m.view == viewYear {
+			m.yearSeries = nextTrendSeries(m.yearSeries)
+		}
+	case "enter":
+		if m.view == viewYear {
+			return m.startYearDrillDown()
 		}
 	case "x":
 		if m.view == viewSettings {
@@ -422,6 +441,23 @@ func (m Model) View() tea.View {
 	return v
 }
 
+// centerInBox centers content inside the app's box, both horizontally and
+// vertically — the same treatment renderTooSmall already gives the "grow
+// your terminal" message, applied here to any view whose content is
+// shorter than the box: an empty state, a lone drill-down chart, Settings'
+// handful of fields.
+func (m Model) centerInBox(content string) string {
+	w := m.width - 6
+	h := m.height - 6
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, content)
+}
+
 // renderTooSmall reports the "grow your terminal" message once a real,
 // too-small size is known, or "" when the normal layout should render.
 func (m Model) renderTooSmall() string {
@@ -451,17 +487,11 @@ func (m Model) renderApp() string {
 	return rendered + "\n" + footer
 }
 
-// renderFooter is the strip below the box: key legend left, tabs right.
-// They share one row when both fit, else the tabs get a row of their own,
-// still right-aligned.
+// renderFooter is the strip below the box: just the tab strip, right-aligned
+// — the key legend lives inside the box now, as the last line of each
+// view's own content.
 func (m Model) renderFooter() string {
-	left := "  " + m.theme.Help.Render(m.helpText())
-	tabs := m.tabs()
-	if lipgloss.Width(left)+lipgloss.Width(tabs) >= m.width {
-		return left + "\n" + lipgloss.NewStyle().Width(m.width).Align(lipgloss.Right).Render(tabs)
-	}
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(tabs)
-	return left + strings.Repeat(" ", gap) + tabs
+	return lipgloss.NewStyle().Width(m.width).Align(lipgloss.Right).Render(m.tabs())
 }
 
 func (m Model) tabs() string {
@@ -476,21 +506,26 @@ func (m Model) tabs() string {
 	return strings.Join(labels, "")
 }
 
+// viewContent renders the focused view's body plus its own help line, the
+// last line of every view's content — form or not — now that the footer
+// carries only the tab strip.
 func (m Model) viewContent() string {
+	var body string
 	switch m.view {
 	case viewMonth:
-		return m.renderMonth()
+		body = m.renderMonth()
 	case viewYear:
-		return m.renderYear()
+		body = m.renderYear()
 	case viewProjects:
-		return m.renderProjects()
+		body = m.renderProjects()
 	case viewConcepts:
-		return m.renderConcepts()
+		body = m.renderConcepts()
 	case viewSettings:
-		return m.renderSettings()
+		body = m.renderSettings()
 	default:
-		return m.theme.Muted.Render(m.view.String() + " — not built yet")
+		body = m.theme.Muted.Render(m.view.String() + " — not built yet")
 	}
+	return body + "\n\n" + m.theme.Help.Render(m.helpText())
 }
 
 func (m Model) helpText() string {
@@ -505,17 +540,26 @@ func (m Model) helpText() string {
 		m.conceptEditForm != nil || m.fxOverrideForm != nil || m.periodAssignForm != nil {
 		return "esc cancel"
 	}
+	if m.view == viewMonth && m.monthPane == paneChores {
+		return "↑/↓ move · space tick · n new chore · f finance · [/] month · tab/shift+tab switch · q quit"
+	}
 	if m.view == viewMonth {
-		return "j/k move · space tick · enter edit · a allocate · d delete allocation · [/] month · n new chore · tab/shift+tab switch · q quit"
+		return "↑/↓ move · space tick · e edit · a allocate · d delete allocation · f chores · [/] month · tab/shift+tab switch · q quit"
 	}
 	if m.view == viewProjects {
-		return "j/k move · space tick · e edit · c close · p period · f pending/closed · n new · tab/shift+tab switch · q quit"
+		return "↑/↓ move · space tick · e edit · c close · p period · f pending/closed · n new · tab/shift+tab switch · q quit"
 	}
 	if m.view == viewConcepts {
-		return "j/k move · e edit · n new · tab/shift+tab switch · q quit"
+		return "↑/↓ move · e edit · n new · tab/shift+tab switch · q quit"
 	}
 	if m.view == viewSettings {
 		return "e edit · x export · i import · r fx rate · tab/shift+tab switch · q quit"
+	}
+	if m.view == viewYear && m.yearDrillDown != nil {
+		return "esc back"
+	}
+	if m.view == viewYear {
+		return "↑/↓ move · enter drill down · s cycle trend series · tab/shift+tab switch · q quit"
 	}
 	return "tab/shift+tab switch · q quit"
 }

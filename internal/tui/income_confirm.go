@@ -64,7 +64,7 @@ func newIncomeConfirmForm(theme Theme, width, height int, income []month.Line) *
 	form := huh.NewForm(
 		huh.NewGroup(fields...).Title("Confirm this month's income").
 			Description("esc to skip — nothing here is required"),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 
 	return &incomeConfirmFormState{form: form, values: v}
 }

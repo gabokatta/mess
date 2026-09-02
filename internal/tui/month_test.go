@@ -75,30 +75,30 @@ func TestCursorMovesWithJKAndClamps(t *testing.T) {
 	period := domain.NewPeriod(2026, time.January)
 
 	m := monthModel(t, db, period)
-	if m.cursor != 0 {
-		t.Fatalf("cursor = %d, want 0 at load", m.cursor)
+	if m.financeCursor != 0 {
+		t.Fatalf("cursor = %d, want 0 at load", m.financeCursor)
 	}
 
 	updated, _ := m.Update(key("j"))
 	m = updated.(Model)
-	if m.cursor != 1 {
-		t.Fatalf("cursor = %d, want 1 after j", m.cursor)
+	if m.financeCursor != 1 {
+		t.Fatalf("cursor = %d, want 1 after j", m.financeCursor)
 	}
 
 	updated, _ = m.Update(key("j"))
 	m = updated.(Model)
-	if m.cursor != 1 {
-		t.Fatalf("cursor = %d, want clamped at 1 (last line)", m.cursor)
+	if m.financeCursor != 1 {
+		t.Fatalf("cursor = %d, want clamped at 1 (last line)", m.financeCursor)
 	}
 
 	updated, _ = m.Update(key("k"))
 	m = updated.(Model)
-	if m.cursor != 0 {
-		t.Fatalf("cursor = %d, want 0 after k", m.cursor)
+	if m.financeCursor != 0 {
+		t.Fatalf("cursor = %d, want 0 after k", m.financeCursor)
 	}
 }
 
-func TestSpaceTicksDoneAndOpensAmountEdit(t *testing.T) {
+func TestSpaceTicksDoneWithoutOpeningEdit(t *testing.T) {
 	db := openTestStore(t)
 	c := seedConcept(t, db, "Alquiler", 785000)
 	period := domain.NewPeriod(2026, time.January)
@@ -107,11 +107,8 @@ func TestSpaceTicksDoneAndOpensAmountEdit(t *testing.T) {
 
 	updated, cmd := m.Update(keySpace())
 	m = updated.(Model)
-	if m.editing == nil || m.editing.conceptID != c.ID {
-		t.Fatalf("editing = %+v, want editing opened for %s", m.editing, c.Name)
-	}
-	if got := m.editing.input.Value(); got != "785000.00" {
-		t.Errorf("edit input value = %q, want prefilled with the base amount 785000.00", got)
+	if m.editing != nil {
+		t.Fatalf("editing = %+v, want ticking to leave the amount edit closed", m.editing)
 	}
 
 	m = settle(t, m, cmd)
@@ -120,8 +117,8 @@ func TestSpaceTicksDoneAndOpensAmountEdit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MonthEntries() unexpected error: %v", err)
 	}
-	if len(entries) != 1 || !entries[0].Done {
-		t.Fatalf("MonthEntries() = %+v, want done=true persisted", entries)
+	if len(entries) != 1 || entries[0].ConceptID != c.ID || !entries[0].Done {
+		t.Fatalf("MonthEntries() = %+v, want %s done=true persisted", entries, c.Name)
 	}
 }
 
@@ -151,17 +148,17 @@ func TestSpaceUntickingDoesNotOpenEdit(t *testing.T) {
 	}
 }
 
-func TestEnterCommitsTypedAmountAsOverride(t *testing.T) {
+func TestECommitsTypedAmountAsOverride(t *testing.T) {
 	db := openTestStore(t)
 	seedConcept(t, db, "Alquiler", 785000)
 	period := domain.NewPeriod(2026, time.January)
 
 	m := monthModel(t, db, period)
 
-	updated, _ := m.Update(keyEnter())
+	updated, _ := m.Update(key("e"))
 	m = updated.(Model)
 	if m.editing == nil {
-		t.Fatal("enter did not open the amount edit")
+		t.Fatal("e did not open the amount edit")
 	}
 	m.editing.input.SetValue("800000")
 
@@ -188,7 +185,7 @@ func TestEscCancelsEditWithoutWriting(t *testing.T) {
 
 	m := monthModel(t, db, period)
 
-	updated, _ := m.Update(keyEnter())
+	updated, _ := m.Update(key("e"))
 	m = updated.(Model)
 	m.editing.input.SetValue("999999")
 
@@ -221,7 +218,7 @@ func TestClearingAmountRemovesOverride(t *testing.T) {
 
 	m := monthModel(t, db, period)
 
-	updated, _ := m.Update(keyEnter())
+	updated, _ := m.Update(key("e"))
 	m = updated.(Model)
 	if got := m.editing.input.Value(); got != "800000.00" {
 		t.Fatalf("edit input value = %q, want prefilled with the current override 800000.00", got)
@@ -241,7 +238,7 @@ func TestClearingAmountRemovesOverride(t *testing.T) {
 	}
 }
 
-func TestCursorMovesFromConceptsOntoChores(t *testing.T) {
+func TestFinanceCursorNeverReachesChores(t *testing.T) {
 	db := openTestStore(t)
 	seedConcept(t, db, "Alquiler", 785000)
 	seedChore(t, db, "Sacar la basura")
@@ -251,14 +248,34 @@ func TestCursorMovesFromConceptsOntoChores(t *testing.T) {
 
 	updated, _ := m.Update(key("j"))
 	m = updated.(Model)
-	if m.cursor != 1 {
-		t.Fatalf("cursor = %d, want 1 (on the chore row)", m.cursor)
+	if m.financeCursor != 0 {
+		t.Fatalf("financeCursor = %d, want clamped at 0 — Finance has one line and its own cursor space, unrelated to Chores'", m.financeCursor)
+	}
+}
+
+func TestChoreCursorMovesAndClampsInItsOwnPane(t *testing.T) {
+	db := openTestStore(t)
+	seedChore(t, db, "Sacar la basura")
+	seedChore(t, db, "Regar plantas")
+	period := domain.NewPeriod(2026, time.January)
+
+	m := monthModel(t, db, period)
+	updated, _ := m.Update(key("f"))
+	m = updated.(Model)
+	if m.monthPane != paneChores {
+		t.Fatalf("monthPane = %v, want paneChores after f", m.monthPane)
 	}
 
 	updated, _ = m.Update(key("j"))
 	m = updated.(Model)
-	if m.cursor != 1 {
-		t.Fatalf("cursor = %d, want clamped at 1 (last row is the chore)", m.cursor)
+	if m.choreCursor != 1 {
+		t.Fatalf("choreCursor = %d, want 1 after j", m.choreCursor)
+	}
+
+	updated, _ = m.Update(key("j"))
+	m = updated.(Model)
+	if m.choreCursor != 1 {
+		t.Fatalf("choreCursor = %d, want clamped at 1 (last chore)", m.choreCursor)
 	}
 }
 
@@ -268,6 +285,8 @@ func TestSpaceTogglesChoreDoneWithoutOpeningEdit(t *testing.T) {
 	period := domain.NewPeriod(2026, time.January)
 
 	m := monthModel(t, db, period)
+	updated, _ := m.Update(key("f"))
+	m = updated.(Model)
 
 	updated, cmd := m.Update(keySpace())
 	m = updated.(Model)
@@ -307,9 +326,10 @@ func TestMonthViewRendersProjectedAndConfirmedTotals(t *testing.T) {
 	}
 }
 
-func TestMonthViewRendersChoresGroup(t *testing.T) {
+func TestMonthViewRendersChoresGroupInChoresPane(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
+	m.monthPane = paneChores
 
 	rent := catalog.Concept{Name: "Alquiler", Kind: catalog.Expense, Currency: domain.ARS}
 	trash := catalog.Chore{Name: "Sacar la basura"}
@@ -324,6 +344,29 @@ func TestMonthViewRendersChoresGroup(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Errorf("month view content missing %q:\n%s", want, content)
 		}
+	}
+	if strings.Contains(content, "Alquiler") {
+		t.Errorf("content = %q, want the Chores pane to hide Finance's concept lines", content)
+	}
+}
+
+func TestFKeyTogglesMonthPane(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+	if m.monthPane != paneFinance {
+		t.Fatalf("monthPane = %v, want paneFinance by default", m.monthPane)
+	}
+
+	updated, _ := m.Update(key("f"))
+	m = updated.(Model)
+	if m.monthPane != paneChores {
+		t.Fatalf("monthPane = %v, want paneChores after f", m.monthPane)
+	}
+
+	updated, _ = m.Update(key("f"))
+	m = updated.(Model)
+	if m.monthPane != paneFinance {
+		t.Fatalf("monthPane = %v, want paneFinance after a second f", m.monthPane)
 	}
 }
 
@@ -354,7 +397,7 @@ func TestMonthViewShowsEditBoxForFocusedLine(t *testing.T) {
 
 	m := monthModel(t, db, period)
 
-	updated, _ := m.Update(keyEnter())
+	updated, _ := m.Update(key("e"))
 	m = updated.(Model)
 
 	content := m.View().Content

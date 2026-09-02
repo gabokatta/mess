@@ -11,9 +11,10 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-func TestNKeyInMonthViewOpensNewChoreFormAndRendersIt(t *testing.T) {
+func TestNKeyInChoresPaneOpensNewChoreFormAndRendersIt(t *testing.T) {
 	db := openTestStore(t)
 	m := monthModel(t, db, domain.NewPeriod(2026, time.September))
+	m.monthPane = paneChores
 
 	updated, cmd := m.Update(key("n"))
 	m = updated.(Model)
@@ -28,7 +29,7 @@ func TestNKeyInMonthViewOpensNewChoreFormAndRendersIt(t *testing.T) {
 	}
 }
 
-func TestNKeyOnAConceptLineDoesNotOpenTheChoreForm(t *testing.T) {
+func TestNKeyInFinancePaneDoesNotOpenTheChoreForm(t *testing.T) {
 	db := openTestStore(t)
 	seedConcept(t, db, "Alquiler", 785000)
 	m := monthModel(t, db, domain.NewPeriod(2026, time.September))
@@ -36,7 +37,7 @@ func TestNKeyOnAConceptLineDoesNotOpenTheChoreForm(t *testing.T) {
 	updated, _ := m.Update(key("n"))
 	m = updated.(Model)
 	if m.choreForm != nil {
-		t.Error("choreForm should stay nil — the cursor is on a concept line, not free to add a chore")
+		t.Error("choreForm should stay nil — n only opens it from the Chores pane now")
 	}
 }
 
@@ -52,6 +53,7 @@ func TestCompletingChoreFormCreatesIt(t *testing.T) {
 	db := openTestStore(t)
 	period := domain.NewPeriod(2026, time.September)
 	m := monthModel(t, db, period)
+	m.monthPane = paneChores
 
 	updated, _ := m.Update(key("n"))
 	m = updated.(Model)
@@ -87,6 +89,7 @@ func TestCompletingChoreFormCreatesIt(t *testing.T) {
 func TestEscCancelsNewChoreFormWithoutWriting(t *testing.T) {
 	db := openTestStore(t)
 	m := monthModel(t, db, domain.NewPeriod(2026, time.September))
+	m.monthPane = paneChores
 
 	updated, _ := m.Update(key("n"))
 	m = updated.(Model)

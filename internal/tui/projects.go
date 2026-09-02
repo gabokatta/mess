@@ -74,7 +74,7 @@ func newProjectForm(theme Theme, width, height int) *newProjectFormState {
 			huh.NewInput().Title("Period").Description("blank = unassigned (YYYY-MM)").
 				Value(&v.period).Validate(validateOptionalPeriod),
 		),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 	return &newProjectFormState{form: form, values: v}
 }
 
@@ -266,7 +266,7 @@ func newPeriodAssignForm(theme Theme, width, height int, projectID int64, curren
 			huh.NewInput().Title("Period").Description("blank = unassigned (YYYY-MM)").
 				Value(&v.period).Validate(validateOptionalPeriod),
 		).Title("Assign period"),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 	return &periodAssignFormState{form: form, values: v, projectID: projectID}
 }
 
@@ -346,8 +346,8 @@ func (m Model) renderProjects() string {
 		if m.showClosed {
 			empty = "no closed projects"
 		}
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render(empty))
+		b.WriteString("\n")
+		b.WriteString(m.centerInBox(m.theme.Muted.Render(empty)))
 		return b.String()
 	}
 

@@ -9,7 +9,7 @@ import (
 	"github.com/gabokatta/mess/internal/month"
 )
 
-func TestCursorReachesAllocationsAfterConceptLinesAndChores(t *testing.T) {
+func TestCursorReachesAllocationsAfterConceptLines(t *testing.T) {
 	period := domain.NewPeriod(2026, time.September)
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40
@@ -28,10 +28,8 @@ func TestCursorReachesAllocationsAfterConceptLinesAndChores(t *testing.T) {
 
 	updated, _ = m.Update(key("j"))
 	m = updated.(Model)
-	updated, _ = m.Update(key("j"))
-	m = updated.(Model)
-	if m.cursor != 2 {
-		t.Fatalf("cursor = %d, want 2 (the allocation row, after the concept line and the chore)", m.cursor)
+	if m.financeCursor != 1 {
+		t.Fatalf("financeCursor = %d, want 1 (the allocation row, right after the one concept line — Chores isn't in this pane's cursor space)", m.financeCursor)
 	}
 	a, ok := m.cursorAllocation()
 	if !ok || a.ID != 1 {

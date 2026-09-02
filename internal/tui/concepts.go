@@ -150,7 +150,7 @@ func newConceptForm(theme Theme, width, height int, current domain.Period, categ
 		huh.NewGroup(
 			huh.NewInput().Title("New category name").Value(&v.newCategory).Validate(huh.ValidateNotEmpty()),
 		).Title("New category").WithHideFunc(func() bool { return newCategoryStepHidden(v.categoryID) }),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
 
 	return &conceptFormState{form: form, values: v}
 }
@@ -366,8 +366,8 @@ func (m Model) renderConcepts() string {
 	}
 
 	if len(m.concepts) == 0 {
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render("no concepts yet — press n to add one"))
+		b.WriteString("\n")
+		b.WriteString(m.centerInBox(m.theme.Muted.Render("no concepts yet — press n to add one")))
 		return b.String()
 	}
 
@@ -378,7 +378,7 @@ func (m Model) renderConcepts() string {
 			continue
 		}
 		b.WriteString("\n\n")
-		b.WriteString(m.theme.Title.Render(cat.Name))
+		b.WriteString(categoryStyle(m.categories, cat.ID).Bold(true).Render(cat.Name))
 		for _, c := range group {
 			b.WriteString("\n")
 			b.WriteString(m.renderConceptRow(c, idx == m.conceptCursor))
@@ -416,5 +416,6 @@ func (m Model) renderConceptRow(c catalog.Concept, selected bool) string {
 	if !c.ActiveUntil.IsZero() {
 		active += " – " + c.ActiveUntil.String()
 	}
-	return fmt.Sprintf("%s %-20s %-14s %s %12s  %s", cursor, c.Name, c.Kind, c.Currency, amount, active)
+	name := categoryStyle(m.categories, c.CategoryID).Render(fmt.Sprintf("%-20s", c.Name))
+	return fmt.Sprintf("%s %s %-14s %s %12s  %s", cursor, name, c.Kind, c.Currency, amount, active)
 }

@@ -121,6 +121,51 @@ func TestViewDeclaresTerminalState(t *testing.T) {
 	}
 }
 
+func TestHelpLineLivesInsideTheBoxNotTheFooter(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+
+	content := m.viewContent()
+	if !strings.Contains(content, "q quit") {
+		t.Errorf("view content = %q, want the help line as its last line", content)
+	}
+
+	footer := m.renderFooter()
+	if strings.Contains(footer, "q quit") {
+		t.Errorf("footer = %q, want only the tab strip, no help text", footer)
+	}
+	if !strings.Contains(footer, "Year") {
+		t.Errorf("footer = %q, want the tab strip", footer)
+	}
+}
+
+func TestCenterInBoxPadsShortContentWithBlankLines(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+
+	got := m.centerInBox("hi")
+	if !strings.Contains(got, "hi") {
+		t.Fatalf("centerInBox(%q) = %q, want the original content preserved", "hi", got)
+	}
+	if lines := strings.Count(got, "\n") + 1; lines < 10 {
+		t.Errorf("centerInBox() produced %d lines, want it padded to roughly fill the box height", lines)
+	}
+}
+
+func TestSettingsViewCentersItsFieldsInTheBox(t *testing.T) {
+	m := New(openTestStore(t))
+	m.width, m.height = 100, 40
+	m.view = viewSettings
+
+	content := m.renderSettings()
+	if !strings.Contains(content, "fx house") {
+		t.Fatalf("content = %q, want the fx house field", content)
+	}
+	if lines := strings.Count(content, "\n") + 1; lines < 15 {
+		t.Errorf("renderSettings() produced %d lines, want its short field list centered (padded) in the box", lines)
+	}
+}
+
 func TestMonthViewRendersGroupedLines(t *testing.T) {
 	m := New(openTestStore(t))
 	m.width, m.height = 100, 40

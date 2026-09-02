@@ -7,13 +7,63 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/NimbleMarkets/ntcharts/v2/barchart"
-	"github.com/NimbleMarkets/ntcharts/v2/sparkline"
 	"github.com/shopspring/decimal"
 
 	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/month"
 )
+
+// trendSeries is the Year Trend chart's three-way selection, cycled with s
+// — only one renders at a time.
+type trendSeries int
+
+const (
+	seriesCash trendSeries = iota
+	seriesInvested
+	seriesPocket
+)
+
+func (s trendSeries) Label() string {
+	switch s {
+	case seriesInvested:
+		return "Invested"
+	case seriesPocket:
+		return "Pocket money"
+	default:
+		return "Cash saved"
+	}
+}
+
+func (s trendSeries) Currency() domain.Currency {
+	if s == seriesPocket {
+		return domain.ARS
+	}
+	return domain.USD
+}
+
+func nextTrendSeries(s trendSeries) trendSeries {
+	return (s + 1) % 3
+}
+
+// trendValues is the selected series' resolved value for each period of
+// the year, in the same order as y.Periods.
+func trendValues(y month.Year, s trendSeries) []decimal.Decimal {
+	values := make([]decimal.Decimal, len(y.NetWorth))
+	for i := range values {
+		switch s {
+		case seriesInvested:
+			values[i] = y.NetWorth[i].Invested
+		case seriesPocket:
+			values[i] = y.Leftover[i]
+		default:
+			values[i] = y.NetWorth[i].Cash
+		}
+	}
+	return values
+}
 
 // yearLoadedMsg is the result of loadYear's Cmd, delivered back to Update
 // once the database read completes.
@@ -54,20 +104,16 @@ func (m Model) renderYear() string {
 		return b.String()
 	}
 	if len(m.year.Periods) == 0 {
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render("no concepts yet — add some in the Concepts view"))
+		b.WriteString("\n")
+		b.WriteString(m.centerInBox(m.theme.Muted.Render("no concepts yet — add some in the Concepts view")))
 		return b.String()
 	}
 
-	b.WriteString("\n\n")
-	b.WriteString(m.theme.Title.Render("Net worth"))
-	b.WriteString(fmt.Sprintf("  (current: %s)\n", m.year.NetWorth[len(m.year.NetWorth)-1].Total().StringFixed(2)))
-	b.WriteString(m.renderSparkline(netWorthSeries(m.year)))
-
-	b.WriteString("\n\n")
-	b.WriteString(m.theme.Title.Render("Leftover pesos"))
-	b.WriteString(fmt.Sprintf("  (current: %s)\n", m.year.Leftover[len(m.year.Leftover)-1].StringFixed(2)))
-	b.WriteString(m.renderSparkline(leftoverSeries(m.year)))
+	if m.yearDrillDown != nil {
+		b.WriteString("\n")
+		b.WriteString(m.centerInBox(m.renderYearDrillDown()))
+		return b.String()
+	}
 
 	if len(m.year.Categories) > 0 {
 		b.WriteString("\n\n")
@@ -77,45 +123,62 @@ func (m Model) renderYear() string {
 	}
 
 	b.WriteString("\n\n")
-	b.WriteString(m.theme.Title.Render("Grid"))
+	b.WriteString(m.theme.Title.Render("Trend"))
+	values := trendValues(m.year, m.yearSeries)
+	current := values[len(values)-1]
+	fmt.Fprintf(&b, "  %s (current: %s %s)\n", m.yearSeries.Label(), current.StringFixed(2), m.yearSeries.Currency())
+	b.WriteString(m.renderTrendChart(values))
+
+	b.WriteString("\n\n")
+	b.WriteString(m.theme.Title.Render("Concepts"))
 	b.WriteString("\n")
-	b.WriteString(m.renderGrid())
+	b.WriteString(m.renderYearConcepts())
 
 	return b.String()
 }
 
-func netWorthSeries(y month.Year) []float64 {
-	series := make([]float64, len(y.NetWorth))
-	for i, nw := range y.NetWorth {
-		series[i] = nw.Total().InexactFloat64()
-	}
-	return series
+// renderTrendChart draws one vertical bar per month, real values rather
+// than a sparkline's bare shape — vertical is ntcharts' default bar
+// orientation, WithHorizontalBars is what opts into the category
+// breakdown's horizontal layout instead.
+func (m Model) renderTrendChart(values []decimal.Decimal) string {
+	return m.renderMonthlyBars(values, m.yearSeries.Label(), m.theme.Chart)
 }
 
-func leftoverSeries(y month.Year) []float64 {
-	series := make([]float64, len(y.Leftover))
-	for i, v := range y.Leftover {
-		series[i] = v.InexactFloat64()
+// renderMonthlyBars draws one vertical bar per period in m.year.Periods —
+// shared by the Trend chart (a net-worth series) and a concept's
+// drill-down (its own twelve months), which differ only in the series name,
+// its values, and its color.
+func (m Model) renderMonthlyBars(values []decimal.Decimal, seriesName string, style lipgloss.Style) string {
+	bars := make([]barchart.BarData, len(values))
+	for i, v := range values {
+		bars[i] = barchart.BarData{
+			Label:  m.year.Periods[i].Month().String()[:3],
+			Values: []barchart.BarValue{{Name: seriesName, Value: v.InexactFloat64(), Style: style}},
+		}
 	}
-	return series
-}
-
-func (m Model) renderSparkline(data []float64) string {
-	sl := sparkline.New(chartWidth(m.width), 5, sparkline.WithStyle(m.theme.Chart))
-	sl.PushAll(data)
-	sl.Draw()
-	return sl.View()
+	bc := barchart.New(chartWidth(m.width), 12, barchart.WithDataSet(bars))
+	bc.Draw()
+	return bc.View()
 }
 
 // renderCategoryBarChart draws one horizontal bar per category, in the same
 // order Categories() returns — sort_order, the app's one ordering rule —
 // rather than resorting by magnitude.
 func (m Model) renderCategoryBarChart() string {
-	bars := make([]barchart.BarData, len(m.year.Categories))
-	for i, c := range m.year.Categories {
+	return m.renderCategoryBars(m.year.Categories, chartWidth(m.width))
+}
+
+// renderCategoryBars is the horizontal category breakdown shared by the
+// Year view (all twelve months pooled) and the Finance pane (this period
+// alone) — same bars, different totals and width.
+func (m Model) renderCategoryBars(totals []month.CategoryTotal, width int) string {
+	bars := make([]barchart.BarData, len(totals))
+	for i, c := range totals {
+		style := categoryStyle(m.categories, c.Category.ID)
 		bars[i] = barchart.BarData{
 			Label:  c.Category.Name,
-			Values: []barchart.BarValue{{Name: c.Category.Name, Value: c.Total.InexactFloat64(), Style: m.theme.Chart}},
+			Values: []barchart.BarValue{{Name: c.Category.Name, Value: c.Total.InexactFloat64(), Style: style}},
 		}
 	}
 	height := len(bars) * 2
@@ -125,37 +188,141 @@ func (m Model) renderCategoryBarChart() string {
 	// WithDataSet must precede WithHorizontalBars: the origin recompute that
 	// makes room for labels happens when horizontal mode is set, so it needs
 	// the data already pushed to measure label widths against.
-	bc := barchart.New(chartWidth(m.width), height, barchart.WithDataSet(bars), barchart.WithHorizontalBars())
+	bc := barchart.New(width, height, barchart.WithDataSet(bars), barchart.WithHorizontalBars())
 	bc.Draw()
 	return bc.View()
 }
 
-// renderGrid draws one row per concept that occurred anywhere in the year,
-// labeled with its currency since ARS and USD concepts share the grid, one
-// column per period, blank where the concept didn't occur that month.
-func (m Model) renderGrid() string {
-	concepts := yearConcepts(m.year.Months)
-	if len(concepts) == 0 {
+// renderYearConcepts is a category-grouped list, one row per concept that
+// occurred anywhere in the year, showing its average resolved amount per
+// occurrence — divided by the months it actually occurred in, not by 12, so
+// a twice-a-year bonus reads as itself rather than a sixth of its size.
+func (m Model) renderYearConcepts() string {
+	if len(m.yearConceptRows()) == 0 {
 		return m.theme.Muted.Render("no lines this year")
 	}
-	amounts := gridAmounts(m.year.Months, concepts)
+	averages := conceptYearAverages(m.year.Months)
+	concepts := yearConcepts(m.year.Months)
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-20s", "")
-	for _, p := range m.year.Periods {
-		fmt.Fprintf(&b, " %10s", p.String())
-	}
-	for i, c := range concepts {
-		b.WriteString("\n")
-		fmt.Fprintf(&b, "%-16s %-3s", c.Name, c.Currency)
-		for _, cell := range amounts[i] {
-			display := "·"
-			if cell.present {
-				display = cell.amount.StringFixed(2)
-			}
-			fmt.Fprintf(&b, " %10s", display)
+	idx := 0
+	for _, cat := range m.categories {
+		group := conceptsForCategory(concepts, cat.ID)
+		if len(group) == 0 {
+			continue
+		}
+		if idx > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(categoryStyle(m.categories, cat.ID).Bold(true).Render(cat.Name))
+		for _, c := range group {
+			b.WriteString("\n")
+			b.WriteString(m.renderYearConceptRow(c, averages[c.ID], idx == m.yearConceptCursor))
+			idx++
 		}
 	}
+	return b.String()
+}
+
+func (m Model) renderYearConceptRow(c catalog.Concept, avg decimal.Decimal, selected bool) string {
+	cursor := " "
+	if selected {
+		cursor = ">"
+	}
+	name := categoryStyle(m.categories, c.CategoryID).Render(fmt.Sprintf("%-20s", c.Name))
+	return fmt.Sprintf("%s %s %s %12s", cursor, name, c.Currency, avg.StringFixed(2))
+}
+
+// conceptYearAverages sums each concept's resolved amounts across months
+// and divides by the count it actually occurred in.
+func conceptYearAverages(months []month.Month) map[int64]decimal.Decimal {
+	sums := make(map[int64]decimal.Decimal)
+	counts := make(map[int64]int)
+	for _, mo := range months {
+		for _, l := range mo.Lines {
+			sums[l.Concept.ID] = sums[l.Concept.ID].Add(l.Amount)
+			counts[l.Concept.ID]++
+		}
+	}
+	averages := make(map[int64]decimal.Decimal, len(sums))
+	for id, sum := range sums {
+		if n := counts[id]; n > 0 {
+			averages[id] = sum.Div(decimal.NewFromInt(int64(n)))
+		}
+	}
+	return averages
+}
+
+// yearConceptRows is m.year's concepts in the same category-grouped order
+// renderYearConcepts renders them, so cursor index and render index agree.
+func (m Model) yearConceptRows() []catalog.Concept {
+	concepts := yearConcepts(m.year.Months)
+	var out []catalog.Concept
+	for _, cat := range m.categories {
+		out = append(out, conceptsForCategory(concepts, cat.ID)...)
+	}
+	return out
+}
+
+func (m Model) moveYearConceptCursor(delta int) int {
+	return clampCursor(m.yearConceptCursor+delta, len(m.yearConceptRows()))
+}
+
+// cursorYearConcept reports the concept under the Year view's own cursor.
+func (m Model) cursorYearConcept() (catalog.Concept, bool) {
+	rows := m.yearConceptRows()
+	if m.yearConceptCursor >= len(rows) {
+		return catalog.Concept{}, false
+	}
+	return rows[m.yearConceptCursor], true
+}
+
+// startYearDrillDown opens the cursor's concept as a full-screen twelve-month
+// chart, or is a no-op if the list is empty.
+func (m Model) startYearDrillDown() (Model, tea.Cmd) {
+	c, ok := m.cursorYearConcept()
+	if !ok {
+		return m, nil
+	}
+	m.yearDrillDown = &c
+	return m, nil
+}
+
+// updateYearDrillDown is the drill-down screen's only interaction: esc
+// returns to the concept list.
+func (m Model) updateYearDrillDown(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if msg.String() == "esc" {
+		m.yearDrillDown = nil
+	}
+	return m, nil
+}
+
+// conceptTwelveMonths is one concept's resolved amount for each of months,
+// zero where it didn't occur that month.
+func conceptTwelveMonths(months []month.Month, conceptID int64) []decimal.Decimal {
+	values := make([]decimal.Decimal, len(months))
+	for i, mo := range months {
+		for _, l := range mo.Lines {
+			if l.Concept.ID == conceptID {
+				values[i] = l.Amount
+				break
+			}
+		}
+	}
+	return values
+}
+
+// renderYearDrillDown draws the cursor's concept across all twelve months of
+// the year, the same vertical-bar shape as the Trend chart above.
+func (m Model) renderYearDrillDown() string {
+	c := *m.yearDrillDown
+	values := conceptTwelveMonths(m.year.Months, c.ID)
+	style := categoryStyle(m.categories, c.CategoryID)
+
+	var b strings.Builder
+	b.WriteString(m.theme.Title.Render(c.Name))
+	b.WriteString("\n")
+	b.WriteString(m.renderMonthlyBars(values, c.Name, style))
 	return b.String()
 }
 
@@ -179,30 +346,4 @@ func yearConcepts(months []month.Month) []catalog.Concept {
 		return concepts[i].Name < concepts[j].Name
 	})
 	return concepts
-}
-
-// gridCell is one concept's resolved amount for one period, distinguishing
-// a real zero amount from the concept not occurring that month at all.
-type gridCell struct {
-	amount  decimal.Decimal
-	present bool
-}
-
-// gridAmounts is concepts x months — outer index is the concept, in
-// yearConcepts' order.
-func gridAmounts(months []month.Month, concepts []catalog.Concept) [][]gridCell {
-	rows := make([][]gridCell, len(concepts))
-	for i, c := range concepts {
-		row := make([]gridCell, len(months))
-		for j, mo := range months {
-			for _, l := range mo.Lines {
-				if l.Concept.ID == c.ID {
-					row[j] = gridCell{amount: l.Amount, present: true}
-					break
-				}
-			}
-		}
-		rows[i] = row
-	}
-	return rows
 }

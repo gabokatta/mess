@@ -91,14 +91,24 @@ func LoadYear(db *sql.DB, year int) (Year, error) {
 // dropping categories with nothing to show — Income lines and other
 // currencies never contribute, so an income-only category ends up empty.
 func categoryTotals(categories []catalog.Category, months []Month) []CategoryTotal {
-	sums := make(map[int64]decimal.Decimal, len(categories))
+	var lines []Line
 	for _, m := range months {
-		for _, l := range m.Lines {
-			if l.Concept.Kind == catalog.Income || l.Concept.Currency != domain.ARS {
-				continue
-			}
-			sums[l.Concept.CategoryID] = sums[l.Concept.CategoryID].Add(l.Amount)
+		lines = append(lines, m.Lines...)
+	}
+	return CategoryTotals(categories, lines)
+}
+
+// CategoryTotals sums lines' ARS expense amounts by category, dropping
+// categories with nothing to show. Shared by the Year breakdown (every
+// month's lines pooled together) and the Month view's own single-period
+// breakdown, which passes just that one period's lines.
+func CategoryTotals(categories []catalog.Category, lines []Line) []CategoryTotal {
+	sums := make(map[int64]decimal.Decimal, len(categories))
+	for _, l := range lines {
+		if l.Concept.Kind == catalog.Income || l.Concept.Currency != domain.ARS {
+			continue
 		}
+		sums[l.Concept.CategoryID] = sums[l.Concept.CategoryID].Add(l.Amount)
 	}
 	var totals []CategoryTotal
 	for _, c := range categories {
