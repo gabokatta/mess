@@ -52,6 +52,19 @@ type Model struct {
 	showClosed     bool
 	projectEditing *projectEditState
 	projectSaveErr error
+	newProject     *newProjectFormState
+
+	concepts       []catalog.Concept
+	categories     []catalog.Category
+	baseAmounts    map[int64][]catalog.BaseAmount
+	conceptsErr    error
+	conceptForm    *conceptFormState
+	conceptSaveErr error
+
+	settings        catalog.Settings
+	settingsErr     error
+	settingsForm    *settingsFormState
+	settingsSaveErr error
 }
 
 func New(db *sql.DB) Model {
@@ -70,7 +83,28 @@ func (m Model) Init() tea.Cmd {
 		fillCurrentFxRate(m.db, m.fxClient, m.period),
 		loadYear(m.db, m.period.Year()),
 		loadProjects(m.db),
+		ensureDefaultCategories(m.db),
+		loadSettings(m.db),
 	)
+}
+
+// loadView reloads whatever view v shows, so a write made in one view is
+// never stale in another.
+func (m Model) loadView(v view) tea.Cmd {
+	switch v {
+	case viewMonth:
+		return loadMonth(m.db, m.period)
+	case viewYear:
+		return loadYear(m.db, m.period.Year())
+	case viewProjects:
+		return loadProjects(m.db)
+	case viewConcepts:
+		return loadConcepts(m.db)
+	case viewSettings:
+		return loadSettings(m.db)
+	default:
+		return nil
+	}
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -98,11 +132,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.projectSaveErr = msg.err
 		return m, loadProjects(m.db)
 
+	case categoriesSeededMsg:
+		return m, loadConcepts(m.db)
+
+	case conceptsLoadedMsg:
+		m.concepts, m.categories, m.baseAmounts, m.conceptsErr = msg.concepts, msg.categories, msg.baseAmounts, msg.err
+
+	case conceptSavedMsg:
+		m.conceptSaveErr = msg.err
+		return m, loadConcepts(m.db)
+
+	case settingsLoadedMsg:
+		m.settings, m.settingsErr = msg.settings, msg.err
+
+	case settingsSavedMsg:
+		m.settingsSaveErr = msg.err
+		return m, loadSettings(m.db)
+
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+
+	default:
+		// Non-key messages from an open Huh form (field/group advancement)
+		// round-trip back through here rather than handleKey.
+		if m.conceptForm != nil {
+			return m.forwardConceptForm(msg)
+		}
+		if m.settingsForm != nil {
+			return m.forwardSettingsForm(msg)
+		}
+		if m.newProject != nil {
+			return m.forwardNewProject(msg)
+		}
 	}
 	return m, nil
 }
@@ -114,13 +178,24 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if m.projectEditing != nil {
 		return m.updateProjectEditing(msg)
 	}
+	if m.newProject != nil {
+		return m.updateNewProject(msg)
+	}
+	if m.conceptForm != nil {
+		return m.updateConceptForm(msg)
+	}
+	if m.settingsForm != nil {
+		return m.updateSettingsForm(msg)
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "tab", "l":
 		m.view = (m.view + 1) % view(len(viewNames))
+		return m, m.loadView(m.view)
 	case "shift+tab", "h":
 		m.view = (m.view - 1 + view(len(viewNames))) % view(len(viewNames))
+		return m, m.loadView(m.view)
 	case "j", "down":
 		if m.view == viewMonth {
 			m.cursor = m.moveCursor(1)
@@ -146,6 +221,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case "e":
 		if m.view == viewProjects {
 			return m.startProjectEdit()
+		} else if m.view == viewSettings {
+			return m.startSettingsEdit()
 		}
 	case "c":
 		if m.view == viewProjects {
@@ -155,6 +232,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		if m.view == viewProjects {
 			m.showClosed = !m.showClosed
 			m.projectCursor = 0
+		}
+	case "n":
+		if m.view == viewProjects {
+			return m.startNewProject()
+		} else if m.view == viewConcepts {
+			return m.startNewConcept()
 		}
 	}
 	return m, nil
@@ -241,6 +324,10 @@ func (m Model) viewContent() string {
 		return m.renderYear()
 	case viewProjects:
 		return m.renderProjects()
+	case viewConcepts:
+		return m.renderConcepts()
+	case viewSettings:
+		return m.renderSettings()
 	default:
 		return m.theme.Muted.Render(m.view.String() + " — not built yet")
 	}
@@ -253,11 +340,20 @@ func (m Model) helpText() string {
 	if m.projectEditing != nil {
 		return "ctrl+s save · esc cancel"
 	}
+	if m.newProject != nil || m.conceptForm != nil || m.settingsForm != nil {
+		return "esc cancel"
+	}
 	if m.view == viewMonth {
 		return "j/k move · space tick · enter edit · tab/shift+tab switch · q quit"
 	}
 	if m.view == viewProjects {
-		return "j/k move · space tick · e edit · c close · f pending/closed · tab/shift+tab switch · q quit"
+		return "j/k move · space tick · e edit · c close · f pending/closed · n new · tab/shift+tab switch · q quit"
+	}
+	if m.view == viewConcepts {
+		return "n new · tab/shift+tab switch · q quit"
+	}
+	if m.view == viewSettings {
+		return "e edit · tab/shift+tab switch · q quit"
 	}
 	return "tab/shift+tab switch · q quit"
 }

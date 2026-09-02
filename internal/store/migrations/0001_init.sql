@@ -78,10 +78,8 @@ CREATE TABLE fx_rate (
 
 CREATE TABLE settings (
     id                     INTEGER PRIMARY KEY CHECK (id = 1),
-    allowance_cap          TEXT NOT NULL,
-    allowance_rate         TEXT NOT NULL,
     fx_house               TEXT NOT NULL CHECK (fx_house IN ('Blue', 'Official', 'MEP')),
-    opening_period         TEXT NOT NULL,
+    opening_period         TEXT,
     opening_leftover_pesos TEXT NOT NULL DEFAULT '0',
     opening_cash_usd       TEXT NOT NULL DEFAULT '0',
     opening_invested_usd   TEXT NOT NULL DEFAULT '0'

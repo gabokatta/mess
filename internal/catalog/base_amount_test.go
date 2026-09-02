@@ -115,6 +115,26 @@ func TestAllBaseAmountsGroupsByConcept(t *testing.T) {
 	}
 }
 
+func TestLatestBaseAmountReturnsMostRecentlyDated(t *testing.T) {
+	amounts := []BaseAmount{
+		{EffectiveFrom: domain.NewPeriod(2026, time.January), Amount: decimal.NewFromInt(785000)},
+		{EffectiveFrom: domain.NewPeriod(2026, time.June), Amount: decimal.NewFromInt(850000)},
+	}
+	got, ok := LatestBaseAmount(amounts)
+	if !ok {
+		t.Fatal("LatestBaseAmount() ok = false, want true")
+	}
+	if !got.Amount.Equal(decimal.NewFromInt(850000)) {
+		t.Errorf("LatestBaseAmount() = %+v, want the June 850000 row", got)
+	}
+}
+
+func TestLatestBaseAmountEmptyReportsNotOK(t *testing.T) {
+	if _, ok := LatestBaseAmount(nil); ok {
+		t.Error("LatestBaseAmount(nil) ok = true, want false")
+	}
+}
+
 func TestSetBaseAmountRequiresExistingConcept(t *testing.T) {
 	db := openTestStore(t).DB()
 

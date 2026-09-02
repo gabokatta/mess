@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/huh/v2"
+
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 )
@@ -224,6 +226,99 @@ func TestClosingProjectResetsCursor(t *testing.T) {
 	m = updated.(Model)
 	if m.projectCursor != 0 {
 		t.Errorf("projectCursor = %d, want reset to 0 after closing", m.projectCursor)
+	}
+}
+
+func TestNKeyOpensNewProjectFormAndRendersIt(t *testing.T) {
+	db := openTestStore(t)
+	current := domain.NewPeriod(2026, time.September)
+	m := projectsModel(t, db, current)
+
+	updated, cmd := m.Update(key("n"))
+	m = updated.(Model)
+	if m.newProject == nil {
+		t.Fatal("newProject = nil, want a name prompt opened")
+	}
+	m = settle(t, m, cmd)
+
+	content := m.View().Content
+	if !strings.Contains(content, "Project name") {
+		t.Errorf("content = %q, want the Project name field", content)
+	}
+}
+
+func TestCompletingNewProjectFormCreatesUnassignedBodylessProject(t *testing.T) {
+	db := openTestStore(t)
+	current := domain.NewPeriod(2026, time.September)
+	m := projectsModel(t, db, current)
+
+	updated, _ := m.Update(key("n"))
+	m = updated.(Model)
+	m.newProject.values.name = "Buy list"
+	m.newProject.form.State = huh.StateCompleted
+
+	updated, cmd := m.Update(keyEnter())
+	m = updated.(Model)
+	if m.newProject != nil {
+		t.Fatal("a completed form should close")
+	}
+	m = settle(t, m, cmd)
+
+	projects, err := catalog.Projects(db)
+	if err != nil {
+		t.Fatalf("catalog.Projects() unexpected error: %v", err)
+	}
+	if len(projects) != 1 || projects[0].Name != "Buy list" || projects[0].BodyMD != "" || !projects[0].Period.IsZero() {
+		t.Errorf("Projects() = %+v, want a single unassigned, bodyless Buy list", projects)
+	}
+}
+
+func TestEnterWithBlankNameKeepsFormOpen(t *testing.T) {
+	db := openTestStore(t)
+	current := domain.NewPeriod(2026, time.September)
+	m := projectsModel(t, db, current)
+
+	updated, _ := m.Update(key("n"))
+	m = updated.(Model)
+	updated, cmd := m.Update(keyEnter())
+	m = updated.(Model)
+	if m.newProject == nil {
+		t.Fatal("enter with a blank required name should keep the form open")
+	}
+	m = settle(t, m, cmd)
+
+	projects, err := catalog.Projects(db)
+	if err != nil {
+		t.Fatalf("catalog.Projects() unexpected error: %v", err)
+	}
+	if len(projects) != 0 {
+		t.Errorf("Projects() = %+v, want none created", projects)
+	}
+}
+
+func TestEscCancelsNewProjectFormWithoutWriting(t *testing.T) {
+	db := openTestStore(t)
+	current := domain.NewPeriod(2026, time.September)
+	m := projectsModel(t, db, current)
+
+	updated, _ := m.Update(key("n"))
+	m = updated.(Model)
+	m.newProject.values.name = "Buy list"
+	updated, cmd := m.Update(keyEsc())
+	m = updated.(Model)
+	if m.newProject != nil {
+		t.Error("esc should close the form")
+	}
+	if cmd != nil {
+		t.Error("esc should not write anything")
+	}
+
+	projects, err := catalog.Projects(db)
+	if err != nil {
+		t.Fatalf("catalog.Projects() unexpected error: %v", err)
+	}
+	if len(projects) != 0 {
+		t.Errorf("Projects() = %+v, want none created", projects)
 	}
 }
 

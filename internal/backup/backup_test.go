@@ -119,10 +119,11 @@ func TestExportImportRoundTripsEveryTable(t *testing.T) {
 	if err := catalog.SetFxRate(db, period, decimal.NewFromInt(1000)); err != nil {
 		t.Fatalf("SetFxRate() unexpected error: %v", err)
 	}
-	if _, err := db.Exec(`
-		INSERT INTO settings (id, allowance_cap, allowance_rate, fx_house, opening_period)
-		VALUES (1, '310000', '0.7', 'Blue', '2026-01')`); err != nil {
-		t.Fatalf("seed settings unexpected error: %v", err)
+	if err := catalog.SaveSettings(db, catalog.Settings{
+		FxHouse: domain.Blue,
+		Opening: catalog.OpeningBalances{Period: period},
+	}); err != nil {
+		t.Fatalf("SaveSettings() unexpected error: %v", err)
 	}
 
 	data, err := Export(db)

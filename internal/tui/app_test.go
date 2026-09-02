@@ -23,6 +23,10 @@ func keySpace() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeySpace, Tex
 func keyEnter() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeyEnter} }
 func keyEsc() tea.KeyPressMsg   { return tea.KeyPressMsg{Code: tea.KeyEscape} }
 func keyCtrlS() tea.KeyPressMsg { return tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl} }
+func keyTab() tea.KeyPressMsg   { return tea.KeyPressMsg{Code: tea.KeyTab} }
+func keyShiftTab() tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
+}
 
 // settle drains a Cmd/Update chain to completion, the way the real Bubble
 // Tea loop would deliver each Cmd's Msg back into Update.

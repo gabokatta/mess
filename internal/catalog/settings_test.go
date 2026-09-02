@@ -23,8 +23,8 @@ func TestFxHouseDefaultsToBlueWhenUnset(t *testing.T) {
 func TestFxHouseReadsConfiguredValue(t *testing.T) {
 	db := openTestStore(t).DB()
 	mustExec(t, db, `
-		INSERT INTO settings (id, allowance_cap, allowance_rate, fx_house, opening_period)
-		VALUES (1, '310000', '0.7', 'Official', '2026-01')`)
+		INSERT INTO settings (id, fx_house, opening_period)
+		VALUES (1, 'Official', '2026-01')`)
 
 	got, err := FxHouse(db)
 	if err != nil {
@@ -47,11 +47,82 @@ func TestLoadOpeningBalancesZeroWhenUnset(t *testing.T) {
 	}
 }
 
+func TestLoadSettingsDefaultsWhenUnset(t *testing.T) {
+	db := openTestStore(t).DB()
+
+	got, err := LoadSettings(db)
+	if err != nil {
+		t.Fatalf("LoadSettings() unexpected error: %v", err)
+	}
+	if got.FxHouse != domain.Blue {
+		t.Errorf("LoadSettings().FxHouse = %v, want Blue", got.FxHouse)
+	}
+	if !got.Opening.Period.IsZero() {
+		t.Errorf("LoadSettings().Opening.Period = %v, want zero", got.Opening.Period)
+	}
+}
+
+func TestSaveSettingsThenLoadSettingsRoundTrips(t *testing.T) {
+	db := openTestStore(t).DB()
+	want := Settings{
+		FxHouse: domain.MEP,
+		Opening: OpeningBalances{
+			Period:        domain.NewPeriod(2026, 1),
+			LeftoverPesos: decimal.NewFromInt(15000),
+			CashUSD:       decimal.NewFromInt(2000),
+			InvestedUSD:   decimal.NewFromInt(8000),
+		},
+	}
+
+	if err := SaveSettings(db, want); err != nil {
+		t.Fatalf("SaveSettings() unexpected error: %v", err)
+	}
+	got, err := LoadSettings(db)
+	if err != nil {
+		t.Fatalf("LoadSettings() unexpected error: %v", err)
+	}
+	if got.FxHouse != want.FxHouse {
+		t.Errorf("LoadSettings().FxHouse = %v, want %v", got.FxHouse, want.FxHouse)
+	}
+	if !got.Opening.Period.Equal(want.Opening.Period) {
+		t.Errorf("LoadSettings().Opening.Period = %s, want %s", got.Opening.Period, want.Opening.Period)
+	}
+	if !got.Opening.LeftoverPesos.Equal(want.Opening.LeftoverPesos) {
+		t.Errorf("LoadSettings().Opening.LeftoverPesos = %s, want %s", got.Opening.LeftoverPesos, want.Opening.LeftoverPesos)
+	}
+	if !got.Opening.CashUSD.Equal(want.Opening.CashUSD) {
+		t.Errorf("LoadSettings().Opening.CashUSD = %s, want %s", got.Opening.CashUSD, want.Opening.CashUSD)
+	}
+	if !got.Opening.InvestedUSD.Equal(want.Opening.InvestedUSD) {
+		t.Errorf("LoadSettings().Opening.InvestedUSD = %s, want %s", got.Opening.InvestedUSD, want.Opening.InvestedUSD)
+	}
+}
+
+func TestSaveSettingsOverwritesPreviousValues(t *testing.T) {
+	db := openTestStore(t).DB()
+	first := Settings{FxHouse: domain.Blue, Opening: OpeningBalances{Period: domain.NewPeriod(2026, 1)}}
+	if err := SaveSettings(db, first); err != nil {
+		t.Fatalf("SaveSettings() unexpected error: %v", err)
+	}
+	second := Settings{FxHouse: domain.Official, Opening: OpeningBalances{Period: domain.NewPeriod(2026, 2)}}
+	if err := SaveSettings(db, second); err != nil {
+		t.Fatalf("SaveSettings() unexpected error: %v", err)
+	}
+
+	got, err := LoadSettings(db)
+	if err != nil {
+		t.Fatalf("LoadSettings() unexpected error: %v", err)
+	}
+	if got.FxHouse != domain.Official || !got.Opening.Period.Equal(domain.NewPeriod(2026, 2)) {
+		t.Errorf("LoadSettings() = %+v, want the second save to have overwritten the first", got)
+	}
+}
+
 func TestLoadOpeningBalancesReadsConfiguredValues(t *testing.T) {
 	db := openTestStore(t).DB()
 	mustExec(t, db, `
-		INSERT INTO settings (id, allowance_cap, allowance_rate, fx_house, opening_period, opening_leftover_pesos, opening_cash_usd, opening_invested_usd)
-		VALUES (1, '310000', '0.7', 'Blue', '2026-01', '15000', '2000', '8000')`)
+		INSERT INTO settings (id, fx_house, opening_period, opening_leftover_pesos, opening_cash_usd, opening_invested_usd)
+		VALUES (1, 'Blue', '2026-01', '15000', '2000', '8000')`)
 
 	got, err := LoadOpeningBalances(db)
 	if err != nil {

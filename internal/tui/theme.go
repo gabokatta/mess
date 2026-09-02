@@ -1,6 +1,9 @@
 package tui
 
-import "charm.land/lipgloss/v2"
+import (
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
+)
 
 type Theme struct {
 	Dark      bool
@@ -34,4 +37,21 @@ func NewTheme(dark bool) Theme {
 		Logo:      lipgloss.NewStyle().Foreground(muted),
 		Chart:     lipgloss.NewStyle().Foreground(accent),
 	}
+}
+
+// themeFor resolves Huh's own theme once, at form-construction time, rather
+// than forwarding tea.BackgroundColorMsg into every open form — by the time
+// a user can open one, t.Dark is already known.
+func themeFor(t Theme) huh.Theme {
+	return huh.ThemeFunc(func(bool) *huh.Styles { return huh.ThemeCharm(t.Dark) })
+}
+
+// formHeight is a form's vertical budget inside the app's box. Left unset,
+// a Group sizes itself to fit every field at once, so a form taller than
+// the terminal just runs off the bottom instead of scrolling.
+func formHeight(appHeight int) int {
+	if h := appHeight - 10; h > 6 {
+		return h
+	}
+	return 6
 }

@@ -8,6 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/project"
@@ -44,6 +45,68 @@ func setProjectClosed(db *sql.DB, id int64, closedAt *time.Time) tea.Cmd {
 	return func() tea.Msg {
 		return projectSavedMsg{err: catalog.SetProjectClosed(db, id, closedAt)}
 	}
+}
+
+func createProject(db *sql.DB, name string) tea.Cmd {
+	return func() tea.Msg {
+		_, err := catalog.CreateProject(db, catalog.Project{Name: name})
+		return projectSavedMsg{err: err}
+	}
+}
+
+// newProjectFormValues is the huh-bound value for the new-project prompt.
+type newProjectFormValues struct {
+	name string
+}
+
+type newProjectFormState struct {
+	form   *huh.Form
+	values *newProjectFormValues
+}
+
+func newProjectForm(theme Theme, width, height int) *newProjectFormState {
+	v := &newProjectFormValues{}
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Project name").Value(&v.name).Validate(huh.ValidateNotEmpty()),
+		),
+	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height)).WithShowHelp(true)
+	return &newProjectFormState{form: form, values: v}
+}
+
+// startNewProject opens a name-only prompt; the project starts unassigned
+// and bodyless, filled in afterward with 'e'.
+func (m Model) startNewProject() (Model, tea.Cmd) {
+	m.newProject = newProjectForm(m.theme, m.width, m.height)
+	return m, m.newProject.form.Init()
+}
+
+func (m Model) updateNewProject(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if msg.String() == "esc" {
+		m.newProject = nil
+		return m, nil
+	}
+	return m.forwardNewProject(msg)
+}
+
+// forwardNewProject drives the form with any tea.Msg, not just key presses
+// — see forwardConceptForm's comment for why.
+func (m Model) forwardNewProject(msg tea.Msg) (Model, tea.Cmd) {
+	updated, cmd := m.newProject.form.Update(msg)
+	if f, ok := updated.(*huh.Form); ok {
+		m.newProject.form = f
+	}
+
+	switch m.newProject.form.State {
+	case huh.StateCompleted:
+		name := m.newProject.values.name
+		m.newProject = nil
+		return m, tea.Batch(cmd, createProject(m.db, name))
+	case huh.StateAborted:
+		m.newProject = nil
+		return m, nil
+	}
+	return m, cmd
 }
 
 // projectEditState is the full-body textarea edit in progress, keyed by
@@ -181,6 +244,12 @@ func (m Model) renderProjects() string {
 		label = "Closed"
 	}
 	b.WriteString(m.theme.Muted.Render(m.view.String() + " · " + label))
+
+	if m.newProject != nil {
+		b.WriteString("\n\n")
+		b.WriteString(m.newProject.form.View())
+		return b.String()
+	}
 
 	if m.projectsErr != nil {
 		b.WriteString("\n\n")

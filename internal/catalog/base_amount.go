@@ -58,6 +58,18 @@ func AllBaseAmounts(db *sql.DB) (map[int64][]BaseAmount, error) {
 	return byConcept, nil
 }
 
+// LatestBaseAmount returns the most recently dated entry in amounts, which
+// must already be ordered by effective_from ascending (as BaseAmounts and
+// AllBaseAmounts return them). It is not period-aware — callers that need
+// the value effective as of a given period should use the month package's
+// resolution instead.
+func LatestBaseAmount(amounts []BaseAmount) (BaseAmount, bool) {
+	if len(amounts) == 0 {
+		return BaseAmount{}, false
+	}
+	return amounts[len(amounts)-1], true
+}
+
 func scanBaseAmounts(rows *sql.Rows) ([]BaseAmount, error) {
 	var amounts []BaseAmount
 	for rows.Next() {
