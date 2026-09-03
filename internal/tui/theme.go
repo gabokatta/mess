@@ -12,6 +12,7 @@ type Theme struct {
 	Accent lipgloss.Style
 	Bright lipgloss.Style
 	Muted  lipgloss.Style
+	Alert  lipgloss.Style
 	Help   lipgloss.Style
 	Tab    lipgloss.Style
 	Active lipgloss.Style
@@ -26,14 +27,13 @@ func NewTheme(dark bool) Theme {
 	}
 
 	return Theme{
-		Dark: dark,
-		// Uncolored: overlayLogo slices these rows by rune count, and a
-		// color code would throw that count off.
-		App:    lipgloss.NewStyle().Padding(1, 2).Border(lipgloss.RoundedBorder()),
+		Dark:   dark,
+		App:    lipgloss.NewStyle().Padding(1, 2, 0, 2).Border(lipgloss.RoundedBorder()),
 		Title:  lipgloss.NewStyle().Bold(true),
 		Accent: lipgloss.NewStyle().Foreground(accent).Bold(true),
 		Bright: lipgloss.NewStyle().Foreground(fg),
 		Muted:  lipgloss.NewStyle().Foreground(muted),
+		Alert:  lipgloss.NewStyle().Foreground(palette[5]),
 		Help:   lipgloss.NewStyle().Foreground(muted),
 		Tab:    lipgloss.NewStyle().Foreground(muted).Padding(0, 1),
 		Active: lipgloss.NewStyle().Foreground(fg).Bold(true).Underline(true).Padding(0, 1),

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
@@ -323,10 +324,12 @@ func (m Model) sync() Model {
 	return m
 }
 
-// Below this floor renderTooSmall takes over instead of a garbled layout.
+// Set above what the layout strictly needs: mess is full-screen only, so a
+// cramped screen is worth less than a prompt to resize.
 const (
-	minUsableWidth  = 40
-	minUsableHeight = 12
+	minUsableWidth        = 100
+	minUsableHeight       = 30
+	tooSmallHeadlineWidth = 41
 )
 
 func (m Model) View() tea.View {
@@ -343,7 +346,7 @@ func (m Model) View() tea.View {
 }
 
 func (m Model) contentWidth() int  { return max(m.width-6, 1) }
-func (m Model) contentHeight() int { return max(m.height-5, 1) }
+func (m Model) contentHeight() int { return max(m.height-4, 1) }
 
 // bodyHeight is the box minus the view's own header lines, the blank line
 // above the help, and the help itself — which is two rows on a narrow
@@ -352,10 +355,17 @@ func (m Model) bodyHeight(headerLines int) int {
 	return max(m.contentHeight()-headerLines-1-lipgloss.Height(m.helpBlock()), 1)
 }
 
-// helpBlock wraps the help to the box instead of letting it run past the
-// border and push the layout off the bottom of the terminal.
+// helpBlock wraps the help to the room the logo leaves, so it cannot run
+// past the border and push the layout off the bottom.
 func (m Model) helpBlock() string {
-	return m.theme.Help.Width(m.contentWidth()).Render(m.help())
+	return m.theme.Help.Width(max(m.contentWidth()-logoTail-logoGap-logoWidth, 1)).Render(m.help())
+}
+
+func (m Model) helpRow() string {
+	return lipgloss.JoinHorizontal(lipgloss.Bottom,
+		m.helpBlock(),
+		strings.Repeat(" ", logoGap),
+		m.theme.Logo.Render(logoLines[0]))
 }
 
 func (m Model) renderTooSmall() string {
@@ -365,17 +375,32 @@ func (m Model) renderTooSmall() string {
 	if m.width >= minUsableWidth && m.height >= minUsableHeight {
 		return ""
 	}
-	msg := m.theme.Muted.Width(m.width).Align(lipgloss.Center).Render("make the terminal bigger to see your mess")
-	return lipgloss.PlaceVertical(m.height, lipgloss.Center, msg)
+
+	headline := m.theme.Muted.Width(min(m.width, tooSmallHeadlineWidth)).Align(lipgloss.Center).
+		Render("make the terminal bigger to see your mess")
+	have := m.theme.Muted.Render("have ") + m.shortSide(m.width, minUsableWidth) +
+		m.theme.Muted.Render(" × ") + m.shortSide(m.height, minUsableHeight)
+	need := m.theme.Muted.Render(fmt.Sprintf("need %3d × %3d", minUsableWidth, minUsableHeight))
+
+	block := lipgloss.JoinVertical(lipgloss.Center, headline, "", have, need)
+	return lipgloss.PlaceVertical(m.height, lipgloss.Center,
+		lipgloss.PlaceHorizontal(m.width, lipgloss.Center, block))
+}
+
+// shortSide colours only the dimension that falls short, so a glance says
+// which way to drag.
+func (m Model) shortSide(have, need int) string {
+	text := fmt.Sprintf("%3d", have)
+	if have >= need {
+		return m.theme.Muted.Render(text)
+	}
+	return m.theme.Alert.Render(text)
 }
 
 func (m Model) renderApp() string {
 	footer := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Right).Render(m.tabs())
 	app := m.theme.App.Width(m.width).Height(m.height - 1)
-	rendered := app.Render(m.viewContent())
-	if m.width >= logoMinWidth && m.height >= logoMinHeight {
-		rendered = overlayLogo(rendered, m.theme.Logo)
-	}
+	rendered := overlayLogo(app.Render(m.viewContent()), m.theme.Logo)
 	return rendered + "\n" + footer
 }
 
@@ -402,7 +427,7 @@ func (m Model) viewContent() string {
 	if m.lastErr != nil {
 		status = m.theme.Muted.Render(m.lastErr.Error())
 	}
-	return body + "\n" + status + "\n" + help
+	return body + "\n" + status + "\n" + m.helpRow()
 }
 
 // renderBody hands over to an open modal, except the inline amount edit,

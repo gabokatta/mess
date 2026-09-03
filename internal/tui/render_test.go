@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -116,11 +117,34 @@ func TestMonthHeaderReportsOverSaving(t *testing.T) {
 	}
 }
 
-// A terminal too small for the layout says so instead of garbling.
+// A terminal too small for the layout says so, and says by how much.
 func TestTooSmallTerminal(t *testing.T) {
 	m := loadedModel(t, 30, 8)
-	if !strings.Contains(stripANSI(m.View().Content), "make the terminal bigger") {
-		t.Error("a tiny terminal should get the grow-your-terminal message")
+	content := stripANSI(m.View().Content)
+
+	want := []string{
+		"make the terminal bigger",
+		"have  30 ×   8",
+		fmt.Sprintf("need %3d × %3d", minUsableWidth, minUsableHeight),
+	}
+	for _, w := range want {
+		if !strings.Contains(content, w) {
+			t.Errorf("the too-small screen is missing %q:\n%s", w, content)
+		}
+	}
+}
+
+// The message exists to say which way to drag, so only the short side is
+// coloured.
+func TestTooSmallFlagsOnlyTheShortSide(t *testing.T) {
+	m := loadedModel(t, minUsableWidth, minUsableHeight-1)
+	content := m.View().Content
+
+	if strings.Contains(content, m.theme.Alert.Render(fmt.Sprintf("%3d", minUsableWidth))) {
+		t.Error("a width that clears the floor should not be flagged")
+	}
+	if !strings.Contains(content, m.theme.Alert.Render(fmt.Sprintf("%3d", minUsableHeight-1))) {
+		t.Error("the height that falls short should be flagged")
 	}
 }
 
@@ -148,7 +172,7 @@ func stripANSI(s string) string {
 // and at any width: a help line that overflows would push the layout off
 // the bottom of the screen.
 func TestBoxFitsTheTerminal(t *testing.T) {
-	for _, size := range []struct{ width, height int }{{80, 24}, {100, 32}, {120, 40}} {
+	for _, size := range []struct{ width, height int }{{minUsableWidth, minUsableHeight}, {120, 40}, {177, 51}} {
 		m := loadedModel(t, size.width, size.height)
 		m, _ = send(t, m, key("right"))
 
