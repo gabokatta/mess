@@ -228,6 +228,7 @@ func (m Model) monthAvailHeight() int {
 }
 
 func (m Model) monthRows() ([]string, []int) {
+	rate := m.fx().At(m.period)
 	groups := make([]group, len(monthGroups))
 	index := 0
 	for i, kind := range monthGroups {
@@ -237,17 +238,35 @@ func (m Model) monthRows() ([]string, []int) {
 			rendered[j] = m.renderLine(l, index == m.monthList.cursor)
 			index++
 		}
-		groups[i] = group{label: m.kindHeader(kind), rows: rendered}
+		groups[i] = group{label: m.kindHeader(kind, month.KindTotal(m.lines, rate, kind)), rows: rendered}
 	}
 	return groupedRows(groups)
 }
 
 // kindHeader is structural, not categorical: bold foreground and a muted
-// rule, so hue on this screen means category and nothing else.
-func (m Model) kindHeader(kind catalog.ConceptKind) string {
+// rule, so hue on this screen means category and nothing else. The rule ends
+// in the block's confirmed total, aligned with the amount column above it, so
+// the month's story reads off the table: this much in, this much out, this
+// much put away.
+//
+// The subtotal counts confirmed lines only, like every other figure on the
+// screen. It sums the bright amounts in the column and agrees with the rail;
+// a block with nothing ticked yet carries no total rather than a zero.
+func (m Model) kindHeader(kind catalog.ConceptKind, subtotal decimal.Decimal) string {
 	label := strings.ToUpper(kind.String())
-	rule := strings.Repeat("─", max(tableWidth-len(label)-1, 0))
-	return m.theme.Title.Render(label) + " " + m.theme.Muted.Render(rule)
+	if subtotal.IsZero() {
+		return m.theme.Title.Render(label) + " " +
+			m.theme.Muted.Render(strings.Repeat("─", max(tableWidth-len(label)-1, 0)))
+	}
+
+	// The figure takes the label's weight rather than a hue of its own. It is
+	// part of the header, not another row amount, and bold is what already
+	// separates the two: every colour on this screen names a category, and a
+	// ninth one that named something else would undo that.
+	amount := formatAmount(subtotal)
+	rule := strings.Repeat("─", max(tableWidth-len(label)-len(amount)-2, 0))
+	return m.theme.Title.Render(label) + " " + m.theme.Muted.Render(rule) + " " +
+		m.theme.Title.Render(amount)
 }
 
 // linesOfKind sorts by category name so the category column reads as bands
@@ -294,8 +313,11 @@ func (m Model) renderLine(l month.Line, selected bool) string {
 		return row + lipgloss.NewStyle().Width(amountWidth).Align(lipgloss.Right).Render(edit.View())
 	}
 
+	// Bright means the figure was typed; muted means it is still the
+	// concept's base. Whether it counts is the checkbox's job, two columns
+	// to the left.
 	style := m.theme.Muted
-	if l.Money.Confirmed {
+	if l.Money.Overridden {
 		style = m.theme.Bright
 	}
 	return row + style.Width(amountWidth).Align(lipgloss.Right).Render(formatAmount(l.Money.Amount.Amount()))
@@ -332,20 +354,44 @@ type railBox struct {
 
 func (m Model) railBoxes(totals month.Totals, rate month.Rate) []railBox {
 	return []railBox{
-		m.totalsBox("available", totals.Available.Amount(), totals.AvailableUSD(rate), rate.OK(), false),
-		m.totalsBox("saved", totals.Saved.Amount(), totals.SavedUSD(rate), rate.OK(), false),
+		m.totalsBox("available", totals.Available.Amount(), totals.AvailableUSD(rate), rate.OK(), shortfall{}),
+		m.totalsBox("saved", totals.Saved.Amount(), totals.SavedUSD(rate), rate.OK(), shortfall{}),
 		m.totalsBox("pocket", totals.Pocket.Amount(), totals.PocketUSD(rate), rate.OK(),
-			totals.Pocket.Amount().IsNegative()),
+			negativeShortfall(totals.Pocket.Amount(), totals.Overspent())),
 	}
 }
 
-func (m Model) totalsBox(title string, ars, usd decimal.Decimal, hasRate, alert bool) railBox {
+// shortfall is how a negative figure is spoken about. The two causes are not
+// the same news, and only one of them is worth colouring: putting away more
+// than the month had spare is a decision, spending past what came in is a
+// loss. A zero shortfall means the figure is not negative and the box stays
+// plain. The label and the alert travel together so neither can appear alone.
+type shortfall struct {
+	label string
+	alert bool
+}
+
+func negativeShortfall(ars decimal.Decimal, overspent bool) shortfall {
+	switch {
+	case !ars.IsNegative():
+		return shortfall{}
+	case overspent:
+		return shortfall{label: "short by", alert: true}
+	default:
+		return shortfall{label: "over by"}
+	}
+}
+
+func (m Model) totalsBox(title string, ars, usd decimal.Decimal, hasRate bool, short shortfall) railBox {
 	label, value, style := "ARS", formatAmount(ars), m.theme.Bright
-	if alert {
-		// The ARS row already reads "over by <amount>"; the USD row mirrors
+	if short.label != "" {
+		// The ARS row already reads "<label> <amount>"; the USD row mirrors
 		// that framing instead of repeating the sign as a bare minus.
-		label, value, style = "over by", formatAmount(ars.Abs()), m.theme.Alert
+		label, value = short.label, formatAmount(ars.Abs())
 		usd = usd.Abs()
+		if short.alert {
+			style = m.theme.Alert
+		}
 	}
 	usdValue := "—"
 	if hasRate {

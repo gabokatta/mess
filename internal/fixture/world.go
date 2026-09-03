@@ -39,8 +39,10 @@ type Concept struct {
 	Until    domain.Period
 }
 
-// Entry overrides one concept in one period; an empty Amount or false Done
-// means no override. An unmentioned concept leaves month_entry untouched.
+// Entry is one concept's state in one period. Setting an Amount types it,
+// which ticks it, so Done is only needed to tick a line at its base. An
+// unmentioned concept leaves month_entry untouched, which is how a line
+// nobody has reached yet is described.
 type Entry struct {
 	Concept string
 	Period  domain.Period

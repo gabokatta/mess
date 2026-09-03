@@ -54,6 +54,7 @@ type Model struct {
 	house  int
 
 	monthList    scroller
+	yearList     scroller
 	notesList    scroller
 	conceptsList scroller
 	detail       scroller
@@ -248,6 +249,7 @@ func (m Model) goTo(p domain.Period) (Model, tea.Cmd) {
 	previousYear := m.period.Year()
 	m.period = p
 	m.monthList.cursor = 0
+	m.yearList.cursor = 0
 	m.notesList.cursor = 0
 	m.openNote = nil
 
@@ -266,6 +268,8 @@ func (m Model) moveCursor(delta int) Model {
 	switch m.view {
 	case viewMonth:
 		m.monthList = m.monthList.move(delta, len(m.lines))
+	case viewYear:
+		m.yearList = m.yearList.move(delta, len(m.year.Categories))
 	case viewNotes:
 		if m.openNote != nil {
 			m.detail = m.detail.move(delta, len(note.Checkboxes(m.openNote.BodyMD)))
@@ -295,6 +299,16 @@ func (m Model) sync() Model {
 			height = max(avail-1, 1)
 		}
 		m.monthList = m.monthList.show(rows, anchors, tableWidth, height)
+	case viewYear:
+		// The list has no cursor of its own to render: up and down pan the
+		// viewport, since nothing on this screen opens.
+		m.yearList.cursor = clamp(m.yearList.cursor, len(m.year.Categories))
+		barWidth := m.catBarWidth(m.yearInterior())
+		rows := m.categoryRows(barWidth, m.yearList.cursor)
+		// The list never grows past the boxes beside it; a sixth category
+		// pans instead, so the two lower blocks stay level at every size.
+		height := max(min(len(rows), catVisibleRows), 1)
+		m.yearList = m.yearList.show(rows, rowAnchors(len(rows)), m.catRowWidth(barWidth), height)
 	case viewNotes:
 		if m.openNote != nil {
 			rows, anchors := m.noteDetailRows()
@@ -312,9 +326,11 @@ func (m Model) sync() Model {
 	return m
 }
 
-// Set above what the layout strictly needs: mess is full-screen only.
+// Set above what the layout strictly needs: mess is full-screen only. The
+// floor is Year's: two twelve-month charts beside each other, then a category
+// ranking beside four totals boxes, all on one card.
 const (
-	minUsableWidth        = 105
+	minUsableWidth        = 135
 	minUsableHeight       = 30
 	tooSmallHeadlineWidth = 41
 )
@@ -446,7 +462,7 @@ func (m Model) viewKeys() []string {
 	case viewMonth:
 		return []string{"↑/↓", "space tick", "e edit", "←/→ month"}
 	case viewYear:
-		return []string{"←/→ year"}
+		return []string{"↑/↓", "←/→ year"}
 	case viewNotes:
 		if m.openNote != nil {
 			return []string{"↑/↓", "space tick", "e edit", "esc back"}

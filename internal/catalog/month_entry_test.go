@@ -58,41 +58,51 @@ type step struct {
 
 func done(b bool) *bool { return &b }
 
-func TestMonthEntryAmountAndDoneAreIndependentColumns(t *testing.T) {
+// Done is the tick and the tick is what makes a line count, so typing a
+// figure ticks with it: a correction that did not count would be the same
+// trap as a base that could not be accepted. Everything else about the two
+// columns stays independent, and unticking stays an explicit act.
+func TestMonthEntryAmountAndDone(t *testing.T) {
 	tests := []struct {
 		name  string
 		steps []step
 	}{
 		{
-			name: "setting the amount inserts with done false",
+			name: "typing an amount ticks the line",
 			steps: []step{
-				{setAmount: "800000", wantAmount: "800000"},
+				{setAmount: "800000", wantAmount: "800000", wantDone: true},
 			},
 		},
 		{
-			name: "setting the amount preserves an existing done",
+			name: "typing an amount keeps an existing tick",
 			steps: []step{
 				{setDone: done(true), wantDone: true},
 				{setAmount: "800000", wantAmount: "800000", wantDone: true},
 			},
 		},
 		{
-			name: "setting done preserves an existing amount",
+			name: "ticking preserves an existing amount",
 			steps: []step{
-				{setAmount: "800000", wantAmount: "800000"},
+				{setAmount: "800000", wantAmount: "800000", wantDone: true},
 				{setDone: done(true), wantAmount: "800000", wantDone: true},
 			},
 		},
 		{
-			name: "clearing the amount leaves done untouched",
+			name: "clearing back to the base leaves the tick standing",
 			steps: []step{
-				{setAmount: "800000", wantAmount: "800000"},
-				{setDone: done(true), wantAmount: "800000", wantDone: true},
+				{setAmount: "800000", wantAmount: "800000", wantDone: true},
 				{setAmount: "clear", wantDone: true},
 			},
 		},
 		{
-			name: "setting done alone stores no amount",
+			name: "unticking a typed line stays unticked",
+			steps: []step{
+				{setAmount: "800000", wantAmount: "800000", wantDone: true},
+				{setDone: done(false), wantAmount: "800000"},
+			},
+		},
+		{
+			name: "ticking alone stores no amount",
 			steps: []step{
 				{setDone: done(true), wantDone: true},
 			},

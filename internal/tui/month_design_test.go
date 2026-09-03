@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/shopspring/decimal"
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
@@ -34,10 +35,26 @@ func TestMonthColumnHeaderRendersOnceAboveTheList(t *testing.T) {
 func TestKindHeadersCarryNoPaletteHue(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 
+	// A block nobody has ticked carries no subtotal, so the rule runs the
+	// full width.
 	want := m.theme.Title.Render("INCOME") + " " +
 		m.theme.Muted.Render(strings.Repeat("─", tableWidth-len("INCOME")-1))
-	if got := m.kindHeader(catalog.Income); got != want {
-		t.Errorf("kindHeader(Income) = %q, want %q", got, want)
+	if got := m.kindHeader(catalog.Income, decimal.Decimal{}); got != want {
+		t.Errorf("kindHeader(Income, 0) = %q, want %q", got, want)
+	}
+
+	// With one, the figure takes the label's weight so it reads as part of
+	// the header rather than as another row amount. No palette hue anywhere.
+	subtotal := decimal.NewFromInt(5480160)
+	got := m.kindHeader(catalog.Income, subtotal)
+	if lineWidth(got) != tableWidth {
+		t.Errorf("kindHeader width = %d, want %d", lineWidth(got), tableWidth)
+	}
+	if !strings.Contains(got, m.theme.Title.Render(formatAmount(subtotal))) {
+		t.Errorf("the subtotal should carry the label's weight:\n%q", got)
+	}
+	if strings.Contains(got, m.theme.Accent.Render(formatAmount(subtotal))) {
+		t.Errorf("the subtotal took Accent, which belongs to the cursor:\n%q", got)
 	}
 }
 
@@ -179,7 +196,7 @@ func TestRailWithNoRateRendersAnEmDash(t *testing.T) {
 		t.Fatalf("expected no rate for this period")
 	}
 	totals := month.ResolveTotals(m.lines, rate)
-	spec := m.totalsBox("available", totals.Available.Amount(), totals.AvailableUSD(rate), rate.OK(), false)
+	spec := m.totalsBox("available", totals.Available.Amount(), totals.AvailableUSD(rate), rate.OK(), shortfall{})
 	box := m.renderBox(spec, railMinInterior)
 
 	if !strings.Contains(stripANSI(box), "—") {
@@ -190,9 +207,34 @@ func TestRailWithNoRateRendersAnEmDash(t *testing.T) {
 	}
 }
 
-// Over-saving renders the one number worth acting on in Alert; the box
-// carries no other hue.
-func TestPocketOverSavedRendersInAlert(t *testing.T) {
+// A month that spent past what came in is not a month that saved too much.
+// Both drive pocket below zero and the box must not call them the same thing.
+func TestOverspentPocketReadsAsAShortfall(t *testing.T) {
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{
+			{Name: "Salary", Category: "Earnings", Kind: catalog.Income, Base: "100000"},
+			{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "180000"},
+		},
+		Entries: []fixture.Entry{
+			{Concept: "Salary", Period: fixture.Period, Amount: "100000", Done: true},
+			{Concept: "Rent", Period: fixture.Period, Amount: "180000", Done: true},
+		},
+	}, minUsableWidth, 32)
+
+	totals := month.ResolveTotals(m.lines, m.fx().At(m.period))
+	if !totals.Overspent() {
+		t.Fatalf("expected this fixture to overspend; available = %s", totals.Available.Amount())
+	}
+
+	got := negativeShortfall(totals.Pocket.Amount(), totals.Overspent())
+	if got.label != "short by" || !got.alert {
+		t.Errorf("negativeShortfall = %+v, want a short-by that alerts", got)
+	}
+}
+
+// Over-saving is named, not alarmed about: the box says "over by" and stays
+// bright. Alert belongs to overspending alone.
+func TestPocketOverSavedIsNamedWithoutAlert(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
 			{Name: "Salary", Category: "Earnings", Kind: catalog.Income, Base: "100000"},
@@ -210,16 +252,26 @@ func TestPocketOverSavedRendersInAlert(t *testing.T) {
 		t.Fatalf("expected pocket to be negative in this fixture")
 	}
 
-	spec := m.totalsBox("pocket", totals.Pocket.Amount(), totals.PocketUSD(rate), rate.OK(), true)
+	if totals.Overspent() {
+		t.Fatal("this fixture over-saves; it must not read as overspending")
+	}
+	short := negativeShortfall(totals.Pocket.Amount(), totals.Overspent())
+	if short.alert {
+		t.Errorf("over-saving alerted; only overspending should")
+	}
+	spec := m.totalsBox("pocket", totals.Pocket.Amount(), totals.PocketUSD(rate), rate.OK(), short)
 	box := m.renderBox(spec, railMinInterior)
 	plain := stripANSI(box)
 	if !strings.Contains(plain, "over by") || !strings.Contains(plain, formatAmount(totals.Pocket.Amount().Abs())) {
 		t.Errorf("over-saved pocket should say so:\n%s", plain)
 	}
 
-	over := railLine{"over by", formatAmount(totals.Pocket.Amount().Abs()), m.theme.Alert}
+	over := railLine{"over by", formatAmount(totals.Pocket.Amount().Abs()), m.theme.Bright}
 	if !strings.Contains(box, railField(over, railMinInterior)) {
-		t.Errorf("the over-by line should render in Alert:\n%s", box)
+		t.Errorf("the over-by line should stay bright:\n%s", box)
+	}
+	if strings.Contains(box, m.theme.Alert.Render("over by")) {
+		t.Errorf("over-saving took Alert, which belongs to overspending:\n%s", box)
 	}
 }
 

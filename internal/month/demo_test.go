@@ -48,9 +48,9 @@ func TestDemoIsAWorldWorthOpening(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadYear() unexpected error: %v", err)
 	}
-	for i, spent := range year.Spent {
-		if spent.IsZero() {
-			t.Errorf("LoadYear(%d).Spent[%d] = 0, want every month of the year before the anchor populated", previousYear, i)
+	for i, t2 := range year.Months {
+		if t2.Spent.IsZero() {
+			t.Errorf("LoadYear(%d).Months[%d].Spent = 0, want every month of the year before the anchor populated", previousYear, i)
 		}
 	}
 }

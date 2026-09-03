@@ -2,13 +2,8 @@ package tui
 
 import "github.com/NimbleMarkets/ntcharts/v2/barchart"
 
-func drawBars(bars []barchart.BarData, width, height int, horizontal bool) string {
-	opts := []barchart.Option{barchart.WithDataSet(bars)}
-	if horizontal {
-		// WithDataSet must come first: setting horizontal recomputes the origin.
-		opts = append(opts, barchart.WithHorizontalBars())
-	}
-	chart := barchart.New(width, height, opts...)
+func drawBars(bars []barchart.BarData, width, height int) string {
+	chart := barchart.New(width, height, barchart.WithDataSet(bars))
 	chart.Draw()
 	return chart.View()
 }

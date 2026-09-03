@@ -10,13 +10,16 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-func line(kind catalog.ConceptKind, currency domain.Currency, amount int64, confirmed bool) Line {
+// line is a typed-and-ticked money line, since typing an amount ticks it.
+// ticked false is a line nobody has accepted yet, whatever it shows.
+func line(kind catalog.ConceptKind, currency domain.Currency, amount int64, ticked bool) Line {
 	return Line{
 		Concept: catalog.Concept{Kind: kind, Money: &catalog.MoneyDetails{Currency: currency}},
 		Money: &LineMoney{
-			Amount:    domain.NewMoney(decimal.NewFromInt(amount), currency),
-			Confirmed: confirmed,
+			Amount:     domain.NewMoney(decimal.NewFromInt(amount), currency),
+			Overridden: ticked,
 		},
+		Done: ticked,
 	}
 }
 
@@ -47,15 +50,41 @@ func TestResolveTotals(t *testing.T) {
 	}
 }
 
-// A baseline you have not typed over is a guess and does not count.
-func TestResolveTotalsCountsConfirmedLinesOnly(t *testing.T) {
+// An unticked line is not part of the month, whatever its amount says.
+func TestResolveTotalsCountsTickedLinesOnly(t *testing.T) {
 	totals := ResolveTotals([]Line{
 		line(catalog.Income, domain.ARS, 2400000, true),
 		line(catalog.Expense, domain.ARS, 785000, false),
 	}, rateOf(1200))
 
 	if !totals.Available.Amount().Equal(decimal.NewFromInt(2400000)) {
-		t.Errorf("Available = %s, want the unconfirmed expense left out", totals.Available.Amount())
+		t.Errorf("Available = %s, want the unticked expense left out", totals.Available.Amount())
+	}
+}
+
+// Ticking is how a base amount gets accepted. A concept whose base is already
+// right needs no retyping to count, which is the whole point of the tick.
+func TestTickedLineCountsAtItsBaseWithNoOverride(t *testing.T) {
+	base := Line{
+		Concept: catalog.Concept{
+			Kind:  catalog.Expense,
+			Money: &catalog.MoneyDetails{Currency: domain.ARS},
+		},
+		Money: &LineMoney{Amount: domain.NewMoney(decimal.NewFromInt(850000), domain.ARS)},
+		Done:  true,
+	}
+	if base.Money.Overridden {
+		t.Fatal("this line is meant to carry the concept's base, untyped")
+	}
+
+	totals := ResolveTotals([]Line{
+		line(catalog.Income, domain.ARS, 2400000, true),
+		base,
+	}, rateOf(1200))
+
+	want := decimal.NewFromInt(2400000 - 850000)
+	if !totals.Available.Amount().Equal(want) {
+		t.Errorf("Available = %s, want %s (the ticked base counts)", totals.Available.Amount(), want)
 	}
 }
 

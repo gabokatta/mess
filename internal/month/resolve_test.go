@@ -44,7 +44,7 @@ func TestResolveUsesTheOverrideWhenPresent(t *testing.T) {
 	if !lines[0].Money.Amount.Amount().Equal(typed) {
 		t.Errorf("amount = %s, want the override 812000", lines[0].Money.Amount.Amount())
 	}
-	if !lines[0].Money.Confirmed {
+	if !lines[0].Money.Overridden {
 		t.Error("a line backed by an override is confirmed")
 	}
 	if !lines[0].Done {
@@ -61,7 +61,7 @@ func TestResolveFallsBackToTheBaseAmount(t *testing.T) {
 	if !lines[0].Money.Amount.Amount().Equal(ars(785000)) {
 		t.Errorf("amount = %s, want the base 785000", lines[0].Money.Amount.Amount())
 	}
-	if lines[0].Money.Confirmed {
+	if lines[0].Money.Overridden {
 		t.Error("a line with no override is not confirmed")
 	}
 }

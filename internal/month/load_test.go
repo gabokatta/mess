@@ -36,7 +36,7 @@ func TestLoadResolvesTheCatalogAgainstTheStore(t *testing.T) {
 	for _, l := range loaded.Lines {
 		byName[l.Concept.Name] = l
 	}
-	want := LineMoney{Amount: domain.NewMoney(decimal.NewFromInt(812000), domain.ARS), Confirmed: true}
+	want := LineMoney{Amount: domain.NewMoney(decimal.NewFromInt(812000), domain.ARS), Overridden: true}
 	if diff := cmp.Diff(want, *byName["Rent"].Money); diff != "" {
 		t.Errorf("Rent money mismatch (-want +got):\n%s", diff)
 	}
@@ -61,7 +61,7 @@ func TestLoadUntouchedPeriodStoresNothing(t *testing.T) {
 	if len(loaded.Lines) != 1 {
 		t.Fatalf("Load() returned %d lines, want 1", len(loaded.Lines))
 	}
-	if loaded.Lines[0].Money.Confirmed {
+	if loaded.Lines[0].Money.Overridden {
 		t.Errorf("Load() = %+v, want an unconfirmed line", loaded.Lines[0])
 	}
 

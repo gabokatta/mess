@@ -19,8 +19,10 @@ type Totals struct {
 	Excluded int
 }
 
-// ResolveTotals folds the confirmed lines into one ARS figure each; an
-// untyped baseline is a guess and does not count.
+// ResolveTotals folds the ticked lines into one ARS figure each. The tick is
+// the confirmation: a base amount nobody corrected is still a figure the user
+// accepted by ticking it, and an unticked line is not part of the month
+// whatever its amount says.
 func ResolveTotals(lines []Line, rate Rate) Totals {
 	var available, saved decimal.Decimal
 
@@ -46,7 +48,7 @@ func ResolveTotals(lines []Line, rate Rate) Totals {
 func eachConfirmedARS(lines []Line, rate Rate, fn func(Line, decimal.Decimal)) int {
 	excluded := 0
 	for _, l := range lines {
-		if l.Money == nil || !l.Money.Confirmed {
+		if l.Money == nil || !l.Done {
 			continue
 		}
 		ars, ok := l.Money.Amount.ToARS(rate.Value, rate.OK())
@@ -58,6 +60,24 @@ func eachConfirmedARS(lines []Line, rate Rate, fn func(Line, decimal.Decimal)) i
 	}
 	return excluded
 }
+
+// KindTotal is one kind block's ticked total in ARS, for the subtotal on
+// its header rule. Chore carries no money and always resolves to zero, as
+// does a block nobody has ticked yet.
+func KindTotal(lines []Line, rate Rate, kind catalog.ConceptKind) decimal.Decimal {
+	var total decimal.Decimal
+	eachConfirmedARS(lines, rate, func(l Line, ars decimal.Decimal) {
+		if l.Concept.Kind == kind {
+			total = total.Add(ars)
+		}
+	})
+	return total
+}
+
+// Overspent reports that a negative Pocket came from spending past what came
+// in, rather than from putting away more than was left. The two are not the
+// same news and must not carry the same label.
+func (t Totals) Overspent() bool { return t.Available.Amount().IsNegative() }
 
 // AvailableUSD is Available back in dollars, zero when there is no rate to
 // divide by.

@@ -7,15 +7,17 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// LineMoney's Confirmed is the presence of a month_entry override and
-// nothing else; unconfirmed means the amount is still the concept's base.
+// LineMoney's Overridden is the presence of a month_entry amount and nothing
+// else: it says the figure was typed rather than carried over from the
+// concept's base. It does not decide whether the line counts. Line.Done does.
 type LineMoney struct {
-	Amount    domain.Money
-	Confirmed bool
+	Amount     domain.Money
+	Overridden bool
 }
 
 // Line is one concept resolved for a period. Money is nil on a Chore; Done
-// applies to every kind.
+// applies to every kind, and on a money line it is the confirmation: ticking
+// accepts the amount shown, typed or not, into the month's arithmetic.
 type Line struct {
 	Concept catalog.Concept
 	Money   *LineMoney
@@ -37,13 +39,13 @@ func Resolve(period domain.Period, concepts []catalog.Concept, entries map[int64
 		entry := entries[c.ID]
 		line := Line{Concept: c, Done: entry.Done}
 		if c.Money != nil {
-			amount, confirmed := c.Money.Base, false
+			amount, overridden := c.Money.Base, false
 			if entry.Amount != nil {
-				amount, confirmed = *entry.Amount, true
+				amount, overridden = *entry.Amount, true
 			}
 			line.Money = &LineMoney{
-				Amount:    domain.NewMoney(amount, c.Money.Currency),
-				Confirmed: confirmed,
+				Amount:     domain.NewMoney(amount, c.Money.Currency),
+				Overridden: overridden,
 			}
 		}
 		lines = append(lines, line)

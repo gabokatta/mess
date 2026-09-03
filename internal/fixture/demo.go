@@ -16,7 +16,12 @@ var demoDrift = decimal.NewFromFloat(0.04)
 type demoLine struct {
 	concept Concept
 	entries bool
-	done    bool
+
+	// pending leaves the line untouched in the anchor month: no entry row, so
+	// it shows the concept's base, muted and unticked. The running month then
+	// opens part-way through rather than finished. Every month behind the
+	// anchor is ticked; it already happened.
+	pending bool
 }
 
 // Demo is the world `make seed` writes, carrying every layout stress case on
@@ -96,7 +101,7 @@ func demoLines(anchor, oldest domain.Period) []demoLine {
 			Currency: domain.ARS, Base: "15000", From: oldest,
 		}},
 
-		{entries: true, concept: Concept{
+		{entries: true, pending: true, concept: Concept{
 			Name: "Streaming Bundle", Category: "Subscriptions", Kind: catalog.Expense,
 			Currency: domain.ARS, Base: "18000", From: oldest,
 		}},
@@ -117,7 +122,7 @@ func demoLines(anchor, oldest domain.Period) []demoLine {
 			Currency: domain.ARS, Base: "150000", Months: domain.Aguinaldo, From: oldest,
 		}},
 
-		{entries: true, done: true, concept: Concept{
+		{entries: true, pending: true, concept: Concept{
 			Name: "Fuel", Category: "Transport", Kind: catalog.Expense,
 			Currency: domain.ARS, Base: "65000", From: oldest,
 		}},
@@ -125,7 +130,7 @@ func demoLines(anchor, oldest domain.Period) []demoLine {
 			Name: "Car Insurance", Category: "Transport", Kind: catalog.Expense,
 			Currency: domain.ARS, Base: "48000", From: oldest,
 		}},
-		{entries: true, concept: Concept{
+		{entries: true, pending: true, concept: Concept{
 			Name: "Car Maintenance", Category: "Transport", Kind: catalog.Expense,
 			Currency: domain.ARS, Base: "30000", From: oldest,
 		}},
@@ -147,7 +152,7 @@ func demoLines(anchor, oldest domain.Period) []demoLine {
 			Name: "Health Insurance", Category: "Health", Kind: catalog.Expense,
 			Currency: domain.ARS, Base: "60000", From: oldest,
 		}},
-		{entries: true, done: true, concept: Concept{
+		{entries: true, pending: true, concept: Concept{
 			Name: "Pharmacy", Category: "Health", Kind: catalog.Expense,
 			Currency: domain.ARS, Base: "25000", From: oldest,
 		}},
@@ -187,6 +192,9 @@ func demoEntries(anchor, oldest domain.Period, lines []demoLine) []Entry {
 			if !l.entries || !occurs(l.concept, period) {
 				continue
 			}
+			if l.pending && period.Equal(anchor) {
+				continue
+			}
 			amount := driftedAmount(l.concept.Base, i)
 			switch {
 			case l.concept.Name == "Credit Card" && period.Equal(bigPurchaseAt):
@@ -198,7 +206,7 @@ func demoEntries(anchor, oldest domain.Period, lines []demoLine) []Entry {
 				Concept: l.concept.Name,
 				Period:  period,
 				Amount:  amount,
-				Done:    l.done && period.Equal(anchor),
+				Done:    true,
 			})
 		}
 	}

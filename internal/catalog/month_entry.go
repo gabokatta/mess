@@ -8,23 +8,30 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// MonthEntry is the override for one concept in one period. Its presence is
-// what makes an amount confirmed rather than projected from the base.
+// MonthEntry is one concept's state in one period. Amount overrides the
+// concept's base; Done is the tick, and the tick is what makes the line count
+// toward the month's arithmetic, whether the amount is typed or the base.
 type MonthEntry struct {
 	ConceptID int64
 	Period    domain.Period
-	Amount    *decimal.Decimal // nil means unconfirmed
+	Amount    *decimal.Decimal // nil means the concept's base stands
 	Done      bool
 }
 
 // SetMonthEntryAmount sets the override for concept in period, or clears it
-// when amount is nil, leaving done untouched.
+// when amount is nil. Typing a figure ticks the line: entering a value is
+// accepting it, and a correction that silently did not count would be the
+// same trap as a base that could not be accepted. Clearing back to the base
+// leaves the tick alone, since the base is a value the line can still stand
+// on. Unticking stays an explicit act.
 func SetMonthEntryAmount(db *sql.DB, conceptID int64, period domain.Period, amount *decimal.Decimal) error {
 	_, err := db.Exec(`
 		INSERT INTO month_entry (concept_id, period, amount, done)
-		VALUES (?, ?, ?, 0)
-		ON CONFLICT (concept_id, period) DO UPDATE SET amount = excluded.amount`,
-		conceptID, period.String(), nullableAmount(amount))
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT (concept_id, period) DO UPDATE SET
+			amount = excluded.amount,
+			done = month_entry.done OR excluded.done`,
+		conceptID, period.String(), nullableAmount(amount), amount != nil)
 	return err
 }
 

@@ -262,7 +262,7 @@ func TestAmountEditCommitsTheTypedValue(t *testing.T) {
 		t.Fatalf("Load() unexpected error: %v", err)
 	}
 	got := loaded.Lines[0]
-	if !got.Money.Confirmed || !got.Money.Amount.Amount().Equal(decimal.NewFromInt(812000)) {
+	if !got.Money.Overridden || !got.Money.Amount.Amount().Equal(decimal.NewFromInt(812000)) {
 		t.Errorf("line = %+v, want a confirmed 812000", got.Money)
 	}
 }

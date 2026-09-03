@@ -84,3 +84,13 @@ func clamp(cursor, count int) int {
 	}
 	return cursor
 }
+
+// rowAnchors is the anchor list for a flat list, where every row is its own
+// stop. groupedRows builds the anchors for a list with headers in it.
+func rowAnchors(count int) []int {
+	anchors := make([]int, count)
+	for i := range anchors {
+		anchors[i] = i
+	}
+	return anchors
+}

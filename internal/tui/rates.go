@@ -125,7 +125,7 @@ func (m Model) renderCloseChart() string {
 			Values: []barchart.BarValue{{Name: "close", Value: value.InexactFloat64(), Style: style}},
 		}
 	}
-	return drawBars(bars, chartWidth(m.width), min(max(m.bodyHeight(2)-9, 4), 10), false)
+	return drawBars(bars, chartWidth(m.width), min(max(m.bodyHeight(2)-9, 4), 10))
 }
 
 func (m Model) renderRateSummary(rate month.Rate) string {
