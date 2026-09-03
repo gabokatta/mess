@@ -15,8 +15,6 @@ import (
 	"github.com/gabokatta/mess/internal/month"
 )
 
-// monthGroups is money first, in the order it moves, then what only needs
-// doing.
 var monthGroups = [...]catalog.ConceptKind{catalog.Income, catalog.Expense, catalog.Saving, catalog.Chore}
 
 const (
@@ -24,8 +22,6 @@ const (
 	amountWidth = 14
 )
 
-// orderedLines groups the way the view renders, so the cursor index and the
-// rendered row always mean the same line.
 func (m Model) orderedLines() []month.Line {
 	ordered := make([]month.Line, 0, len(m.lines))
 	for _, kind := range monthGroups {
@@ -62,8 +58,6 @@ func (m Model) handleMonthKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// amountEdit is keyed by concept so a reload mid-edit cannot desync it from
-// the line it targets. An empty value clears the override.
 type amountEdit struct {
 	conceptID int64
 	input     textinput.Model
@@ -135,8 +129,6 @@ func (m Model) monthHeader() string {
 	return m.spread(left, right) + "\n" + m.renderTotals()
 }
 
-// renderTotals shows over-saving rather than refusing it: refusing input on
-// the strength of an estimated rate would only train you to lie to the app.
 func (m Model) renderTotals() string {
 	rate := m.fx().At(m.period)
 	totals := month.ResolveTotals(m.lines, rate)
@@ -187,8 +179,6 @@ func linesOfKind(lines []month.Line, kind catalog.ConceptKind) []month.Line {
 	return out
 }
 
-// renderLine dims an amount that is still the baseline and brightens one
-// you have typed.
 func (m Model) renderLine(l month.Line, selected bool) string {
 	cursor := "  "
 	if selected {
@@ -216,7 +206,6 @@ func (m Model) renderLine(l month.Line, selected bool) string {
 	return row + " " + m.theme.Muted.Render(l.Money.Amount.Currency().String()) + " " + amount
 }
 
-// spread pushes right to the far edge of the box.
 func (m Model) spread(left, right string) string {
 	gap := m.contentWidth() - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
@@ -225,7 +214,6 @@ func (m Model) spread(left, right string) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// formatAmount writes 2.400.000, with cents only when there are any.
 func formatAmount(d decimal.Decimal) string {
 	fixed := d.Abs().StringFixed(2)
 	point := strings.IndexByte(fixed, '.')

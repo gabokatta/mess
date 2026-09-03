@@ -12,9 +12,6 @@ import (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-// migrationVersion is the number before a migration filename's first '_'.
-// Versions come from that number, not file order, so the sequence
-// tolerates gaps.
 func migrationVersion(name string) (int, error) {
 	sep := strings.IndexByte(name, '_')
 	if sep < 0 {
@@ -27,8 +24,6 @@ func migrationVersion(name string) (int, error) {
 	return n, nil
 }
 
-// migrate applies every embedded migration newer than the database's
-// current schema version, tracked in SQLite's PRAGMA user_version.
 func migrate(db *sql.DB) error {
 	entries, err := migrationFiles.ReadDir("migrations")
 	if err != nil {

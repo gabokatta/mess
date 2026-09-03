@@ -15,7 +15,6 @@ func NewCadence(months ...time.Month) Cadence {
 	return c
 }
 
-// time.Month is 1-indexed (January == 1), so shift by m-1 to land on bit 0.
 func cadenceBit(m time.Month) Cadence {
 	return 1 << (m - 1)
 }
@@ -24,8 +23,7 @@ func (c Cadence) Occurs(p Period) bool {
 	return c&cadenceBit(p.Month()) != 0
 }
 
-// Months decodes c back into the months it sets, January first — the
-// inverse of NewCadence, for prefilling a months picker from a stored value.
+// Months decodes c into the months it sets, January first.
 func (c Cadence) Months() []time.Month {
 	var months []time.Month
 	for m := time.January; m <= time.December; m++ {

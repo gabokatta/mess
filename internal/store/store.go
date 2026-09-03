@@ -1,6 +1,5 @@
 // Package store owns the SQLite database: opening it, applying migrations,
-// and holding the single-instance lock. Table access lives in the packages
-// that need it.
+// and holding the single-instance lock.
 package store
 
 import (
@@ -17,8 +16,8 @@ type Store struct {
 	lock *lock
 }
 
-// Open takes the instance lock and brings path's schema up to date,
-// creating the database and its parent directory if they don't exist.
+// Open takes the instance lock and migrates path, creating the database and
+// its parent directory if needed.
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("store: create %s: %w", filepath.Dir(path), err)

@@ -90,8 +90,6 @@ func runExport(args []string, stdout io.Writer) error {
 	return catalog.MarkExported(s.DB(), time.Now())
 }
 
-// confirm gates the wholesale replace. It is a parameter so a test can
-// answer it; the only real implementation is confirmReplace.
 type confirm func(dbPath string) (bool, error)
 
 func runImport(args []string, stdout io.Writer, ask confirm) error {
@@ -143,8 +141,6 @@ func runImport(args []string, stdout io.Writer, ask confirm) error {
 	return nil
 }
 
-// confirmReplace is the gate itself. Import is a recovery action run by
-// hand, not the crontab half of backup, so it can ask.
 func confirmReplace(dbPath string) (bool, error) {
 	var confirmed bool
 	err := huh.NewConfirm().
@@ -156,9 +152,6 @@ func confirmReplace(dbPath string) (bool, error) {
 	return confirmed, err
 }
 
-// runSeed resets path to an empty database and writes a world into it, so
-// that mangling data while clicking around costs nothing: the next seed
-// starts over rather than accumulating on top of what is there.
 func runSeed(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("mess seed", flag.ExitOnError)
 	dbPath := fs.String("db", "", "database path (default: user config dir)")
@@ -197,8 +190,6 @@ func runSeed(args []string, stdout io.Writer) error {
 	return nil
 }
 
-// resolveAnchor pins Demo to override, or to the real current month so the
-// app opens on populated data wherever you are in the calendar.
 func resolveAnchor(override string) (domain.Period, error) {
 	if override != "" {
 		return domain.ParsePeriod(override)
@@ -206,10 +197,7 @@ func resolveAnchor(override string) (domain.Period, error) {
 	return domain.PeriodFromTime(time.Now()), nil
 }
 
-// removeDatabaseFiles unlinks path and its sidecars by exact name and lets
-// migrations rebuild the schema from nothing, so a table added later cannot
-// be forgotten by a hand-maintained delete order. Exact names rather than a
-// glob, since path's directory also holds snapshots.
+// Exact names rather than a glob, since path's directory also holds snapshots.
 func removeDatabaseFiles(path string) error {
 	for _, suffix := range []string{"", "-wal", "-shm", ".lock"} {
 		if err := os.Remove(path + suffix); err != nil && !os.IsNotExist(err) {

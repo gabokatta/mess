@@ -35,8 +35,6 @@ func (m Model) handleRatesKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// manualRateForm exists because the rate you actually got is often not the
-// published one; conversion is read-time, so a correction cascades at once.
 func (m Model) manualRateForm() *form {
 	period := m.period
 	value := m.fx().At(period).Value.StringFixed(2)
@@ -102,8 +100,6 @@ func (m Model) renderHouses() string {
 	return strings.Join(rows, "\n")
 }
 
-// yearCloses leaves a month at zero unless mess knows a rate for it: an
-// inherited rate is not a close and does not get a bar.
 func (m Model) yearCloses() []decimal.Decimal {
 	fx := m.fx()
 	closes := make([]decimal.Decimal, 12)

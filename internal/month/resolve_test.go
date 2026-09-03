@@ -52,8 +52,7 @@ func TestResolveUsesTheOverrideWhenPresent(t *testing.T) {
 	}
 }
 
-// Without an override the line shows the concept's base amount, and it is
-// not confirmed: the presence of the override is what "confirmed" means.
+// The presence of an override is what "confirmed" means.
 func TestResolveFallsBackToTheBaseAmount(t *testing.T) {
 	period := domain.NewPeriod(2026, time.September)
 
@@ -76,8 +75,7 @@ func TestResolveGivesAChoreNoMoney(t *testing.T) {
 	}
 }
 
-// Ticking means "I did this" for every kind, so done travels with a chore
-// exactly as it does with a bill.
+// Done travels with a chore exactly as it does with a bill.
 func TestResolveMarksAChoreDone(t *testing.T) {
 	period := domain.NewPeriod(2026, time.September)
 

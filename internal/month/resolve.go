@@ -15,7 +15,7 @@ type LineMoney struct {
 }
 
 // Line is one concept resolved for a period. Money is nil on a Chore; Done
-// applies to every kind, since ticking means "I did this" either way.
+// applies to every kind.
 type Line struct {
 	Concept catalog.Concept
 	Money   *LineMoney
@@ -27,8 +27,7 @@ type Month struct {
 }
 
 // Resolve runs one pipeline for every kind: month_mask and the active range
-// decide whether a concept generates a line, the override decides its
-// amount, and a chore differs only in carrying no money.
+// decide whether a concept generates a line, the override decides its amount.
 func Resolve(period domain.Period, concepts []catalog.Concept, entries map[int64]catalog.MonthEntry) []Line {
 	var lines []Line
 	for _, c := range concepts {

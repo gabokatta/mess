@@ -9,8 +9,8 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// RateOrigin is where a period's rate came from. The Rates view shows it so
-// a stale rate is visible rather than silently in effect.
+// RateOrigin is where a period's rate came from, shown so a stale rate is
+// visible rather than silently in effect.
 type RateOrigin int
 
 const (
@@ -25,7 +25,7 @@ const (
 type Rate struct {
 	Value  decimal.Decimal
 	Origin RateOrigin
-	From   domain.Period // the period an inherited rate was taken from
+	From   domain.Period // where an inherited rate came from
 }
 
 func (r Rate) OK() bool { return r.Origin != RateNone }
@@ -45,10 +45,8 @@ func (r Rate) Label() string {
 	}
 }
 
-// FxTable answers "what was a peso worth that month" for every period at
-// once: the stored closes, plus today's quote for the month still running.
-// Conversion is read-time, so a corrected rate cascades through every total
-// as if it had been right all along.
+// FxTable is every period's rate at once: stored closes plus today's quote
+// for the running month. Conversion is read-time, so corrections cascade.
 type FxTable struct {
 	stored  []catalog.FxRate
 	live    decimal.Decimal
@@ -56,17 +54,14 @@ type FxTable struct {
 	today   domain.Period
 }
 
-// NewFxTable takes the stored rows in the ascending order catalog.FxRates
-// returns them, plus today's quote — hasLive is false when the fetch failed
-// or has not landed yet.
+// NewFxTable takes stored rows in catalog.FxRates' ascending order plus
+// today's quote; hasLive is false when the fetch failed or has not landed.
 func NewFxTable(stored []catalog.FxRate, live decimal.Decimal, hasLive bool, today domain.Period) FxTable {
 	return FxTable{stored: stored, live: live, hasLive: hasLive, today: today}
 }
 
-// At resolves period's rate: a rate you set by hand wins outright, the
-// running month falls to today's quote, a completed month to its own close,
-// and a completed month with no close of its own inherits the last one
-// before it.
+// At resolves period's rate: manual wins outright, the running month falls
+// to today's quote, and a close-less completed month inherits the last one.
 func (t FxTable) At(period domain.Period) Rate {
 	var inherited Rate
 	for _, r := range t.stored {
@@ -87,9 +82,8 @@ func (t FxTable) At(period domain.Period) Rate {
 	return inherited
 }
 
-// MissingCloses is every completed month of year with no stored rate, the
-// backfill list — at most twelve periods, and empty once a year is filled
-// in, so a stored close is never refetched.
+// MissingCloses is the backfill list: every completed month of year with no
+// stored rate, so a stored close is never refetched.
 func MissingCloses(year int, today domain.Period, stored []catalog.FxRate) []domain.Period {
 	have := make(map[domain.Period]bool, len(stored))
 	for _, r := range stored {

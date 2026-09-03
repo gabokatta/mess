@@ -9,16 +9,16 @@ import (
 )
 
 // MonthEntry is the override for one concept in one period. Its presence is
-// what makes an amount "confirmed" rather than projected from the base.
+// what makes an amount confirmed rather than projected from the base.
 type MonthEntry struct {
 	ConceptID int64
 	Period    domain.Period
-	Amount    *decimal.Decimal // nil means unconfirmed: resolve from the base instead
+	Amount    *decimal.Decimal // nil means unconfirmed
 	Done      bool
 }
 
 // SetMonthEntryAmount sets the override for concept in period, or clears it
-// when amount is nil, leaving the row's done state untouched.
+// when amount is nil, leaving done untouched.
 func SetMonthEntryAmount(db *sql.DB, conceptID int64, period domain.Period, amount *decimal.Decimal) error {
 	_, err := db.Exec(`
 		INSERT INTO month_entry (concept_id, period, amount, done)
@@ -29,7 +29,7 @@ func SetMonthEntryAmount(db *sql.DB, conceptID int64, period domain.Period, amou
 }
 
 // SetMonthEntryDone sets the done state for concept in period, leaving the
-// row's amount override untouched.
+// amount override untouched.
 func SetMonthEntryDone(db *sql.DB, conceptID int64, period domain.Period, done bool) error {
 	_, err := db.Exec(`
 		INSERT INTO month_entry (concept_id, period, amount, done)

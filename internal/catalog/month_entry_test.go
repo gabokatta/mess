@@ -46,14 +46,13 @@ func TestMonthEntriesFiltersByPeriod(t *testing.T) {
 	}
 }
 
-// step is one write against the row, and the row cmp expects right after
-// it: amount and done are independent columns, so a write to one never
-// disturbs whatever the other already holds.
+// setAmount "" skips the write and "clear" passes nil; wantAmount "" means
+// no override is stored.
 type step struct {
-	setAmount string // "" skips the write; "clear" passes nil
+	setAmount string
 	setDone   *bool
 
-	wantAmount string // "" means no override stored
+	wantAmount string
 	wantDone   bool
 }
 

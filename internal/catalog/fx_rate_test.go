@@ -30,8 +30,7 @@ func TestSaveFxCloseInsertsWhenAbsent(t *testing.T) {
 	}
 }
 
-// Backfill never overwrites: a stored close is final, and a rate you set by
-// hand is never replaced by an automatic one.
+// A stored close is final, and a manual rate is never replaced automatically.
 func TestSaveFxCloseNeverOverwrites(t *testing.T) {
 	db := fixture.DB(t)
 	august := domain.NewPeriod(fixture.Year, time.August)

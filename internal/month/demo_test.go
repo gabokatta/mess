@@ -11,9 +11,8 @@ import (
 	"github.com/gabokatta/mess/internal/fixture"
 )
 
-// The anchor is June: the one month in the year that lands eighteen months
-// of history exactly on a calendar year boundary, so the year before it
-// comes back full.
+// June is the one anchor whose eighteen months of history land exactly on a
+// calendar year boundary, so the year before it comes back full.
 func TestDemoIsAWorldWorthOpening(t *testing.T) {
 	anchor := domain.NewPeriod(2026, time.June)
 	oldest := anchor.AddMonths(-17)

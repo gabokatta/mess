@@ -45,8 +45,6 @@ func key(s string) tea.KeyPressMsg {
 	}
 }
 
-// send feeds messages through the real Update, which is where the view logic
-// lives, and hands back the model and the last command.
 func send(t *testing.T, m Model, msgs ...tea.Msg) (Model, tea.Cmd) {
 	t.Helper()
 	var cmd tea.Cmd
@@ -59,13 +57,8 @@ func send(t *testing.T, m Model, msgs ...tea.Msg) (Model, tea.Cmd) {
 
 const pumpDeadline = 5 * time.Second
 
-// pump runs cmd and feeds everything it produces back through Update, the
-// way the runtime does. Huh advances its own fields through commands rather
-// than synchronously, so a form only reaches its completed state this way.
-// A cursor-blink command is dropped once it answers rather than requeued,
-// so a form pays for exactly one blink cycle instead of running forever.
-// Writes are collected instead of applied, so a test can assert on them
-// without the reload cascade that follows one in the real app.
+// Huh advances its fields through commands, so a form only completes this
+// way. Writes are collected, not applied, to skip the reload cascade.
 func pump(t *testing.T, m Model, cmd tea.Cmd) (Model, []savedMsg) {
 	t.Helper()
 	var writes []savedMsg
@@ -96,9 +89,6 @@ func pump(t *testing.T, m Model, cmd tea.Cmd) (Model, []savedMsg) {
 	return m, writes
 }
 
-// runWithDeadline runs cmd and fails the test, naming it, if it has not
-// answered within pumpDeadline. A command that never answers is a bug in
-// what's under test, not something to silently skip.
 func runWithDeadline(t *testing.T, cmd tea.Cmd) tea.Msg {
 	t.Helper()
 	answered := make(chan tea.Msg, 1)
@@ -113,7 +103,6 @@ func runWithDeadline(t *testing.T, cmd tea.Cmd) tea.Msg {
 	}
 }
 
-// runWrite executes a write command and returns the error it reports.
 func runWrite(t *testing.T, cmd tea.Cmd) error {
 	t.Helper()
 	if cmd == nil {
@@ -142,8 +131,8 @@ func TestTabCyclesViews(t *testing.T) {
 	}
 }
 
-// The cursor runs over the grouped order the list renders in, not the order
-// the catalog came back in, so index and row always mean the same line.
+// The cursor runs over the rendered order, not the catalog's, so index and
+// row always mean the same line.
 func TestMonthCursorFollowsTheGroupedOrder(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
@@ -174,8 +163,7 @@ func TestMonthCursorFollowsTheGroupedOrder(t *testing.T) {
 	}
 }
 
-// The scroller skips group headers and blank rows: every anchor is a line
-// the cursor can actually land on.
+// Every anchor is a line the cursor can actually land on.
 func TestMonthAnchorsPointAtSelectableRowsOnly(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
@@ -301,7 +289,7 @@ func TestShiftPeriodResetsTheCursor(t *testing.T) {
 	}
 }
 
-// The Year view moves a year at a time, since a year is the unit on screen.
+// The Year view moves a year at a time, the unit on that screen.
 func TestShiftPeriodMovesAYearInTheYearView(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m, _ = send(t, m, key("tab"), key("right"))
@@ -336,8 +324,7 @@ func TestFormatAmount(t *testing.T) {
 	}
 }
 
-// Eighteen concepts do not fit an 80x24 terminal: the list scrolls, and the
-// cursor pushes the viewport at the edges rather than walking off it.
+// The cursor pushes the viewport at the edges rather than walking off it.
 func TestMonthListScrollsWithTheCursor(t *testing.T) {
 	concepts := make([]fixture.Concept, 0, 30)
 	for i := 1; i <= 30; i++ {
@@ -373,8 +360,7 @@ func TestMonthListScrollsWithTheCursor(t *testing.T) {
 	}
 }
 
-// An open form owns the keyboard, so left/right stay its own navigation
-// rather than moving the period out from under it.
+// An open form owns the keyboard, so left/right must not move the period.
 func TestOpenModalKeepsTheArrows(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
@@ -394,8 +380,7 @@ func TestOpenModalKeepsTheArrows(t *testing.T) {
 	}
 }
 
-// The arrows move the period on every screen that shows one, and are inert
-// on the screens that do not.
+// The arrows move the period only on screens that show one.
 func TestArrowsMoveThePeriodOnlyWhereOneIsShown(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 
@@ -423,8 +408,8 @@ func TestArrowsMoveThePeriodOnlyWhereOneIsShown(t *testing.T) {
 	}
 }
 
-// The catalog is period-free: a concept is a template, and month_mask plus
-// the active range say when it fires.
+// The catalog is period-free: month_mask and the active range say when a
+// concept fires.
 func TestConceptsHasNoPeriod(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m, _ = send(t, m, key("tab"), key("tab"), key("tab"))
@@ -454,8 +439,7 @@ func TestTodayReturnsToTheRunningMonth(t *testing.T) {
 	}
 }
 
-// The hint costs help-line width, so it only appears when pressing t would
-// do something.
+// The hint costs help-line width, so it appears only when t would act.
 func TestTodayHintAppearsOnlyWhenOffTheRunningMonth(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 
@@ -494,8 +478,7 @@ func TestTodayIsInertWhereNoPeriodIsShown(t *testing.T) {
 	}
 }
 
-// Every screen says what tab and q do, in the same key-then-verb shape as
-// the rest of the line.
+// Every screen says what tab and q do.
 func TestEveryHelpLineNamesTabAndQuit(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	for range viewNames {

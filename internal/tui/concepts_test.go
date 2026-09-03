@@ -10,8 +10,7 @@ import (
 	"github.com/gabokatta/mess/internal/fixture"
 )
 
-// Rows group by category and the cursor runs over the concepts, skipping
-// the headers between them.
+// The cursor runs over the concepts, skipping the category headers.
 func TestConceptRowsGroupByCategory(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
@@ -116,8 +115,8 @@ func TestMonthPresetResolvesToACadence(t *testing.T) {
 	}
 }
 
-// A one-off is one bit plus a one-month active range, which month_mask and
-// the range already express — there is no OneOff case to branch on.
+// A one-off is one bit plus a one-month active range, so there is no OneOff
+// case to branch on.
 func TestOneOffPresetClosesItsActiveRange(t *testing.T) {
 	db := fixture.DB(t)
 	cat, err := catalog.FindOrCreateCategory(db, "Home")
@@ -147,7 +146,7 @@ func TestOneOffPresetClosesItsActiveRange(t *testing.T) {
 	}
 }
 
-// Editing an existing concept opens on the preset that already describes it.
+// Editing opens on the preset that already describes the concept.
 func TestPresetOfExistingCadence(t *testing.T) {
 	tests := []struct {
 		mask domain.Cadence
@@ -164,8 +163,7 @@ func TestPresetOfExistingCadence(t *testing.T) {
 	}
 }
 
-// A new concept goes active this month, not in whatever period another view
-// was left on.
+// A new concept goes active this month, not the period another view was on.
 func TestNewConceptGoesActiveThisMonth(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 100, 30)
 	m.view = viewConcepts

@@ -15,8 +15,6 @@ import (
 	"github.com/gabokatta/mess/internal/note"
 )
 
-// readableColumn keeps a rendered note from stretching across a wide
-// terminal.
 const (
 	readableColumn = 76
 	titleWidth     = 52
@@ -24,8 +22,6 @@ const (
 
 func (m Model) detailWidth() int { return min(m.contentWidth(), readableColumn) }
 
-// shownNotes is the pinned notes then the shown period's, one cursor over
-// both.
 func (m Model) shownNotes() []catalog.Note {
 	return append(m.pinnedNotes(), m.periodNotes()...)
 }
@@ -57,7 +53,6 @@ func (m Model) cursorNote() (catalog.Note, bool) {
 	return shown[m.notesList.cursor], true
 }
 
-// reopen closes the note when a fresh read no longer has it.
 func reopen(open *catalog.Note, notes []catalog.Note) *catalog.Note {
 	if open == nil {
 		return nil
@@ -126,7 +121,6 @@ func (m Model) newNoteForm() *form {
 		})
 }
 
-// noteEditor asks before throwing away a body you have changed.
 type noteEditor struct {
 	area       textarea.Model
 	original   string
@@ -263,17 +257,12 @@ func (m Model) renderNoteRow(n catalog.Note, selected bool) string {
 	return cursor + check + title + " " + progress
 }
 
-// noteDetailRows marks the checkbox under the cursor, so space rewrites the
-// line you are looking at.
 func (m Model) noteDetailRows() (rows []string, anchors []int) {
 	rendered, err := renderMarkdown(m.openNote.BodyMD, m.detailWidth()-2, m.theme.Dark)
 	if err != nil {
 		return []string{m.theme.Muted.Render("markdown error: " + err.Error())}, nil
 	}
 
-	// The cursor indexes the source's checkboxes, which is what Toggle
-	// rewrites, so the render can never contribute more of them than the
-	// source has.
 	boxes := len(note.Checkboxes(m.openNote.BodyMD))
 	box := -1
 

@@ -7,16 +7,13 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// logoLines is the mess wordmark, stamped into the bottom-right corner:
-// the upper line beside the help, the lower one in the border below it.
 var logoLines = []string{
 	`┏┳┓┏┓┏┏`,
 	`┛┗┗┗ ┛┛`,
 }
 
 const (
-	logoGap = 3
-	// logoTail keeps the border's corner intact past the logo.
+	logoGap  = 3
 	logoTail = 8
 )
 
@@ -25,9 +22,7 @@ var (
 	logoSegment = 2*logoGap + logoWidth
 )
 
-// overlayLogo splices the logo's lower line into canvas's bottom border,
-// keeping the row's last logoTail runes so the corner survives. The row is
-// sliced by rune count, so the border must stay ANSI-free.
+// The row is sliced by rune count, so canvas's bottom border must stay ANSI-free.
 func overlayLogo(canvas string, style lipgloss.Style) string {
 	lines := strings.Split(canvas, "\n")
 	last := len(lines) - 1

@@ -48,15 +48,15 @@ func ParseConceptKind(s string) (ConceptKind, error) {
 	}
 }
 
-// MoneyDetails hangs off a pointer so nil, not a zero amount in a
-// defaulted currency, is how a Chore's absence of money is represented.
+// MoneyDetails hangs off a pointer so nil, not a zero amount, represents a
+// Chore's absence of money.
 type MoneyDetails struct {
 	Currency domain.Currency
 	Base     decimal.Decimal
 }
 
-// Concept is what a line is, not what it cost: Base is only what the edit
-// box opens with, and the amount you typed lives in month_entry.
+// Concept is what a line is, not what it cost: Base only prefills the edit
+// box; the typed amount lives in month_entry.
 type Concept struct {
 	ID          int64
 	Name        string
@@ -145,8 +145,6 @@ func (c Concept) nullableMoney() (currency, base any) {
 	return c.Money.Currency.String(), c.Money.Base.String()
 }
 
-// scanConcept is where the nullable currency/base_amount pair becomes
-// Money's nil-ness: past here, a chore carrying money does not exist.
 func scanConcept(row *sql.Rows) (Concept, error) {
 	var (
 		c           Concept

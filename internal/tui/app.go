@@ -38,8 +38,6 @@ type Model struct {
 	db     *sql.DB
 	client *rates.Client
 
-	// today is read once, at start-up: which month is still running decides
-	// every period's status and whether its rate is live or closed.
 	today  domain.Period
 	period domain.Period
 
@@ -76,8 +74,8 @@ func New(db *sql.DB) Model {
 	}
 }
 
-// Init reads through the savedMsg that seeding reports, so the first
-// catalog read cannot race the seed.
+// Init reads through the savedMsg that seeding reports, so the first catalog
+// read cannot race the seed.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		tea.RequestBackgroundColor,
@@ -87,8 +85,6 @@ func (m Model) Init() tea.Cmd {
 	)
 }
 
-// reload re-reads every view. The database is a few hundred rows, so a
-// write reloads the lot rather than routing each one to what it touches.
 func (m Model) reload() tea.Cmd {
 	return tea.Batch(
 		loadMonth(m.db, m.period),
@@ -99,8 +95,6 @@ func (m Model) reload() tea.Cmd {
 	)
 }
 
-// fx is the stored closes plus today's quote for the month still running,
-// read from whichever house the Rates view has adopted.
 func (m Model) fx() month.FxTable {
 	live, ok := rates.Sell(m.quotes, m.settings.FxHouse)
 	return month.NewFxTable(m.stored, live, ok, m.today)
@@ -160,8 +154,6 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// forwardToModal hands a message to an open overlay as well as the model —
-// a resize has to reach the form or textarea that is on screen.
 func (m Model) forwardToModal(msg tea.Msg) (Model, tea.Cmd) {
 	if m.modal == nil {
 		return m, nil
@@ -231,9 +223,6 @@ func (m Model) switchView(delta int) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// showsPeriod reports whether a period is on screen for the arrows to move.
-// The catalog is period-free, and the note detail is one note rather than a
-// month of them.
 func (m Model) showsPeriod() bool {
 	switch m.view {
 	case viewConcepts:
@@ -245,8 +234,6 @@ func (m Model) showsPeriod() bool {
 	}
 }
 
-// shiftPeriod moves a year at a time in the Year view, since a year is the
-// unit on that screen.
 func (m Model) shiftPeriod(delta int) (Model, tea.Cmd) {
 	if !m.showsPeriod() {
 		return m, nil
@@ -257,8 +244,6 @@ func (m Model) shiftPeriod(delta int) (Model, tea.Cmd) {
 	return m.goTo(m.period.AddMonths(delta))
 }
 
-// goTo shows another period. The cursor resets because the row it pointed at
-// belongs to the month being left.
 func (m Model) goTo(p domain.Period) (Model, tea.Cmd) {
 	previousYear := m.period.Year()
 	m.period = p
@@ -273,9 +258,6 @@ func (m Model) goTo(p domain.Period) (Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// wandered reports whether the shown period is somewhere other than the
-// month still running, which is the only time going back to it means
-// anything.
 func (m Model) wandered() bool {
 	return m.showsPeriod() && !m.period.Equal(m.today)
 }
@@ -298,8 +280,6 @@ func (m Model) moveCursor(delta int) Model {
 	return m
 }
 
-// sync rebuilds the focused view's scrolling region after every message, so
-// the rendered rows and the cursor can never disagree.
 func (m Model) sync() Model {
 	width := m.contentWidth()
 	switch m.view {
@@ -324,8 +304,7 @@ func (m Model) sync() Model {
 	return m
 }
 
-// Set above what the layout strictly needs: mess is full-screen only, so a
-// cramped screen is worth less than a prompt to resize.
+// Set above what the layout strictly needs: mess is full-screen only.
 const (
 	minUsableWidth        = 100
 	minUsableHeight       = 30
@@ -348,15 +327,10 @@ func (m Model) View() tea.View {
 func (m Model) contentWidth() int  { return max(m.width-6, 1) }
 func (m Model) contentHeight() int { return max(m.height-4, 1) }
 
-// bodyHeight is the box minus the view's own header lines, the blank line
-// above the help, and the help itself — which is two rows on a narrow
-// terminal with a busy view, so it is measured rather than assumed.
 func (m Model) bodyHeight(headerLines int) int {
 	return max(m.contentHeight()-headerLines-1-lipgloss.Height(m.helpBlock()), 1)
 }
 
-// helpBlock wraps the help to the room the logo leaves, so it cannot run
-// past the border and push the layout off the bottom.
 func (m Model) helpBlock() string {
 	return m.theme.Help.Width(max(m.contentWidth()-logoTail-logoGap-logoWidth, 1)).Render(m.help())
 }
@@ -387,8 +361,6 @@ func (m Model) renderTooSmall() string {
 		lipgloss.PlaceHorizontal(m.width, lipgloss.Center, block))
 }
 
-// shortSide colours only the dimension that falls short, so a glance says
-// which way to drag.
 func (m Model) shortSide(have, need int) string {
 	text := fmt.Sprintf("%3d", have)
 	if have >= need {
@@ -416,8 +388,6 @@ func (m Model) tabs() string {
 	return strings.Join(labels, "")
 }
 
-// viewContent pads the body so the help always lands on the last line
-// inside the box rather than floating under a short view.
 func (m Model) viewContent() string {
 	help := m.helpBlock()
 	height := m.contentHeight() - 1 - lipgloss.Height(help)
@@ -430,8 +400,6 @@ func (m Model) viewContent() string {
 	return body + "\n" + status + "\n" + m.helpRow()
 }
 
-// renderBody hands over to an open modal, except the inline amount edit,
-// which draws inside the Month row it belongs to.
 func (m Model) renderBody() string {
 	if _, inline := m.modal.(*amountEdit); m.modal != nil && !inline {
 		return m.viewTitle() + "\n\n" + m.modal.View()
@@ -465,7 +433,6 @@ func (m Model) help() string {
 	return strings.Join(append(keys, "tab switch", "q quit"), " · ")
 }
 
-// viewKeys is what the focused view adds to the two every screen carries.
 func (m Model) viewKeys() []string {
 	switch m.view {
 	case viewMonth:
@@ -484,8 +451,6 @@ func (m Model) viewKeys() []string {
 	}
 }
 
-// centerInBox centers sparse content rather than pinning it top-left.
-// headerRows is what the view has already drawn above it.
 func (m Model) centerInBox(content string, headerRows int) string {
 	return lipgloss.Place(m.contentWidth(), m.bodyHeight(headerRows), lipgloss.Center, lipgloss.Center, content)
 }

@@ -9,8 +9,8 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// FxSource separates a month's real close from a rate you set by hand.
-// Nothing automatic ever replaces a Manual row.
+// FxSource separates a month's real close from a rate set by hand. Nothing
+// automatic ever replaces a Manual row.
 type FxSource int
 
 const (
@@ -40,7 +40,7 @@ func ParseFxSource(s string) (FxSource, error) {
 	}
 }
 
-// FxRate is a completed month: the current month is never stored, so a row
+// FxRate is a completed month; the current month is never stored, so a row
 // here never needs refetching.
 type FxRate struct {
 	Period domain.Period
@@ -56,8 +56,8 @@ func SetManualFxRate(db *sql.DB, period domain.Period, value decimal.Decimal) er
 	return err
 }
 
-// SaveFxClose leaves any rate already recorded for that period alone, so
-// backfill never overwrites and a Manual row survives it.
+// SaveFxClose leaves an existing rate for that period alone, so backfill
+// never overwrites and a Manual row survives it.
 func SaveFxClose(db *sql.DB, period domain.Period, value decimal.Decimal) error {
 	_, err := db.Exec(`
 		INSERT INTO fx_rate (period, value, source) VALUES (?, ?, 'Close')

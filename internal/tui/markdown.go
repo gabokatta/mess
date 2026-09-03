@@ -6,9 +6,6 @@ import (
 	glamour "charm.land/glamour/v2"
 )
 
-// checkboxGlyphs are what Glamour's dark and light styles both emit for a
-// task-list item, which is how a rendered line is found without re-parsing
-// the markdown.
 var checkboxGlyphs = []string{"[ ] ", "[✓] "}
 
 func renderMarkdown(body string, width int, dark bool) (string, error) {
@@ -24,11 +21,8 @@ func renderMarkdown(body string, width int, dark bool) (string, error) {
 	return r.Render(body)
 }
 
-// startsWithCheckbox reports whether a task-list glyph opens the line's
-// visible content. Glamour always puts the marker first, so a "[ ] " sitting
-// inside prose is not a checkbox and must not take a cursor position — the
-// cursor indexes the source, and a phantom here would shift every toggle
-// after it onto the wrong line.
+// Only a leading glyph counts: a "[ ] " inside prose would take a cursor
+// position and shift every toggle after it onto the wrong line.
 func startsWithCheckbox(line string) bool {
 	for i := 0; i < len(line); i++ {
 		switch {

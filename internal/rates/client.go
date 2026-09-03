@@ -1,6 +1,5 @@
-// Package rates fetches Argentine dollar quotes from
-// api.argentinadatos.com, which answers for any date back to 2011 and
-// carries the last close forward over weekends.
+// Package rates fetches Argentine dollar quotes from api.argentinadatos.com,
+// which answers for any date back to 2011 and carries closes over weekends.
 package rates
 
 import (
@@ -23,7 +22,7 @@ var houseSlug = map[domain.FxHouse]string{
 }
 
 // Quote's Sell is venta, what you pay to buy dollars, and so the rate every
-// conversion in mess runs on.
+// conversion runs on.
 type Quote struct {
 	House domain.FxHouse
 	Buy   decimal.Decimal
@@ -48,8 +47,8 @@ type quoteRow struct {
 	Sell  decimal.Decimal `json:"venta"`
 }
 
-// On returns the houses in Houses order, dropping any the API reports that
-// mess does not model.
+// On returns the houses in Houses order, dropping any unmodelled house the
+// API reports.
 func (c *Client) On(ctx context.Context, date time.Time) ([]Quote, error) {
 	url := fmt.Sprintf("%s/v1/cotizaciones/dolares/%04d/%02d/%02d",
 		c.BaseURL, date.Year(), int(date.Month()), date.Day())
@@ -97,8 +96,8 @@ func Sell(quotes []Quote, house domain.FxHouse) (decimal.Decimal, bool) {
 	return decimal.Decimal{}, false
 }
 
-// MonthClose reads the last day of period, which is a completed month's
-// rate and so is fetched once and never again.
+// MonthClose reads the last day of period; a completed month's rate is
+// fetched once and never again.
 func (c *Client) MonthClose(ctx context.Context, period domain.Period, house domain.FxHouse) (decimal.Decimal, error) {
 	lastDay := time.Date(period.Year(), period.Month()+1, 0, 0, 0, 0, 0, time.UTC)
 	quotes, err := c.On(ctx, lastDay)

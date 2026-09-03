@@ -32,8 +32,7 @@ func TestRatesEnterAdoptsTheHouseUnderTheCursor(t *testing.T) {
 	}
 }
 
-// The house the app converts with is the one the live quote is read from,
-// so adopting a house changes every total that runs through a rate.
+// Adopting a house changes every total that runs through a rate.
 func TestFxTableFollowsTheAdoptedHouse(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m.view = viewRates
@@ -49,8 +48,7 @@ func TestFxTableFollowsTheAdoptedHouse(t *testing.T) {
 	}
 }
 
-// e opens the by-hand editor prefilled with the rate currently in effect,
-// so correcting a published rate starts from what the app believed.
+// e prefills the by-hand editor with the rate currently in effect.
 func TestManualRateFormOpensOnTheShownPeriod(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m.view = viewRates
@@ -65,8 +63,8 @@ func TestManualRateFormOpensOnTheShownPeriod(t *testing.T) {
 	}
 }
 
-// A rate set by hand wins over the live quote for the same month, and
-// because conversion is read-time it cascades through that month's totals.
+// A manual rate beats the live quote and, conversion being read-time,
+// cascades through that month's totals.
 func TestManualRateOverridesTheLiveQuote(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m.view = viewRates
@@ -86,8 +84,7 @@ func TestManualRateOverridesTheLiveQuote(t *testing.T) {
 	}
 }
 
-// The chart only draws a month mess actually knows a rate for; an inherited
-// rate is not a close and gets no bar.
+// An inherited rate is not a close and gets no bar.
 func TestYearClosesLeavesUnknownMonthsAtZero(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m.view = viewRates

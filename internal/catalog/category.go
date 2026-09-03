@@ -38,10 +38,8 @@ func Categories(db *sql.DB) ([]Category, error) {
 	return categories, rows.Err()
 }
 
-// FindOrCreateCategory returns the category named name, creating it —
-// appended after every existing one — if none exists yet. The match is
-// exact, so the concept form never leaves the category picker up to fuzzy
-// matching.
+// FindOrCreateCategory returns the category named name, appending a new one
+// if no exact match exists.
 func FindOrCreateCategory(db *sql.DB, name string) (Category, error) {
 	categories, err := Categories(db)
 	if err != nil {
@@ -55,13 +53,11 @@ func FindOrCreateCategory(db *sql.DB, name string) (Category, error) {
 	return CreateCategory(db, name, len(categories))
 }
 
-// DefaultCategoryNames seeds a new database's category picker so it isn't
-// starting from nothing. FindOrCreateCategory covers anything beyond them.
+// DefaultCategoryNames seeds a new database's category picker.
 var DefaultCategoryNames = []string{"Earnings", "Home", "Utilities", "Cards", "Other"}
 
-// EnsureDefaultCategories creates DefaultCategoryNames if the category
-// table is still empty. It never runs against a table that already has
-// rows, so it's safe to call on every app start.
+// EnsureDefaultCategories creates DefaultCategoryNames only when the table
+// is empty, so it is safe on every app start.
 func EnsureDefaultCategories(db *sql.DB) error {
 	categories, err := Categories(db)
 	if err != nil {

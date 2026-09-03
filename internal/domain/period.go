@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// Period is a calendar month ("2026-09"), the unit of time for the whole
-// app. Periods are totally ordered.
+// Period is a calendar month ("2026-09"), the app's unit of time.
+// Periods are totally ordered.
 type Period struct {
 	year  int
 	month time.Month
@@ -37,8 +37,8 @@ func (p Period) String() string {
 
 func (p Period) index() int { return p.year*12 + int(p.month) }
 
-// IsZero reports whether p is the zero value, used as the "unbounded"
-// sentinel for open-ended active ranges.
+// IsZero reports whether p is the zero value, the "unbounded" sentinel for
+// open-ended active ranges.
 func (p Period) IsZero() bool { return p == Period{} }
 
 func (p Period) Before(other Period) bool { return p.index() < other.index() }

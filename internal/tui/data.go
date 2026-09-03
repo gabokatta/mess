@@ -49,8 +49,6 @@ type savedMsg struct {
 	err error
 }
 
-// backfilledMsg's count keeps a run that fetched nothing from restarting
-// the read that started it.
 type backfilledMsg struct {
 	saved int
 }
@@ -104,8 +102,6 @@ func seedCategories(db *sql.DB) tea.Cmd {
 	}
 }
 
-// fetchQuotes gets every house in one call, so switching houses later costs
-// no network.
 func fetchQuotes(client *rates.Client) tea.Cmd {
 	return func() tea.Msg {
 		quotes, err := client.On(context.Background(), time.Now())
@@ -113,8 +109,6 @@ func fetchQuotes(client *rates.Client) tea.Cmd {
 	}
 }
 
-// backfillCloses is at most twelve calls, off the UI loop. Failures are
-// silent and retried next open; a stored close is never refetched.
 func backfillCloses(db *sql.DB, client *rates.Client, year int, today domain.Period) tea.Cmd {
 	return func() tea.Msg {
 		house, err := catalog.FxHouse(db)

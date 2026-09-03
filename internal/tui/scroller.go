@@ -6,15 +6,11 @@ import (
 	"charm.land/bubbles/v2/viewport"
 )
 
-// scroller is a cursor over a list too long for the box. anchors gives the
-// display line each selectable row starts on, so group headers and blank
-// rows cost nothing to skip over.
 type scroller struct {
 	vp     viewport.Model
 	cursor int
 }
 
-// show scrolls just far enough to keep the cursor's line visible.
 func (s scroller) show(rows []string, anchors []int, width, height int) scroller {
 	if width < 1 {
 		width = 1
@@ -32,8 +28,7 @@ func (s scroller) show(rows []string, anchors []int, width, height int) scroller
 		return s
 	}
 
-	// One row of context above keeps the group header the cursor sits under
-	// on screen; scrolling is minimal, so the list creeps rather than jumps.
+	// One row of context above keeps the cursor's group header on screen.
 	line := anchors[s.cursor]
 	switch {
 	case line-1 < s.vp.YOffset():
@@ -44,14 +39,11 @@ func (s scroller) show(rows []string, anchors []int, width, height int) scroller
 	return s
 }
 
-// group is one labelled run of selectable rows.
 type group struct {
 	label string
 	rows  []string
 }
 
-// groupedRows separates groups with a blank line and reports the display
-// line each row lands on, so the cursor skips the headers between them.
 func groupedRows(groups []group) (rows []string, anchors []int) {
 	for _, g := range groups {
 		if len(g.rows) == 0 {

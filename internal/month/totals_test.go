@@ -47,8 +47,7 @@ func TestResolveTotals(t *testing.T) {
 	}
 }
 
-// A baseline you have not typed over is a guess; the header states what you
-// actually did.
+// A baseline you have not typed over is a guess and does not count.
 func TestResolveTotalsCountsConfirmedLinesOnly(t *testing.T) {
 	totals := ResolveTotals([]Line{
 		line(catalog.Income, domain.ARS, 2400000, true),
@@ -89,8 +88,7 @@ func TestResolveTotalsFoldsUSDAtThePeriodRate(t *testing.T) {
 	}
 }
 
-// With no rate the header drops what it cannot convert and says how many —
-// counting a USD line as zero would quietly understate the month.
+// The header drops what it cannot convert and says how many.
 func TestResolveTotalsExcludesUnconvertibleLines(t *testing.T) {
 	totals := ResolveTotals([]Line{
 		line(catalog.Income, domain.ARS, 2400000, true),
@@ -105,8 +103,7 @@ func TestResolveTotalsExcludesUnconvertibleLines(t *testing.T) {
 	}
 }
 
-// Over-saving is legal: a bonus you never modelled, or money sitting from
-// last month. Pocket goes negative rather than the input being refused.
+// Over-saving is legal: Pocket goes negative rather than refusing the input.
 func TestPocketGoesNegativeWhenOverSaved(t *testing.T) {
 	totals := ResolveTotals([]Line{
 		line(catalog.Income, domain.ARS, 100000, true),

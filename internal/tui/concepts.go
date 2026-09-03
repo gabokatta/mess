@@ -15,8 +15,6 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// newCategory is the zero value, so a form built before any category exists
-// defaults to the "New category" option.
 const newCategory int64 = 0
 
 func (m Model) cursorConcept() (catalog.Concept, bool) {
@@ -44,9 +42,6 @@ func (m Model) handleConceptsKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// newConcept is what "n" starts from. It goes active this month, not in
-// whatever period another view was left on: the catalog has no period, and
-// active_from is a field you can type.
 func (m Model) newConcept() catalog.Concept {
 	return catalog.Concept{
 		Kind:       catalog.Expense,
@@ -56,8 +51,6 @@ func (m Model) newConcept() catalog.Concept {
 	}
 }
 
-// conceptValues keeps everything a Select cannot type as a string, parsed
-// once on completion past each field's own validator.
 type conceptValues struct {
 	name        string
 	categoryID  int64
@@ -71,7 +64,6 @@ type conceptValues struct {
 	activeUntil string
 }
 
-// conceptForm creates when c.ID is zero, and edits otherwise.
 func (m Model) conceptForm(c catalog.Concept) *form {
 	v := &conceptValues{
 		name:        c.Name,
@@ -130,8 +122,6 @@ func (m Model) conceptForm(c catalog.Concept) *form {
 	})
 }
 
-// save's parses have all passed their field's validator, so a failure here
-// would be a bug in that pairing rather than bad input.
 func (v *conceptValues) save(db *sql.DB, id int64) error {
 	categoryID := v.categoryID
 	if categoryID == newCategory {
@@ -192,8 +182,6 @@ func (m Model) deleteConceptForm(c catalog.Concept) *form {
 	return f
 }
 
-// monthPreset is the cadence picker. Anything the three named presets do
-// not cover falls to presetPicked, which reveals the month-by-month list.
 type monthPreset int
 
 const (
@@ -221,8 +209,6 @@ func presetOf(mask domain.Cadence) monthPreset {
 	}
 }
 
-// cadence resolves the preset. presetOnce is one bit plus the one-month
-// active range save() gives it, so there is no OneOff case to branch on.
 func (v *conceptValues) cadence() domain.Cadence {
 	switch v.preset {
 	case presetMonthly:

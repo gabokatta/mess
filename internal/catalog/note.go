@@ -6,8 +6,8 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// Note carries a zero Period when it is pinned, which shows it in every
-// period rather than none.
+// Note carries a zero Period when pinned, which shows it in every period
+// rather than none.
 type Note struct {
 	ID     int64
 	Title  string

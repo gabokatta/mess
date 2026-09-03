@@ -5,9 +5,6 @@ import (
 	"os"
 )
 
-// lock is an exclusive-create file beside the database that stops a second
-// instance opening it. A crash leaves it behind; clearing it is a manual
-// step rather than automatic stale-lock detection.
 type lock struct {
 	path string
 }

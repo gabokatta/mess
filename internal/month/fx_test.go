@@ -102,7 +102,7 @@ func TestRateLabel(t *testing.T) {
 }
 
 // Backfill is bounded to the shown year, skips the running month, and never
-// asks for a close it already has.
+// refetches a stored close.
 func TestMissingCloses(t *testing.T) {
 	today := period(time.September)
 	stored := []catalog.FxRate{closeAt(time.January, 1100), closeAt(time.March, 1200)}

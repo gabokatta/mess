@@ -5,9 +5,6 @@ import (
 	"charm.land/huh/v2"
 )
 
-// modal is an overlay that owns the keyboard until it closes. Update
-// returning nil is the only way one ends, so the app never grows a field
-// per form.
 type modal interface {
 	Init() tea.Cmd
 	Update(tea.Msg) (modal, tea.Cmd)
@@ -15,7 +12,6 @@ type modal interface {
 	Help() string
 }
 
-// form runs done once the huh.Form completes; esc closes without it.
 type form struct {
 	huh  *huh.Form
 	help string

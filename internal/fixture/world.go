@@ -15,21 +15,19 @@ const Year = 2026
 
 var Period = domain.NewPeriod(Year, time.September)
 
-// World is a database, described rather than built. Concepts are
-// referenced by name throughout, since their IDs do not exist until Load
-// inserts them.
+// World is a database, described rather than built. Concepts are referenced
+// by name, since their IDs do not exist until Load inserts them.
 type World struct {
 	Concepts   []Concept
 	Entries    []Entry
 	Notes      []catalog.Note
 	Rates      []Rate
 	FxHouse    domain.FxHouse
-	LastExport *time.Time // nil means Load never marks an export
+	LastExport *time.Time // nil means Load marks no export
 }
 
 // Concept defaults to monthly and to an active range starting in January of
-// Year, so a test states only the fields it cares about. Base is a decimal
-// literal parsed by Load; empty on a Kind: Chore, which carries no money.
+// Year. Base is a decimal literal parsed by Load, empty on a Kind: Chore.
 type Concept struct {
 	Name     string
 	Category string
@@ -41,11 +39,8 @@ type Concept struct {
 	Until    domain.Period
 }
 
-// Entry overrides one concept in one period. An empty Amount means no
-// override on the amount; Done false means no override on done. A World
-// that never mentions a concept for a period leaves month_entry untouched,
-// which is the "no entry at all" state Entry's zero value cannot express on
-// its own.
+// Entry overrides one concept in one period; an empty Amount or false Done
+// means no override. An unmentioned concept leaves month_entry untouched.
 type Entry struct {
 	Concept string
 	Period  domain.Period
@@ -61,20 +56,16 @@ type Rate struct {
 	Source catalog.FxSource
 }
 
-// Loaded hands back every row Load created, keyed by the name a test
-// referenced it by. A misspelled name comes back as a zero value whose ID
-// is 0, which no real row has, so the mistake fails the very next
-// assertion instead of silently matching the wrong row.
+// Loaded hands back every row Load created, keyed by the name a test used. A
+// misspelled name yields a zero value whose ID 0 matches no real row.
 type Loaded struct {
 	Concepts   map[string]catalog.Concept
 	Notes      map[string]catalog.Note
 	Categories map[string]catalog.Category
 }
 
-// Load writes w through the real catalog functions and hands back what it
-// created. Categories are created on first mention among Concepts, in
-// declaration order, so that order is a World's sort order without a
-// second list to keep in sync.
+// Load writes w through the real catalog functions. Categories are created on
+// first mention in declaration order, which is a World's sort order.
 func Load(db *sql.DB, w World) (Loaded, error) {
 	loaded := Loaded{
 		Concepts:   make(map[string]catalog.Concept, len(w.Concepts)),

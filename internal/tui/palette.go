@@ -8,8 +8,7 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 )
 
-// palette is Okabe-Ito, which stays distinguishable under the common forms
-// of color blindness and reads on both light and dark grounds.
+// Okabe-Ito: distinguishable under common color blindness, on either ground.
 var palette = [8]color.Color{
 	lipgloss.Color("#E69F00"),
 	lipgloss.Color("#56B4E9"),
@@ -21,8 +20,7 @@ var palette = [8]color.Color{
 	lipgloss.Color("#999999"),
 }
 
-// categoryColor indexes by position, so categories must arrive sorted the
-// way catalog.Categories returns them. Past eight, colors repeat.
+// Indexes by position, so categories must arrive in catalog.Categories order.
 func categoryColor(categories []catalog.Category, categoryID int64) color.Color {
 	for i, c := range categories {
 		if c.ID == categoryID {
@@ -36,8 +34,6 @@ func categoryStyle(categories []catalog.Category, categoryID int64) lipgloss.Sty
 	return lipgloss.NewStyle().Foreground(categoryColor(categories, categoryID))
 }
 
-// groupStyle keeps the accent free for the one thing per screen that earns
-// it.
 func groupStyle(index int) lipgloss.Style {
 	return lipgloss.NewStyle().Bold(true).Foreground(palette[index%len(palette)])
 }

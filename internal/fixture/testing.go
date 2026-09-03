@@ -8,10 +8,8 @@ import (
 	"github.com/gabokatta/mess/internal/store"
 )
 
-// DB opens a freshly migrated database in t.TempDir(). Each call gets its
-// own temp dir, so parallel tests never contend for store.Open's instance
-// lock; a test that needs two databases must still give them different
-// paths.
+// DB opens a freshly migrated database in its own t.TempDir(), so parallel
+// tests never contend for store.Open's instance lock.
 func DB(t *testing.T) *sql.DB {
 	t.Helper()
 	s, err := store.Open(filepath.Join(t.TempDir(), "mess.db"))
@@ -22,8 +20,7 @@ func DB(t *testing.T) *sql.DB {
 	return s.DB()
 }
 
-// MustLoad is Load for a test: any error fails it immediately, so a test
-// body only ever sees a fully loaded World.
+// MustLoad is Load for a test: any error fails it immediately.
 func MustLoad(t *testing.T, db *sql.DB, w World) Loaded {
 	t.Helper()
 	loaded, err := Load(db, w)

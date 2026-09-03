@@ -39,9 +39,7 @@ func TestSetFxHouseRoundTrips(t *testing.T) {
 	}
 }
 
-// A World that never declares LastExport leaves the settings row unmarked,
-// the same "never exported" state a database that has never called Load at
-// all reports.
+// An undeclared LastExport reads the same as a database never loaded at all.
 func TestLoadWithoutLastExportLeavesSettingsUnmarked(t *testing.T) {
 	db := fixture.DB(t)
 	fixture.MustLoad(t, db, fixture.World{})
@@ -55,9 +53,8 @@ func TestLoadWithoutLastExportLeavesSettingsUnmarked(t *testing.T) {
 	}
 }
 
-// fixture.Load writes LastExport through catalog.MarkExported, so a World
-// that declares one is the "Month status line shows an export date" case a
-// World otherwise cannot reach.
+// A World declaring LastExport is the only way to reach the "status line
+// shows an export date" case.
 func TestLoadWritesLastExport(t *testing.T) {
 	db := fixture.DB(t)
 	at := time.Date(fixture.Year, time.September, 2, 15, 4, 5, 0, time.UTC)
@@ -72,8 +69,7 @@ func TestLoadWritesLastExport(t *testing.T) {
 	}
 }
 
-// MarkExported creates the settings row on a database that never had one,
-// and leaves an already-chosen house alone.
+// MarkExported creates a missing settings row and leaves the chosen house alone.
 func TestMarkExportedKeepsTheChosenHouse(t *testing.T) {
 	db := fixture.DB(t)
 	if err := catalog.SetFxHouse(db, domain.Official); err != nil {

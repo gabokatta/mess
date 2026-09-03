@@ -16,10 +16,8 @@ type CategoryTotal struct {
 	Total    decimal.Decimal
 }
 
-// Year is one calendar year on one screen: what each month put away, split
-// by the concept that put it there; what each month spent; and where the
-// year's spending went. Every figure is confirmed lines only, folded to ARS
-// at each period's own rate, and nothing accumulates from an anchor.
+// Year is one calendar year on one screen: what each month saved, spent, and
+// where it went. Confirmed lines only, folded to ARS at each period's rate.
 type Year struct {
 	Year    int
 	Periods []domain.Period

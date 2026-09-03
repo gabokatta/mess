@@ -130,9 +130,7 @@ func TestSeedConvergesOnTheSameRowsEveryRun(t *testing.T) {
 	}
 }
 
-// TestSeedClearsAStaleLock proves recovery from a crashed TUI is one
-// command: a lock left behind by a process that never released it must not
-// stop the next seed from opening the database.
+// A lock left behind by a crashed process must not stop the next seed.
 func TestSeedClearsAStaleLock(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "mess.db")
 	s, err := store.Open(dbPath)
@@ -147,9 +145,8 @@ func TestSeedClearsAStaleLock(t *testing.T) {
 	}
 }
 
-// TestSeedPeriodFlagPinsTheAnchor proves --period reaches Demo rather than
-// real time: a period nowhere near today only resolves ~30 lines if the
-// database was actually built around it.
+// --period must reach Demo rather than real time: a period nowhere near today
+// only resolves lines if the database was built around it.
 func TestSeedPeriodFlagPinsTheAnchor(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "mess.db")
 

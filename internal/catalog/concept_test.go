@@ -116,8 +116,7 @@ func TestUpdateConceptRetiresViaActiveUntil(t *testing.T) {
 	}
 }
 
-// A chore's currency and base amount are NULL at the SQL boundary, and past
-// Concepts() a chore carrying money is a state that does not exist.
+// Past Concepts(), a chore carrying money is a state that cannot exist.
 func TestChoreRoundTripsWithoutMoney(t *testing.T) {
 	db := fixture.DB(t)
 	loaded := fixture.MustLoad(t, db, fixture.World{

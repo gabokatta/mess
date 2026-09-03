@@ -41,8 +41,6 @@ func NewTheme(dark bool) Theme {
 	}
 }
 
-// themeFor resolves Huh's theme at form-construction time rather than
-// forwarding tea.BackgroundColorMsg into every open form.
 func themeFor(t Theme) huh.Theme {
 	return huh.ThemeFunc(func(bool) *huh.Styles { return huh.ThemeCharm(t.Dark) })
 }

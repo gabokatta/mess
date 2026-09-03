@@ -7,7 +7,6 @@ import (
 	"github.com/NimbleMarkets/ntcharts/v2/barchart"
 )
 
-// renderYear puts the whole year on one screen: no drill-down, no cycling.
 func (m Model) renderYear() string {
 	left := m.theme.Muted.Render("Year · ") + m.theme.Title.Render(strconv.Itoa(m.period.Year()))
 	right := m.theme.Muted.Render("saved ") + formatAmount(m.year.SavedTotal) +
@@ -31,8 +30,6 @@ func (m Model) renderYear() string {
 		groupStyle(4).Render("SPEND BY CATEGORY") + "\n" + m.renderCategoryChart(bottom)
 }
 
-// renderSavedChart stacks each month's bar by the concept that put the
-// money away, so one saving reads apart from another.
 func (m Model) renderSavedChart(width, height int) string {
 	bars := make([]barchart.BarData, len(m.year.Periods))
 	for i, p := range m.year.Periods {

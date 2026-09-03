@@ -94,8 +94,7 @@ func TestNoteDetailOpensAndCloses(t *testing.T) {
 	}
 }
 
-// space rewrites the line under the cursor in the source, so storage stays
-// one text field.
+// space rewrites the source line under the cursor, so storage stays one field.
 func TestNoteDetailSpaceTogglesTheCheckboxUnderTheCursor(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk\n- [ ] bread"}},
@@ -202,8 +201,7 @@ func TestNewNoteFormCreatesInTheShownPeriod(t *testing.T) {
 	}
 }
 
-// Reading a note, the arrows walk its checkboxes; they must not move the
-// month out from under it.
+// Reading a note, the arrows walk its checkboxes and must not move the month.
 func TestArrowsAreInertWhileReadingANote(t *testing.T) {
 	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk"}}}, 90, 30)
 	m.view = viewNotes
@@ -234,8 +232,7 @@ func TestSwitchingViewsClosesTheOpenNote(t *testing.T) {
 	}
 }
 
-// A "[ ] " sitting inside prose is not a checkbox: counting it would shift
-// every toggle after it onto the wrong line.
+// Counting a "[ ] " inside prose would shift every toggle onto the wrong line.
 func TestNoteDetailIgnoresCheckboxGlyphsInProse(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{{
@@ -261,8 +258,7 @@ func TestNoteDetailIgnoresCheckboxGlyphsInProse(t *testing.T) {
 	}
 }
 
-// A form or textarea on screen has to follow the terminal, not keep the size
-// it was built with.
+// A form on screen must follow the terminal, not keep its built size.
 func TestOpenModalFollowsAResize(t *testing.T) {
 	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk"}}}, 90, 30)
 	m.view = viewNotes

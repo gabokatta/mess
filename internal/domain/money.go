@@ -53,9 +53,8 @@ func (m Money) Equal(other Money) bool {
 	return m.currency == other.currency && m.amount.Equal(other.amount)
 }
 
-// ToARS converts m at rate pesos per dollar. It reports false for a USD
-// amount with no rate to convert it with, so a caller drops the line from a
-// roll-up rather than counting it as zero.
+// ToARS converts m at rate pesos per dollar. Reports false for a USD amount
+// with no rate, so callers drop the line rather than count it as zero.
 func (m Money) ToARS(rate decimal.Decimal, hasRate bool) (Money, bool) {
 	if m.currency == ARS {
 		return m, true

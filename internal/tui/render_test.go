@@ -12,9 +12,6 @@ import (
 	"github.com/gabokatta/mess/internal/month"
 )
 
-// richWorld has something in every view, the way the app sits once its
-// start-up reads have landed: three confirmed, done lines across kinds, one
-// untouched chore, one note, and a couple of stored closes.
 func richWorld() fixture.World {
 	return fixture.World{
 		Concepts: []fixture.Concept{
@@ -36,8 +33,7 @@ func richWorld() fixture.World {
 	}
 }
 
-// Every view renders at a real terminal size without panicking, and none of
-// them spills past the box.
+// Every view renders at a real terminal size without panicking or spilling.
 func TestEveryViewRenders(t *testing.T) {
 	const width, height = 100, 32
 	m := modelFor(t, richWorld(), width, height)
@@ -55,9 +51,8 @@ func TestEveryViewRenders(t *testing.T) {
 	}
 }
 
-// The header states wiring, not arithmetic: whatever ResolveTotals says for
-// this world is what the header must show. totals_test.go is the only
-// place the arithmetic itself is asserted.
+// Wiring, not arithmetic: the header must show whatever ResolveTotals says.
+// totals_test.go is the only place the arithmetic is asserted.
 func TestMonthHeaderShowsTheArithmetic(t *testing.T) {
 	m := modelFor(t, richWorld(), 100, 32)
 	header := stripANSI(m.monthHeader())
@@ -97,8 +92,7 @@ func TestTooSmallTerminal(t *testing.T) {
 	}
 }
 
-// The message exists to say which way to drag, so only the short side is
-// coloured.
+// The message says which way to drag, so only the short side is coloured.
 func TestTooSmallFlagsOnlyTheShortSide(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, minUsableHeight-1)
 	content := m.View().Content
@@ -115,8 +109,6 @@ func lineWidth(line string) int {
 	return len([]rune(stripANSI(line)))
 }
 
-// stripANSI drops escape sequences so a test can measure and match the text
-// a reader actually sees.
 func stripANSI(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
@@ -131,9 +123,8 @@ func stripANSI(s string) string {
 	return b.String()
 }
 
-// The box has to be exactly the terminal minus the tab strip on every view
-// and at any width: a help line that overflows would push the layout off
-// the bottom of the screen.
+// The box is the terminal minus the tab strip at any width: an overflowing
+// help line would push the layout off the bottom.
 func TestBoxFitsTheTerminal(t *testing.T) {
 	for _, size := range []struct{ width, height int }{{minUsableWidth, minUsableHeight}, {120, 40}, {177, 51}} {
 		m := modelFor(t, richWorld(), size.width, size.height)

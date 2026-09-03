@@ -1,5 +1,5 @@
-// Package note holds the pure logic over a note's markdown body: the only
-// structure mess imposes on that text is its task-list checkboxes.
+// Package note holds the pure logic over a note's markdown body, whose only
+// imposed structure is its task-list checkboxes.
 package note
 
 import (
@@ -7,9 +7,6 @@ import (
 	"strings"
 )
 
-// checkboxPattern matches a GFM task-list marker at the start of a line,
-// after optional indentation: "- [ ] " or "- [x] " (case-insensitive), the
-// only syntax mess treats as a checkbox rather than plain prose or a bullet.
 var checkboxPattern = regexp.MustCompile(`^(\s*[-*]\s\[)([ xX])(\]\s+)(.*)$`)
 
 // Checkbox is one task-list item found in a note's markdown body.
@@ -18,8 +15,8 @@ type Checkbox struct {
 	Done bool
 }
 
-// Checkboxes returns every task-list item in body, in document order — the
-// same order Toggle addresses them by index.
+// Checkboxes returns every task-list item in body, in the document order
+// Toggle addresses them by index.
 func Checkboxes(body string) []Checkbox {
 	var boxes []Checkbox
 	for _, line := range strings.Split(body, "\n") {
@@ -41,9 +38,8 @@ func Progress(body string) (done, total int) {
 	return done, total
 }
 
-// Toggle flips the nth checkbox in document order (0-based, Checkboxes'
-// order), rewriting only that line's marker. An index Checkboxes didn't
-// report is a no-op, so a stale cursor can never corrupt the body.
+// Toggle flips the nth checkbox in document order, rewriting only that
+// line's marker. An unreported index is a no-op, so a stale cursor is safe.
 func Toggle(body string, n int) string {
 	lines := strings.Split(body, "\n")
 	i := -1

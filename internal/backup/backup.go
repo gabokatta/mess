@@ -1,6 +1,5 @@
-// Package backup dumps and restores every table wholesale, behind the
-// export and import subcommands. It reads raw rows rather than typed
-// catalog models, so every table backs up the same way.
+// Package backup dumps and restores every table wholesale. It reads raw rows
+// rather than typed catalog models, so every table backs up the same way.
 package backup
 
 import (
@@ -11,9 +10,7 @@ import (
 	"time"
 )
 
-// tableOrder is foreign-key dependency order, parents first. Import
-// deletes in reverse and reloads in this order, so every reference is
-// satisfied as it is written.
+// Foreign-key dependency order, parents first; import deletes in reverse.
 var tableOrder = []string{
 	"category",
 	"concept",
@@ -50,9 +47,8 @@ func Snapshot(db *sql.DB, dbPath string) (string, error) {
 	return dest, nil
 }
 
-// Import replaces every table with data.Tables and nothing else. There is
-// no version guard: a row shaped for a schema this binary does not have
-// fails its INSERT and rolls the whole import back.
+// Import replaces every table with data.Tables. There is no version guard: a
+// row shaped for an unknown schema fails its INSERT and rolls the lot back.
 func Import(db *sql.DB, data Data) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -75,8 +71,6 @@ func Import(db *sql.DB, data Data) error {
 	return tx.Commit()
 }
 
-// insertRow sorts columns only so a failed statement is deterministic to
-// read; placeholders make the order irrelevant to correctness.
 func insertRow(tx *sql.Tx, table string, row map[string]any) error {
 	cols := make([]string, 0, len(row))
 	for c := range row {
@@ -97,7 +91,7 @@ func insertRow(tx *sql.Tx, table string, row map[string]any) error {
 }
 
 // table is always a tableOrder constant, never caller-supplied, so the
-// interpolation below cannot carry injected SQL.
+// interpolation cannot carry injected SQL.
 func dumpTable(db *sql.DB, table string) ([]map[string]any, error) {
 	rows, err := db.Query("SELECT * FROM " + table)
 	if err != nil {

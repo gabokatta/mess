@@ -71,8 +71,8 @@ func TestLoadYear(t *testing.T) {
 	}
 }
 
-// Every figure resolves from the periods on screen; nothing accumulates
-// from an opening anchor, so a year with nothing confirmed reads as zero.
+// Every figure resolves from the periods on screen; nothing accumulates from
+// an opening anchor.
 func TestLoadYearWithNothingConfirmed(t *testing.T) {
 	db := fixture.DB(t)
 	fixture.MustLoad(t, db, fixture.World{

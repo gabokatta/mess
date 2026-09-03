@@ -13,8 +13,7 @@ type Settings struct {
 	LastExport *time.Time // nil means never exported
 }
 
-// LoadSettings falls back to Blue and no export on a database that has
-// never been configured.
+// LoadSettings falls back to Blue and no export when unconfigured.
 func LoadSettings(db *sql.DB) (Settings, error) {
 	var house string
 	var lastExport sql.NullString
