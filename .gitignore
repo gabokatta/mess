@@ -1,9 +1,9 @@
 # Personal data — never publish
 .nest/
+.data/
 *.db
 *.db-shm
 *.db-wal
-mess-*.json
 
 # Build output
 /bin/
