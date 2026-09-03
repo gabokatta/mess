@@ -4,32 +4,22 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
-	"time"
 
-	"github.com/shopspring/decimal"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/fixture"
 	"github.com/gabokatta/mess/internal/store"
 )
 
-func openTestStore(t *testing.T) *store.Store {
-	t.Helper()
-	s, err := store.Open(filepath.Join(t.TempDir(), "mess.db"))
-	if err != nil {
-		t.Fatalf("store.Open() unexpected error: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
-	return s
-}
-
 func TestExportDumpsEveryRowAsReadableJSON(t *testing.T) {
-	s := openTestStore(t)
-	if _, err := catalog.CreateCategory(s.DB(), "Home", 1); err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
+	db := fixture.DB(t)
+	fixture.MustLoad(t, db, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
+	})
 
-	data, err := Export(s.DB())
+	data, err := Export(db)
 	if err != nil {
 		t.Fatalf("Export() unexpected error: %v", err)
 	}
@@ -52,137 +42,129 @@ func TestExportDumpsEveryRowAsReadableJSON(t *testing.T) {
 }
 
 func TestImportWipesAndReloadsFromData(t *testing.T) {
-	src := openTestStore(t)
-	if _, err := catalog.CreateCategory(src.DB(), "Home", 1); err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-	data, err := Export(src.DB())
+	src := fixture.DB(t)
+	fixture.MustLoad(t, src, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
+	})
+	data, err := Export(src)
 	if err != nil {
 		t.Fatalf("Export() unexpected error: %v", err)
 	}
 
-	dst := openTestStore(t)
-	if _, err := catalog.CreateCategory(dst.DB(), "Stale row that import must remove", 0); err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
+	dst := fixture.DB(t)
+	fixture.MustLoad(t, dst, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Stale concept that import must remove", Category: "Junk", Kind: catalog.Expense, Base: "1"}},
+	})
 
-	if err := Import(dst.DB(), data); err != nil {
+	if err := Import(dst, data); err != nil {
 		t.Fatalf("Import() unexpected error: %v", err)
 	}
 
-	got, err := catalog.Categories(dst.DB())
+	got, err := catalog.Concepts(dst)
 	if err != nil {
-		t.Fatalf("Categories() unexpected error: %v", err)
+		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
-	if len(got) != 1 || got[0].Name != "Home" {
-		t.Fatalf("Categories() = %+v, want only the imported Home row", got)
+	if len(got) != 1 || got[0].Name != "Rent" {
+		t.Fatalf("Concepts() = %+v, want only the imported Rent row", got)
 	}
 }
 
 func TestExportImportRoundTripsEveryTable(t *testing.T) {
-	src := openTestStore(t)
-	db := src.DB()
-	period := domain.NewPeriod(2026, time.January)
-
-	cat, err := catalog.CreateCategory(db, "Home", 1)
-	if err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-	rent, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Rent", CategoryID: cat.ID, Kind: catalog.Expense,
-		Money:     &catalog.MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(785000)},
-		MonthMask: domain.Monthly, ActiveFrom: period,
+	src := fixture.DB(t)
+	fixture.MustLoad(t, src, fixture.World{
+		Concepts: []fixture.Concept{
+			{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"},
+			{Name: "Wash the house", Category: "Home", Kind: catalog.Chore},
+		},
+		Entries: []fixture.Entry{
+			{Concept: "Rent", Period: fixture.Period, Done: true},
+			{Concept: "Wash the house", Period: fixture.Period, Done: true},
+		},
+		Notes:   []catalog.Note{{Title: "Buy list", BodyMD: "- [x] milk", Period: fixture.Period}},
+		Rates:   []fixture.Rate{{Period: fixture.Period, Value: "1000"}},
+		FxHouse: domain.MEP,
 	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-	if err := catalog.SetMonthEntryDone(db, rent.ID, period, true); err != nil {
-		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
-	}
-	chore, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Wash the house", CategoryID: cat.ID, Kind: catalog.Chore,
-		MonthMask: domain.Monthly, ActiveFrom: period,
-	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-	if err := catalog.SetMonthEntryDone(db, chore.ID, period, true); err != nil {
-		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
-	}
-	if _, err := catalog.CreateNote(db, catalog.Note{Title: "Buy list", BodyMD: "- [x] milk", Period: period}); err != nil {
-		t.Fatalf("CreateNote() unexpected error: %v", err)
-	}
-	if err := catalog.SaveFxClose(db, period, decimal.NewFromInt(1000)); err != nil {
-		t.Fatalf("SaveFxClose() unexpected error: %v", err)
-	}
-	if err := catalog.SetFxHouse(db, domain.MEP); err != nil {
-		t.Fatalf("SetFxHouse() unexpected error: %v", err)
-	}
 
-	data, err := Export(db)
+	data, err := Export(src)
 	if err != nil {
 		t.Fatalf("Export() unexpected error: %v", err)
 	}
 
-	dst := openTestStore(t)
-	if err := Import(dst.DB(), data); err != nil {
+	dst := fixture.DB(t)
+	if err := Import(dst, data); err != nil {
 		t.Fatalf("Import() unexpected error: %v", err)
 	}
 
-	gotCats, err := catalog.Categories(dst.DB())
+	wantCategories, err := catalog.Categories(src)
 	if err != nil {
-		t.Fatalf("Categories() unexpected error: %v", err)
+		t.Fatalf("Categories(src) unexpected error: %v", err)
 	}
-	if len(gotCats) != 1 || gotCats[0].Name != "Home" {
-		t.Errorf("Categories() = %+v, want the imported Home row", gotCats)
+	gotCategories, err := catalog.Categories(dst)
+	if err != nil {
+		t.Fatalf("Categories(dst) unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(wantCategories, gotCategories); diff != "" {
+		t.Errorf("Categories() mismatch (-want +got):\n%s", diff)
 	}
 
-	gotConcepts, err := catalog.Concepts(dst.DB())
+	wantConcepts, err := catalog.Concepts(src)
 	if err != nil {
-		t.Fatalf("Concepts() unexpected error: %v", err)
+		t.Fatalf("Concepts(src) unexpected error: %v", err)
 	}
-	if len(gotConcepts) != 2 {
-		t.Fatalf("Concepts() = %+v, want the money concept and the chore both imported", gotConcepts)
+	gotConcepts, err := catalog.Concepts(dst)
+	if err != nil {
+		t.Fatalf("Concepts(dst) unexpected error: %v", err)
 	}
-	for _, c := range gotConcepts {
-		if c.Name == "Rent" && !c.Money.Base.Equal(decimal.NewFromInt(785000)) {
-			t.Errorf("Rent base = %s, want 785000", c.Money.Base)
-		}
-		if c.Name == "Wash the house" && c.Money != nil {
-			t.Errorf("chore Money = %+v, want nil", c.Money)
-		}
+	if diff := cmp.Diff(wantConcepts, gotConcepts); diff != "" {
+		t.Errorf("Concepts() mismatch (-want +got):\n%s", diff)
 	}
 
-	gotEntries, err := catalog.MonthEntries(dst.DB(), period)
+	wantEntries, err := catalog.MonthEntries(src, fixture.Period)
 	if err != nil {
-		t.Fatalf("MonthEntries() unexpected error: %v", err)
+		t.Fatalf("MonthEntries(src) unexpected error: %v", err)
 	}
-	if len(gotEntries) != 2 {
-		t.Fatalf("MonthEntries() = %+v, want both entries imported", gotEntries)
+	gotEntries, err := catalog.MonthEntries(dst, fixture.Period)
+	if err != nil {
+		t.Fatalf("MonthEntries(dst) unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(wantEntries, gotEntries); diff != "" {
+		t.Errorf("MonthEntries() mismatch (-want +got):\n%s", diff)
 	}
 
-	gotNotes, err := catalog.Notes(dst.DB())
+	wantNotes, err := catalog.Notes(src)
 	if err != nil {
-		t.Fatalf("Notes() unexpected error: %v", err)
+		t.Fatalf("Notes(src) unexpected error: %v", err)
 	}
-	if len(gotNotes) != 1 || gotNotes[0].BodyMD != "- [x] milk" || !gotNotes[0].Period.Equal(period) {
-		t.Errorf("Notes() = %+v, want the imported Buy list", gotNotes)
+	gotNotes, err := catalog.Notes(dst)
+	if err != nil {
+		t.Fatalf("Notes(dst) unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(wantNotes, gotNotes); diff != "" {
+		t.Errorf("Notes() mismatch (-want +got):\n%s", diff)
 	}
 
-	gotRates, err := catalog.FxRates(dst.DB())
+	wantRates, err := catalog.FxRates(src)
 	if err != nil {
-		t.Fatalf("FxRates() unexpected error: %v", err)
+		t.Fatalf("FxRates(src) unexpected error: %v", err)
 	}
-	if len(gotRates) != 1 || !gotRates[0].Value.Equal(decimal.NewFromInt(1000)) || gotRates[0].Source != catalog.Close {
-		t.Errorf("FxRates() = %+v, want the imported 1000 close", gotRates)
+	gotRates, err := catalog.FxRates(dst)
+	if err != nil {
+		t.Fatalf("FxRates(dst) unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(wantRates, gotRates); diff != "" {
+		t.Errorf("FxRates() mismatch (-want +got):\n%s", diff)
 	}
 
-	gotHouse, err := catalog.FxHouse(dst.DB())
+	wantHouse, err := catalog.FxHouse(src)
 	if err != nil {
-		t.Fatalf("FxHouse() unexpected error: %v", err)
+		t.Fatalf("FxHouse(src) unexpected error: %v", err)
 	}
-	if gotHouse != domain.MEP {
-		t.Errorf("FxHouse() = %v, want the imported MEP setting", gotHouse)
+	gotHouse, err := catalog.FxHouse(dst)
+	if err != nil {
+		t.Fatalf("FxHouse(dst) unexpected error: %v", err)
+	}
+	if gotHouse != wantHouse {
+		t.Errorf("FxHouse() = %v, want %v", gotHouse, wantHouse)
 	}
 }
 

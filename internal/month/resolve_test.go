@@ -173,7 +173,10 @@ func TestDoneCountCoversEveryKind(t *testing.T) {
 		})
 
 	done, total := DoneCount(lines)
-	if done != 2 || total != 3 {
-		t.Errorf("DoneCount() = %d of %d, want 2 of 3", done, total)
+	if done != 2 {
+		t.Errorf("DoneCount() done = %d, want 2", done)
+	}
+	if total != 3 {
+		t.Errorf("DoneCount() total = %d, want 3", total)
 	}
 }

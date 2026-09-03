@@ -66,8 +66,11 @@ func TestResolveTotalsIgnoresChores(t *testing.T) {
 		{Concept: catalog.Concept{Kind: catalog.Chore}, Done: true},
 	}, rateOf(1200))
 
-	if !totals.Available.Amount().IsZero() || !totals.Saved.Amount().IsZero() {
-		t.Errorf("totals = %+v, want everything zero", totals)
+	if !totals.Available.Amount().IsZero() {
+		t.Errorf("Available = %s, want zero", totals.Available.Amount())
+	}
+	if !totals.Saved.Amount().IsZero() {
+		t.Errorf("Saved = %s, want zero", totals.Saved.Amount())
 	}
 }
 
@@ -132,7 +135,10 @@ func TestResolveTotalsSkipsAPeriodWithNothingConfirmed(t *testing.T) {
 	totals := ResolveTotals(Resolve(domain.NewPeriod(2026, time.September),
 		[]catalog.Concept{concept(1, catalog.Expense, 785000)}, nil), rateOf(1200))
 
-	if !totals.Available.Amount().IsZero() || totals.Excluded != 0 {
-		t.Errorf("totals = %+v, want a month you have not touched to read zero", totals)
+	if !totals.Available.Amount().IsZero() {
+		t.Errorf("Available = %s, want a month you have not touched to read zero", totals.Available.Amount())
+	}
+	if totals.Excluded != 0 {
+		t.Errorf("Excluded = %d, want 0", totals.Excluded)
 	}
 }

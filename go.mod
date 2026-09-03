@@ -9,6 +9,7 @@ require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/NimbleMarkets/ntcharts/v2 v2.2.0
+	github.com/google/go-cmp v0.7.0
 	github.com/shopspring/decimal v1.4.0
 	modernc.org/sqlite v1.57.0
 )

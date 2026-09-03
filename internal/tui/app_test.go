@@ -1,23 +1,24 @@
 package tui
 
 import (
-	"database/sql"
 	"fmt"
-	"path/filepath"
+	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/cursor"
 	tea "charm.land/bubbletea/v2"
 	"github.com/shopspring/decimal"
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/fixture"
 	"github.com/gabokatta/mess/internal/month"
-	"github.com/gabokatta/mess/internal/store"
 )
 
-var september = domain.NewPeriod(2026, time.September)
+var september = fixture.Period
 
 func key(s string) tea.KeyPressMsg {
 	switch s {
@@ -56,9 +57,13 @@ func send(t *testing.T, m Model, msgs ...tea.Msg) (Model, tea.Cmd) {
 	return m, cmd
 }
 
+const pumpDeadline = 5 * time.Second
+
 // pump runs cmd and feeds everything it produces back through Update, the
 // way the runtime does. Huh advances its own fields through commands rather
 // than synchronously, so a form only reaches its completed state this way.
+// A cursor-blink command is dropped once it answers rather than requeued,
+// so a form pays for exactly one blink cycle instead of running forever.
 // Writes are collected instead of applied, so a test can assert on them
 // without the reload cascade that follows one in the real app.
 func pump(t *testing.T, m Model, cmd tea.Cmd) (Model, []savedMsg) {
@@ -75,12 +80,9 @@ func pump(t *testing.T, m Model, cmd tea.Cmd) (Model, []savedMsg) {
 		if next == nil {
 			continue
 		}
-		msg, answered := runQuickly(next)
-		if !answered {
-			continue
-		}
-		switch msg := msg.(type) {
+		switch msg := runWithDeadline(t, next).(type) {
 		case nil:
+		case cursor.BlinkMsg:
 		case tea.BatchMsg:
 			queue = append(queue, msg...)
 		case savedMsg:
@@ -94,16 +96,20 @@ func pump(t *testing.T, m Model, cmd tea.Cmd) (Model, []savedMsg) {
 	return m, writes
 }
 
-// runQuickly reports a command's message, or false when it does not answer
-// promptly — a cursor-blink timer, which a test drops rather than waits on.
-func runQuickly(cmd tea.Cmd) (tea.Msg, bool) {
+// runWithDeadline runs cmd and fails the test, naming it, if it has not
+// answered within pumpDeadline. A command that never answers is a bug in
+// what's under test, not something to silently skip.
+func runWithDeadline(t *testing.T, cmd tea.Cmd) tea.Msg {
+	t.Helper()
 	answered := make(chan tea.Msg, 1)
 	go func() { answered <- cmd() }()
 	select {
 	case msg := <-answered:
-		return msg, true
-	case <-time.After(50 * time.Millisecond):
-		return nil, false
+		return msg
+	case <-time.After(pumpDeadline):
+		name := runtime.FuncForPC(reflect.ValueOf(cmd).Pointer()).Name()
+		t.Fatalf("%s did not answer within %s", name, pumpDeadline)
+		return nil
 	}
 }
 
@@ -120,41 +126,8 @@ func runWrite(t *testing.T, cmd tea.Cmd) error {
 	return msg.err
 }
 
-func testDB(t *testing.T) *sql.DB {
-	t.Helper()
-	s, err := store.Open(filepath.Join(t.TempDir(), "mess.db"))
-	if err != nil {
-		t.Fatalf("store.Open() unexpected error: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
-	return s.DB()
-}
-
-func testLine(id int64, name string, kind catalog.ConceptKind, amount int64, confirmed bool) month.Line {
-	c := catalog.Concept{ID: id, Name: name, Kind: kind, CategoryID: 1}
-	l := month.Line{Concept: c}
-	if kind != catalog.Chore {
-		c.Money = &catalog.MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(amount)}
-		l.Concept = c
-		l.Money = &month.LineMoney{
-			Amount:    domain.NewMoney(decimal.NewFromInt(amount), domain.ARS),
-			Confirmed: confirmed,
-		}
-	}
-	return l
-}
-
-func testModel(t *testing.T, lines ...month.Line) Model {
-	t.Helper()
-	m := New(testDB(t))
-	m.today = september
-	m.period = september
-	m, _ = send(t, m, tea.WindowSizeMsg{Width: 90, Height: 30}, monthMsg{lines: lines})
-	return m
-}
-
 func TestTabCyclesViews(t *testing.T) {
-	m := testModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
 
 	for _, want := range []view{viewYear, viewNotes, viewConcepts, viewRates, viewMonth} {
 		m, _ = send(t, m, key("tab"))
@@ -172,12 +145,17 @@ func TestTabCyclesViews(t *testing.T) {
 // The cursor runs over the grouped order the list renders in, not the order
 // the catalog came back in, so index and row always mean the same line.
 func TestMonthCursorFollowsTheGroupedOrder(t *testing.T) {
-	m := testModel(t,
-		testLine(1, "Wash the house", catalog.Chore, 0, false),
-		testLine(2, "Rent", catalog.Expense, 785000, false),
-		testLine(3, "Salary", catalog.Income, 2400000, true),
-		testLine(4, "Dollars", catalog.Saving, 480000, false),
-	)
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{
+			{Name: "Wash the house", Category: "Home", Kind: catalog.Chore},
+			{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"},
+			{Name: "Salary", Category: "Earnings", Kind: catalog.Income, Base: "2400000"},
+			{Name: "Dollars", Category: "Home", Kind: catalog.Saving, Base: "480000"},
+		},
+		Entries: []fixture.Entry{
+			{Concept: "Salary", Period: fixture.Period, Amount: "2400000"},
+		},
+	}, 90, 30)
 
 	want := []string{"Salary", "Rent", "Dollars", "Wash the house"}
 	for i, name := range want {
@@ -199,11 +177,16 @@ func TestMonthCursorFollowsTheGroupedOrder(t *testing.T) {
 // The scroller skips group headers and blank rows: every anchor is a line
 // the cursor can actually land on.
 func TestMonthAnchorsPointAtSelectableRowsOnly(t *testing.T) {
-	m := testModel(t,
-		testLine(1, "Salary", catalog.Income, 2400000, true),
-		testLine(2, "Rent", catalog.Expense, 785000, false),
-		testLine(3, "ABL", catalog.Expense, 34200, false),
-	)
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{
+			{Name: "Salary", Category: "Earnings", Kind: catalog.Income, Base: "2400000"},
+			{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"},
+			{Name: "ABL", Category: "Home", Kind: catalog.Expense, Base: "34200"},
+		},
+		Entries: []fixture.Entry{
+			{Concept: "Salary", Period: fixture.Period, Amount: "2400000"},
+		},
+	}, 90, 30)
 
 	rows, anchors := m.monthRows()
 	if len(anchors) != 3 {
@@ -220,32 +203,16 @@ func TestMonthAnchorsPointAtSelectableRowsOnly(t *testing.T) {
 }
 
 func TestSpaceTicksTheLineUnderTheCursor(t *testing.T) {
-	db := testDB(t)
-	cat, err := catalog.FindOrCreateCategory(db, "Home")
-	if err != nil {
-		t.Fatalf("FindOrCreateCategory() unexpected error: %v", err)
-	}
-	rent, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Rent", CategoryID: cat.ID, Kind: catalog.Expense,
-		Money: &catalog.MoneyDetails{Currency: domain.ARS}, MonthMask: domain.Monthly,
-		ActiveFrom: domain.NewPeriod(2026, time.January),
-	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-
-	m := New(db)
-	m.today = september
-	m.period = september
-	m, _ = send(t, m, tea.WindowSizeMsg{Width: 90, Height: 30},
-		monthMsg{lines: []month.Line{testLine(rent.ID, "Rent", catalog.Expense, 785000, false)}})
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
+	}, 90, 30)
 
 	_, cmd := send(t, m, key("space"))
 	if err := runWrite(t, cmd); err != nil {
 		t.Fatalf("ticking reported an error: %v", err)
 	}
 
-	loaded, err := month.Load(db, september)
+	loaded, err := month.Load(m.db, september)
 	if err != nil {
 		t.Fatalf("Load() unexpected error: %v", err)
 	}
@@ -255,7 +222,9 @@ func TestSpaceTicksTheLineUnderTheCursor(t *testing.T) {
 }
 
 func TestEditOpensTheInlineAmountEditAndEscCloses(t *testing.T) {
-	m := testModel(t, testLine(1, "Rent", catalog.Expense, 785000, false))
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
+	}, 90, 30)
 
 	m, _ = send(t, m, key("e"))
 	edit, ok := m.modal.(*amountEdit)
@@ -274,7 +243,9 @@ func TestEditOpensTheInlineAmountEditAndEscCloses(t *testing.T) {
 
 // A chore has no amount behind it, so e is a no-op there.
 func TestEditIsANoOpOnAChore(t *testing.T) {
-	m := testModel(t, testLine(1, "Wash the house", catalog.Chore, 0, false))
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Wash the house", Category: "Home", Kind: catalog.Chore}},
+	}, 90, 30)
 
 	m, _ = send(t, m, key("e"))
 	if m.modal != nil {
@@ -283,22 +254,9 @@ func TestEditIsANoOpOnAChore(t *testing.T) {
 }
 
 func TestAmountEditCommitsTheTypedValue(t *testing.T) {
-	db := testDB(t)
-	cat, _ := catalog.FindOrCreateCategory(db, "Home")
-	rent, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Rent", CategoryID: cat.ID, Kind: catalog.Expense,
-		Money:     &catalog.MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(785000)},
-		MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(2026, time.January),
-	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-
-	m := New(db)
-	m.today = september
-	m.period = september
-	m, _ = send(t, m, tea.WindowSizeMsg{Width: 90, Height: 30},
-		monthMsg{lines: []month.Line{testLine(rent.ID, "Rent", catalog.Expense, 785000, false)}})
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
+	}, 90, 30)
 
 	m, _ = send(t, m, key("e"))
 	m.modal.(*amountEdit).input.SetValue("812000")
@@ -311,7 +269,7 @@ func TestAmountEditCommitsTheTypedValue(t *testing.T) {
 		t.Fatalf("commit reported an error: %v", err)
 	}
 
-	loaded, err := month.Load(db, september)
+	loaded, err := month.Load(m.db, september)
 	if err != nil {
 		t.Fatalf("Load() unexpected error: %v", err)
 	}
@@ -322,16 +280,21 @@ func TestAmountEditCommitsTheTypedValue(t *testing.T) {
 }
 
 func TestShiftPeriodResetsTheCursor(t *testing.T) {
-	m := testModel(t,
-		testLine(1, "Salary", catalog.Income, 2400000, true),
-		testLine(2, "Rent", catalog.Expense, 785000, false),
-	)
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{
+			{Name: "Salary", Category: "Earnings", Kind: catalog.Income, Base: "2400000"},
+			{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"},
+		},
+		Entries: []fixture.Entry{
+			{Concept: "Salary", Period: fixture.Period, Amount: "2400000"},
+		},
+	}, 90, 30)
 
 	m, _ = send(t, m, key("down"))
 	m, _ = send(t, m, key("right"))
 
-	if !m.period.Equal(domain.NewPeriod(2026, time.October)) {
-		t.Errorf("period = %s, want 2026-10", m.period)
+	if !m.period.Equal(domain.NewPeriod(fixture.Year, time.October)) {
+		t.Errorf("period = %s, want %d-10", m.period, fixture.Year)
 	}
 	if m.monthList.cursor != 0 {
 		t.Errorf("cursor = %d, want 0 — the row it pointed at belongs to the month being left", m.monthList.cursor)
@@ -340,11 +303,11 @@ func TestShiftPeriodResetsTheCursor(t *testing.T) {
 
 // The Year view moves a year at a time, since a year is the unit on screen.
 func TestShiftPeriodMovesAYearInTheYearView(t *testing.T) {
-	m := testModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
 	m, _ = send(t, m, key("tab"), key("right"))
 
-	if m.period.Year() != 2027 || m.period.Month() != time.September {
-		t.Errorf("period = %s, want 2027-09", m.period)
+	if m.period.Year() != fixture.Year+1 || m.period.Month() != time.September {
+		t.Errorf("period = %s, want %d-09", m.period, fixture.Year+1)
 	}
 }
 
@@ -376,14 +339,14 @@ func TestFormatAmount(t *testing.T) {
 // Eighteen concepts do not fit an 80x24 terminal: the list scrolls, and the
 // cursor pushes the viewport at the edges rather than walking off it.
 func TestMonthListScrollsWithTheCursor(t *testing.T) {
-	lines := make([]month.Line, 0, 30)
+	concepts := make([]fixture.Concept, 0, 30)
 	for i := 1; i <= 30; i++ {
-		lines = append(lines, testLine(int64(i), fmt.Sprintf("Bill %02d", i), catalog.Expense, int64(i)*1000, false))
+		concepts = append(concepts, fixture.Concept{
+			Name: fmt.Sprintf("Bill %02d", i), Category: "Home", Kind: catalog.Expense,
+			Base: fmt.Sprint(i * 1000),
+		})
 	}
-
-	m := New(testDB(t))
-	m.today, m.period = september, september
-	m, _ = send(t, m, tea.WindowSizeMsg{Width: 80, Height: 24}, monthMsg{lines: lines})
+	m := modelFor(t, fixture.World{Concepts: concepts}, 80, 24)
 
 	if m.monthList.vp.YOffset() != 0 {
 		t.Fatalf("offset at the top = %d, want 0", m.monthList.vp.YOffset())
@@ -413,9 +376,10 @@ func TestMonthListScrollsWithTheCursor(t *testing.T) {
 // An open form owns the keyboard, so left/right stay its own navigation
 // rather than moving the period out from under it.
 func TestOpenModalKeepsTheArrows(t *testing.T) {
-	db := testDB(t)
-	mustSeed(t, db, "Home", "Rent", catalog.Expense)
-	m := conceptsModel(t, db)
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
+	}, 90, 30)
+	m.view = viewConcepts
 
 	m, cmd := send(t, m, key("d"))
 	m, _ = pump(t, m, cmd)
@@ -433,7 +397,7 @@ func TestOpenModalKeepsTheArrows(t *testing.T) {
 // The arrows move the period on every screen that shows one, and are inert
 // on the screens that do not.
 func TestArrowsMoveThePeriodOnlyWhereOneIsShown(t *testing.T) {
-	m := testModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
 
 	for range viewNames {
 		view, moves := m.view, m.showsPeriod()
@@ -462,7 +426,7 @@ func TestArrowsMoveThePeriodOnlyWhereOneIsShown(t *testing.T) {
 // The catalog is period-free: a concept is a template, and month_mask plus
 // the active range say when it fires.
 func TestConceptsHasNoPeriod(t *testing.T) {
-	m := testModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
 	m, _ = send(t, m, key("tab"), key("tab"), key("tab"))
 	if m.view != viewConcepts {
 		t.Fatalf("view = %s, want Concepts", m.view)
@@ -477,7 +441,7 @@ func TestConceptsHasNoPeriod(t *testing.T) {
 
 // t goes back to the month still running, from wherever you wandered to.
 func TestTodayReturnsToTheRunningMonth(t *testing.T) {
-	m := testModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
 
 	m, _ = send(t, m, key("right"), key("right"), key("right"))
 	if m.period.Equal(m.today) {
@@ -493,7 +457,7 @@ func TestTodayReturnsToTheRunningMonth(t *testing.T) {
 // The hint costs help-line width, so it only appears when pressing t would
 // do something.
 func TestTodayHintAppearsOnlyWhenOffTheRunningMonth(t *testing.T) {
-	m := testModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
 
 	if strings.Contains(m.help(), "t today") {
 		t.Errorf("help offers t on the running month: %s", m.help())
@@ -512,7 +476,7 @@ func TestTodayHintAppearsOnlyWhenOffTheRunningMonth(t *testing.T) {
 
 // Concepts is period-free, so t has nothing to return to there.
 func TestTodayIsInertWhereNoPeriodIsShown(t *testing.T) {
-	m := testModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
 	m, _ = send(t, m, key("right"))
 	wandered := m.period
 
@@ -533,7 +497,7 @@ func TestTodayIsInertWhereNoPeriodIsShown(t *testing.T) {
 // Every screen says what tab and q do, in the same key-then-verb shape as
 // the rest of the line.
 func TestEveryHelpLineNamesTabAndQuit(t *testing.T) {
-	m := testModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
 	for range viewNames {
 		if got := m.help(); !strings.HasSuffix(got, "tab switch · q quit") {
 			t.Errorf("%s help = %q, want it to end with the two global keys", m.view, got)

@@ -3,6 +3,8 @@ package domain
 import (
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestMonthlyOccursEveryMonth(t *testing.T) {
@@ -38,8 +40,8 @@ func TestMonthsDecodesNewCadence(t *testing.T) {
 
 	got := c.Months()
 	want := []time.Month{time.June, time.December}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Errorf("Months() = %v, want %v (January first, regardless of construction order)", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Months() mismatch (-want +got), January first regardless of construction order:\n%s", diff)
 	}
 }
 

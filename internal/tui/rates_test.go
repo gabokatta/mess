@@ -5,37 +5,17 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/shopspring/decimal"
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/fixture"
 	"github.com/gabokatta/mess/internal/month"
-	"github.com/gabokatta/mess/internal/rates"
 )
 
-func ratesModel(t *testing.T) Model {
-	t.Helper()
-	m := New(testDB(t))
-	m.today = september
-	m.period = september
-	m.view = viewRates
-	return applySize(t, m, quotesMsg{quotes: []rates.Quote{
-		{House: domain.Blue, Buy: decimal.NewFromInt(1520), Sell: decimal.NewFromInt(1540)},
-		{House: domain.Official, Buy: decimal.NewFromInt(1485), Sell: decimal.NewFromInt(1535)},
-		{House: domain.MEP, Buy: decimal.NewFromInt(1532), Sell: decimal.NewFromInt(1535)},
-	}})
-}
-
-func applySize(t *testing.T, m Model, msgs ...tea.Msg) Model {
-	t.Helper()
-	m, _ = send(t, m, tea.WindowSizeMsg{Width: 90, Height: 30})
-	m, _ = send(t, m, msgs...)
-	return m
-}
-
 func TestRatesEnterAdoptsTheHouseUnderTheCursor(t *testing.T) {
-	m := ratesModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
+	m.view = viewRates
 
 	m, _ = send(t, m, key("down"), key("down"))
 	_, cmd := send(t, m, key("enter"))
@@ -55,7 +35,8 @@ func TestRatesEnterAdoptsTheHouseUnderTheCursor(t *testing.T) {
 // The house the app converts with is the one the live quote is read from,
 // so adopting a house changes every total that runs through a rate.
 func TestFxTableFollowsTheAdoptedHouse(t *testing.T) {
-	m := ratesModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
+	m.view = viewRates
 
 	m, _ = send(t, m, ratesMsg{settings: catalog.Settings{FxHouse: domain.Blue}})
 	if rate := m.fx().At(september); !rate.Value.Equal(decimal.NewFromInt(1540)) {
@@ -71,7 +52,8 @@ func TestFxTableFollowsTheAdoptedHouse(t *testing.T) {
 // e opens the by-hand editor prefilled with the rate currently in effect,
 // so correcting a published rate starts from what the app believed.
 func TestManualRateFormOpensOnTheShownPeriod(t *testing.T) {
-	m := ratesModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
+	m.view = viewRates
 	m, _ = send(t, m, ratesMsg{settings: catalog.Settings{FxHouse: domain.Blue}})
 
 	m, _ = send(t, m, key("e"))
@@ -86,7 +68,8 @@ func TestManualRateFormOpensOnTheShownPeriod(t *testing.T) {
 // A rate set by hand wins over the live quote for the same month, and
 // because conversion is read-time it cascades through that month's totals.
 func TestManualRateOverridesTheLiveQuote(t *testing.T) {
-	m := ratesModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
+	m.view = viewRates
 	if err := catalog.SetManualFxRate(m.db, september, decimal.NewFromInt(1600)); err != nil {
 		t.Fatalf("SetManualFxRate() unexpected error: %v", err)
 	}
@@ -106,12 +89,13 @@ func TestManualRateOverridesTheLiveQuote(t *testing.T) {
 // The chart only draws a month mess actually knows a rate for; an inherited
 // rate is not a close and gets no bar.
 func TestYearClosesLeavesUnknownMonthsAtZero(t *testing.T) {
-	m := ratesModel(t)
+	m := modelFor(t, fixture.World{}, 90, 30)
+	m.view = viewRates
 	m, _ = send(t, m, ratesMsg{
 		settings: catalog.Settings{FxHouse: domain.Blue},
 		stored: []catalog.FxRate{
-			{Period: domain.NewPeriod(2026, time.January), Value: decimal.NewFromInt(1100), Source: catalog.Close},
-			{Period: domain.NewPeriod(2026, time.March), Value: decimal.NewFromInt(1200), Source: catalog.Close},
+			{Period: domain.NewPeriod(fixture.Year, time.January), Value: decimal.NewFromInt(1100), Source: catalog.Close},
+			{Period: domain.NewPeriod(fixture.Year, time.March), Value: decimal.NewFromInt(1200), Source: catalog.Close},
 		},
 	})
 

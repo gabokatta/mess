@@ -3,6 +3,7 @@ package domain
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shopspring/decimal"
 )
 
@@ -10,13 +11,19 @@ func TestMoneyToARS(t *testing.T) {
 	rate := decimal.NewFromInt(1500)
 
 	pesos, ok := NewMoney(decimal.NewFromInt(1000), ARS).ToARS(rate, true)
-	if !ok || !pesos.Equal(NewMoney(decimal.NewFromInt(1000), ARS)) {
-		t.Errorf("ARS ToARS() = %s, %v; want 1000 ARS, true", pesos.Amount(), ok)
+	if !ok {
+		t.Fatal("ARS ToARS() reported false, want true")
+	}
+	if diff := cmp.Diff(NewMoney(decimal.NewFromInt(1000), ARS), pesos); diff != "" {
+		t.Errorf("ARS ToARS() mismatch (-want +got):\n%s", diff)
 	}
 
 	converted, ok := NewMoney(decimal.NewFromInt(400), USD).ToARS(rate, true)
-	if !ok || !converted.Equal(NewMoney(decimal.NewFromInt(600000), ARS)) {
-		t.Errorf("USD ToARS() = %s, %v; want 600000 ARS, true", converted.Amount(), ok)
+	if !ok {
+		t.Fatal("USD ToARS() reported false, want true")
+	}
+	if diff := cmp.Diff(NewMoney(decimal.NewFromInt(600000), ARS), converted); diff != "" {
+		t.Errorf("USD ToARS() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -26,8 +33,13 @@ func TestMoneyToARSWithoutRateIsDropped(t *testing.T) {
 	if _, ok := NewMoney(decimal.NewFromInt(400), USD).ToARS(decimal.Decimal{}, false); ok {
 		t.Error("USD ToARS() without a rate should report false")
 	}
-	if pesos, ok := NewMoney(decimal.NewFromInt(400), ARS).ToARS(decimal.Decimal{}, false); !ok || !pesos.Amount().Equal(decimal.NewFromInt(400)) {
-		t.Error("ARS ToARS() should not need a rate")
+
+	pesos, ok := NewMoney(decimal.NewFromInt(400), ARS).ToARS(decimal.Decimal{}, false)
+	if !ok {
+		t.Fatal("ARS ToARS() should not need a rate")
+	}
+	if !pesos.Amount().Equal(decimal.NewFromInt(400)) {
+		t.Errorf("ARS ToARS() = %s, want 400 unchanged", pesos.Amount())
 	}
 }
 

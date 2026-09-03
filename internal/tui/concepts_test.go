@@ -1,67 +1,26 @@
 package tui
 
 import (
-	"database/sql"
 	"strings"
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-	"github.com/shopspring/decimal"
-
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/fixture"
 )
-
-func conceptsModel(t *testing.T, db *sql.DB) Model {
-	t.Helper()
-	concepts, err := catalog.Concepts(db)
-	if err != nil {
-		t.Fatalf("Concepts() unexpected error: %v", err)
-	}
-	categories, err := catalog.Categories(db)
-	if err != nil {
-		t.Fatalf("Categories() unexpected error: %v", err)
-	}
-
-	m := New(db)
-	m.today = september
-	m.period = september
-	m.view = viewConcepts
-	m, _ = send(t, m, tea.WindowSizeMsg{Width: 100, Height: 30},
-		catalogMsg{concepts: concepts, categories: categories})
-	return m
-}
-
-func mustSeed(t *testing.T, db *sql.DB, category, name string, kind catalog.ConceptKind) catalog.Concept {
-	t.Helper()
-	cat, err := catalog.FindOrCreateCategory(db, category)
-	if err != nil {
-		t.Fatalf("FindOrCreateCategory() unexpected error: %v", err)
-	}
-	c := catalog.Concept{
-		Name: name, CategoryID: cat.ID, Kind: kind,
-		MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(2026, time.January),
-	}
-	if kind != catalog.Chore {
-		c.Money = &catalog.MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(1000)}
-	}
-	created, err := catalog.CreateConcept(db, c)
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-	return created
-}
 
 // Rows group by category and the cursor runs over the concepts, skipping
 // the headers between them.
 func TestConceptRowsGroupByCategory(t *testing.T) {
-	db := testDB(t)
-	mustSeed(t, db, "Home", "Rent", catalog.Expense)
-	mustSeed(t, db, "Utilities", "Gas", catalog.Expense)
-	mustSeed(t, db, "Home", "Wash the house", catalog.Chore)
-
-	m := conceptsModel(t, db)
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{
+			{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "1000"},
+			{Name: "Gas", Category: "Utilities", Kind: catalog.Expense, Base: "1000"},
+			{Name: "Wash the house", Category: "Home", Kind: catalog.Chore},
+		},
+	}, 100, 30)
+	m.view = viewConcepts
 
 	rows, anchors := m.conceptRows()
 	if len(anchors) != 3 {
@@ -78,9 +37,10 @@ func TestConceptRowsGroupByCategory(t *testing.T) {
 }
 
 func TestConceptEditFormOpensOnTheCursorConcept(t *testing.T) {
-	db := testDB(t)
-	mustSeed(t, db, "Home", "Rent", catalog.Expense)
-	m := conceptsModel(t, db)
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "1000"}},
+	}, 100, 30)
+	m.view = viewConcepts
 
 	m, _ = send(t, m, key("e"))
 	if _, ok := m.modal.(*form); !ok {
@@ -93,9 +53,10 @@ func TestConceptEditFormOpensOnTheCursorConcept(t *testing.T) {
 
 // Deleting is gated behind a confirm, and Keep leaves the catalog alone.
 func TestConceptDeleteIsGatedAndKeepIsANoOp(t *testing.T) {
-	db := testDB(t)
-	mustSeed(t, db, "Home", "Rent", catalog.Expense)
-	m := conceptsModel(t, db)
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "1000"}},
+	}, 100, 30)
+	m.view = viewConcepts
 
 	m, cmd := send(t, m, key("d"))
 	if _, ok := m.modal.(*form); !ok {
@@ -112,7 +73,7 @@ func TestConceptDeleteIsGatedAndKeepIsANoOp(t *testing.T) {
 		t.Fatalf("writes = %+v, want none — the confirm defaults to Keep", writes)
 	}
 
-	concepts, err := catalog.Concepts(db)
+	concepts, err := catalog.Concepts(m.db)
 	if err != nil {
 		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
@@ -123,9 +84,10 @@ func TestConceptDeleteIsGatedAndKeepIsANoOp(t *testing.T) {
 
 // A chore has no money fields to fill in; the form hides them outright.
 func TestConceptFormHidesMoneyForAChore(t *testing.T) {
-	db := testDB(t)
-	mustSeed(t, db, "Home", "Wash the house", catalog.Chore)
-	m := conceptsModel(t, db)
+	m := modelFor(t, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Wash the house", Category: "Home", Kind: catalog.Chore}},
+	}, 100, 30)
+	m.view = viewConcepts
 
 	m, cmd := send(t, m, key("e"))
 	m, _ = pump(t, m, cmd)
@@ -157,7 +119,7 @@ func TestMonthPresetResolvesToACadence(t *testing.T) {
 // A one-off is one bit plus a one-month active range, which month_mask and
 // the range already express — there is no OneOff case to branch on.
 func TestOneOffPresetClosesItsActiveRange(t *testing.T) {
-	db := testDB(t)
+	db := fixture.DB(t)
 	cat, err := catalog.FindOrCreateCategory(db, "Home")
 	if err != nil {
 		t.Fatalf("FindOrCreateCategory() unexpected error: %v", err)
@@ -205,7 +167,8 @@ func TestPresetOfExistingCadence(t *testing.T) {
 // A new concept goes active this month, not in whatever period another view
 // was left on.
 func TestNewConceptGoesActiveThisMonth(t *testing.T) {
-	m := conceptsModel(t, testDB(t))
+	m := modelFor(t, fixture.World{}, 100, 30)
+	m.view = viewConcepts
 	m.period = september.AddMonths(4)
 
 	if got := m.newConcept().ActiveFrom; !got.Equal(m.today) {

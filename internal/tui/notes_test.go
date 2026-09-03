@@ -1,46 +1,25 @@
 package tui
 
 import (
-	"database/sql"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/fixture"
 )
-
-func notesModel(t *testing.T, db *sql.DB) Model {
-	t.Helper()
-	notes, err := catalog.Notes(db)
-	if err != nil {
-		t.Fatalf("Notes() unexpected error: %v", err)
-	}
-	m := New(db)
-	m.today = september
-	m.period = september
-	m.view = viewNotes
-	m, _ = send(t, m, tea.WindowSizeMsg{Width: 90, Height: 30}, notesMsg{notes: notes})
-	return m
-}
-
-func mustNote(t *testing.T, db *sql.DB, n catalog.Note) catalog.Note {
-	t.Helper()
-	created, err := catalog.CreateNote(db, n)
-	if err != nil {
-		t.Fatalf("CreateNote() unexpected error: %v", err)
-	}
-	return created
-}
 
 // Pinned notes lead, then the shown period's, under one cursor.
 func TestNotesListPinnedFirst(t *testing.T) {
-	db := testDB(t)
-	mustNote(t, db, catalog.Note{Title: "Groceries", Period: september})
-	mustNote(t, db, catalog.Note{Title: "Ideas"})
-	mustNote(t, db, catalog.Note{Title: "Next month", Period: september.AddMonths(1)})
-
-	m := notesModel(t, db)
+	m := modelFor(t, fixture.World{
+		Notes: []catalog.Note{
+			{Title: "Groceries", Period: september},
+			{Title: "Ideas"},
+			{Title: "Next month", Period: september.AddMonths(1)},
+		},
+	}, 90, 30)
+	m.view = viewNotes
 
 	shown := m.shownNotes()
 	if len(shown) != 2 {
@@ -57,53 +36,52 @@ func TestNotesListPinnedFirst(t *testing.T) {
 }
 
 func TestNotesDoneToggle(t *testing.T) {
-	db := testDB(t)
-	created := mustNote(t, db, catalog.Note{Title: "Ideas"})
-	m := notesModel(t, db)
+	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas"}}}, 90, 30)
+	m.view = viewNotes
 
 	_, cmd := send(t, m, key("c"))
 	if err := runWrite(t, cmd); err != nil {
 		t.Fatalf("toggling done reported an error: %v", err)
 	}
 
-	notes, err := catalog.Notes(db)
+	notes, err := catalog.Notes(m.db)
 	if err != nil {
 		t.Fatalf("Notes() unexpected error: %v", err)
 	}
-	if notes[0].ID != created.ID || !notes[0].Done {
+	if !notes[0].Done {
 		t.Errorf("note = %+v, want it done", notes[0])
 	}
 }
 
 func TestNotesPinAndUnpin(t *testing.T) {
-	db := testDB(t)
-	mustNote(t, db, catalog.Note{Title: "Ideas"})
+	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas"}}}, 90, 30)
+	m.view = viewNotes
 
-	m := notesModel(t, db)
 	_, cmd := send(t, m, key("p"))
 	if err := runWrite(t, cmd); err != nil {
 		t.Fatalf("pinning reported an error: %v", err)
 	}
-	notes, _ := catalog.Notes(db)
+	notes, _ := catalog.Notes(m.db)
 	if !notes[0].Period.Equal(september) {
 		t.Fatalf("period after p on a pinned note = %v, want september", notes[0].Period)
 	}
 
-	m = notesModel(t, db)
+	m, _ = send(t, m, notesMsg{notes: notes})
 	_, cmd = send(t, m, key("p"))
 	if err := runWrite(t, cmd); err != nil {
 		t.Fatalf("unpinning reported an error: %v", err)
 	}
-	notes, _ = catalog.Notes(db)
+	notes, _ = catalog.Notes(m.db)
 	if !notes[0].Period.IsZero() {
 		t.Errorf("period after p on a stamped note = %v, want zero (pinned)", notes[0].Period)
 	}
 }
 
 func TestNoteDetailOpensAndCloses(t *testing.T) {
-	db := testDB(t)
-	mustNote(t, db, catalog.Note{Title: "Ideas", BodyMD: "- [ ] buy a lamp"})
-	m := notesModel(t, db)
+	m := modelFor(t, fixture.World{
+		Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] buy a lamp"}},
+	}, 90, 30)
+	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"))
 	if m.openNote == nil || m.openNote.Title != "Ideas" {
@@ -119,9 +97,10 @@ func TestNoteDetailOpensAndCloses(t *testing.T) {
 // space rewrites the line under the cursor in the source, so storage stays
 // one text field.
 func TestNoteDetailSpaceTogglesTheCheckboxUnderTheCursor(t *testing.T) {
-	db := testDB(t)
-	mustNote(t, db, catalog.Note{Title: "Ideas", BodyMD: "- [ ] milk\n- [ ] bread"})
-	m := notesModel(t, db)
+	m := modelFor(t, fixture.World{
+		Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk\n- [ ] bread"}},
+	}, 90, 30)
+	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"), key("down"))
 	_, cmd := send(t, m, key("space"))
@@ -129,16 +108,15 @@ func TestNoteDetailSpaceTogglesTheCheckboxUnderTheCursor(t *testing.T) {
 		t.Fatalf("toggling reported an error: %v", err)
 	}
 
-	notes, _ := catalog.Notes(db)
+	notes, _ := catalog.Notes(m.db)
 	if notes[0].BodyMD != "- [ ] milk\n- [x] bread" {
 		t.Errorf("body = %q, want only the second box ticked", notes[0].BodyMD)
 	}
 }
 
 func TestNoteEditorGuardsAModifiedBody(t *testing.T) {
-	db := testDB(t)
-	mustNote(t, db, catalog.Note{Title: "Ideas", BodyMD: "- [ ] milk"})
-	m := notesModel(t, db)
+	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk"}}}, 90, 30)
+	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"), key("e"))
 	editor, ok := m.modal.(*noteEditor)
@@ -174,9 +152,8 @@ func TestNoteEditorGuardsAModifiedBody(t *testing.T) {
 }
 
 func TestNoteEditorSavesOnCtrlS(t *testing.T) {
-	db := testDB(t)
-	mustNote(t, db, catalog.Note{Title: "Ideas", BodyMD: "- [ ] milk"})
-	m := notesModel(t, db)
+	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk"}}}, 90, 30)
+	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"), key("e"))
 	m.modal.(*noteEditor).area.SetValue("- [x] milk\n- [ ] bread")
@@ -189,15 +166,15 @@ func TestNoteEditorSavesOnCtrlS(t *testing.T) {
 		t.Fatalf("saving reported an error: %v", err)
 	}
 
-	notes, _ := catalog.Notes(db)
+	notes, _ := catalog.Notes(m.db)
 	if notes[0].BodyMD != "- [x] milk\n- [ ] bread" {
 		t.Errorf("body = %q, want the edited markdown", notes[0].BodyMD)
 	}
 }
 
 func TestNewNoteFormCreatesInTheShownPeriod(t *testing.T) {
-	db := testDB(t)
-	m := notesModel(t, db)
+	m := modelFor(t, fixture.World{}, 90, 30)
+	m.view = viewNotes
 
 	m, cmd := send(t, m, key("n"))
 	if _, ok := m.modal.(*form); !ok {
@@ -219,7 +196,7 @@ func TestNewNoteFormCreatesInTheShownPeriod(t *testing.T) {
 		t.Fatalf("form completion writes = %+v, want one clean write", writes)
 	}
 
-	notes, _ := catalog.Notes(db)
+	notes, _ := catalog.Notes(m.db)
 	if len(notes) != 1 || notes[0].Title != "Ideas" || !notes[0].Period.Equal(september) {
 		t.Errorf("Notes() = %+v, want one Ideas note stamped to september", notes)
 	}
@@ -228,9 +205,8 @@ func TestNewNoteFormCreatesInTheShownPeriod(t *testing.T) {
 // Reading a note, the arrows walk its checkboxes; they must not move the
 // month out from under it.
 func TestArrowsAreInertWhileReadingANote(t *testing.T) {
-	db := testDB(t)
-	mustNote(t, db, catalog.Note{Title: "Ideas", BodyMD: "- [ ] milk"})
-	m := notesModel(t, db)
+	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk"}}}, 90, 30)
+	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"))
 	before := m.period
@@ -245,9 +221,8 @@ func TestArrowsAreInertWhileReadingANote(t *testing.T) {
 }
 
 func TestSwitchingViewsClosesTheOpenNote(t *testing.T) {
-	db := testDB(t)
-	mustNote(t, db, catalog.Note{Title: "Ideas"})
-	m := notesModel(t, db)
+	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas"}}}, 90, 30)
+	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"))
 	if m.openNote == nil {
@@ -262,12 +237,13 @@ func TestSwitchingViewsClosesTheOpenNote(t *testing.T) {
 // A "[ ] " sitting inside prose is not a checkbox: counting it would shift
 // every toggle after it onto the wrong line.
 func TestNoteDetailIgnoresCheckboxGlyphsInProse(t *testing.T) {
-	db := testDB(t)
-	mustNote(t, db, catalog.Note{
-		Title:  "Ideas",
-		BodyMD: "Write a [ ] to make a checkbox.\n\n- [ ] milk\n- [ ] bread\n",
-	})
-	m := notesModel(t, db)
+	m := modelFor(t, fixture.World{
+		Notes: []catalog.Note{{
+			Title:  "Ideas",
+			BodyMD: "Write a [ ] to make a checkbox.\n\n- [ ] milk\n- [ ] bread\n",
+		}},
+	}, 90, 30)
+	m.view = viewNotes
 	m, _ = send(t, m, key("enter"), key("down"))
 
 	_, anchors := m.noteDetailRows()
@@ -279,7 +255,7 @@ func TestNoteDetailIgnoresCheckboxGlyphsInProse(t *testing.T) {
 	if err := runWrite(t, cmd); err != nil {
 		t.Fatalf("toggling reported an error: %v", err)
 	}
-	notes, _ := catalog.Notes(db)
+	notes, _ := catalog.Notes(m.db)
 	if notes[0].BodyMD != "Write a [ ] to make a checkbox.\n\n- [ ] milk\n- [x] bread\n" {
 		t.Errorf("body = %q, want only bread ticked", notes[0].BodyMD)
 	}
@@ -288,9 +264,8 @@ func TestNoteDetailIgnoresCheckboxGlyphsInProse(t *testing.T) {
 // A form or textarea on screen has to follow the terminal, not keep the size
 // it was built with.
 func TestOpenModalFollowsAResize(t *testing.T) {
-	db := testDB(t)
-	mustNote(t, db, catalog.Note{Title: "Ideas", BodyMD: "- [ ] milk"})
-	m := notesModel(t, db)
+	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk"}}}, 90, 30)
+	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"), key("e"))
 	before := m.modal.(*noteEditor).area.Width()

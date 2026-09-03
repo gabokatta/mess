@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shopspring/decimal"
 
 	"github.com/gabokatta/mess/internal/domain"
@@ -49,10 +50,8 @@ func TestOnReturnsTheHousesMessModels(t *testing.T) {
 		{House: domain.Official, Buy: decimal.NewFromInt(1485), Sell: decimal.NewFromInt(1535)},
 		{House: domain.MEP, Buy: decimal.NewFromInt(1532), Sell: decimal.NewFromInt(1535)},
 	}
-	for i, w := range want {
-		if quotes[i].House != w.House || !quotes[i].Buy.Equal(w.Buy) || !quotes[i].Sell.Equal(w.Sell) {
-			t.Errorf("On()[%d] = %+v, want %+v", i, quotes[i], w)
-		}
+	if diff := cmp.Diff(want, quotes); diff != "" {
+		t.Errorf("On() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -67,8 +66,11 @@ func TestSellPicksVenta(t *testing.T) {
 	}
 
 	sell, ok := Sell(quotes, domain.Blue)
-	if !ok || !sell.Equal(decimal.NewFromInt(1540)) {
-		t.Errorf("Sell(blue) = %s, %v; want 1540, true", sell, ok)
+	if !ok {
+		t.Fatal("Sell(blue) reported false, want true")
+	}
+	if !sell.Equal(decimal.NewFromInt(1540)) {
+		t.Errorf("Sell(blue) = %s, want 1540", sell)
 	}
 }
 
