@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/fixture"
 	"github.com/gabokatta/mess/internal/store"
 )
 
@@ -19,9 +20,9 @@ func TestExportImportRoundTripsThroughTheCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.Open() unexpected error: %v", err)
 	}
-	if _, err := catalog.CreateCategory(src.DB(), "Utilities", 0); err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
+	fixture.MustLoad(t, src.DB(), fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Utilities", Kind: catalog.Expense, Base: "1"}},
+	})
 	if err := src.Close(); err != nil {
 		t.Fatalf("Close() unexpected error: %v", err)
 	}
@@ -65,21 +66,19 @@ func TestImportRequiresExactlyOneFileArgument(t *testing.T) {
 
 // Cancelling the gate leaves the database exactly as it was.
 func TestImportCancelledLeavesTheDatabaseAlone(t *testing.T) {
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "mess.db")
-
-	s, err := store.Open(dbPath)
+	dbPath := filepath.Join(t.TempDir(), "mess.db")
+	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("store.Open() unexpected error: %v", err)
 	}
-	if _, err := catalog.CreateCategory(s.DB(), "Home", 0); err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-	if err := s.Close(); err != nil {
+	fixture.MustLoad(t, db.DB(), fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
+	})
+	if err := db.Close(); err != nil {
 		t.Fatalf("Close() unexpected error: %v", err)
 	}
 
-	empty := filepath.Join(dir, "empty.json")
+	empty := filepath.Join(filepath.Dir(dbPath), "empty.json")
 	if err := os.WriteFile(empty, []byte(`{"tables":{}}`), 0o644); err != nil {
 		t.Fatalf("WriteFile() unexpected error: %v", err)
 	}
@@ -94,12 +93,12 @@ func TestImportCancelledLeavesTheDatabaseAlone(t *testing.T) {
 	}
 	defer reopened.Close()
 
-	got, err := catalog.Categories(reopened.DB())
+	got, err := catalog.Concepts(reopened.DB())
 	if err != nil {
-		t.Fatalf("Categories() unexpected error: %v", err)
+		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
-	if len(got) != 1 || got[0].Name != "Home" {
-		t.Errorf("Categories() = %+v, want the row a cancelled import never touched", got)
+	if len(got) != 1 || got[0].Name != "Rent" {
+		t.Errorf("Concepts() = %+v, want the row a cancelled import never touched", got)
 	}
 }
 

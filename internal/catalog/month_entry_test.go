@@ -1,165 +1,149 @@
-package catalog
+package catalog_test
 
 import (
-	"database/sql"
 	"testing"
-	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shopspring/decimal"
 
-	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/fixture"
 )
 
-func TestMonthEntriesFiltersByPeriodAndParsesNullableAmount(t *testing.T) {
-	db := openTestStore(t).DB()
-	c := mustConcept(t, db)
+func TestMonthEntriesFiltersByPeriod(t *testing.T) {
+	db := fixture.DB(t)
+	loaded := fixture.MustLoad(t, db, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
+	})
+	concept := loaded.Concepts["Rent"]
+	sept, oct := fixture.Period, fixture.Period.AddMonths(1)
 
-	sept := domain.NewPeriod(2026, time.September)
-	oct := domain.NewPeriod(2026, time.October)
-
-	mustExec(t, db, `INSERT INTO month_entry (concept_id, period, amount, done) VALUES (?, ?, ?, ?)`,
-		c.ID, sept.String(), "800000", 1)
-	mustExec(t, db, `INSERT INTO month_entry (concept_id, period, amount, done) VALUES (?, ?, ?, ?)`,
-		c.ID, oct.String(), nil, 0)
-
-	got, err := MonthEntries(db, sept)
-	if err != nil {
-		t.Fatalf("MonthEntries() unexpected error: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("MonthEntries(sept) returned %d rows, want 1", len(got))
-	}
-	if got[0].Amount == nil || !got[0].Amount.Equal(decimal.NewFromInt(800000)) {
-		t.Errorf("MonthEntries(sept)[0].Amount = %v, want 800000", got[0].Amount)
-	}
-	if !got[0].Done {
-		t.Error("MonthEntries(sept)[0].Done = false, want true")
-	}
-
-	got, err = MonthEntries(db, oct)
-	if err != nil {
-		t.Fatalf("MonthEntries() unexpected error: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("MonthEntries(oct) returned %d rows, want 1", len(got))
-	}
-	if got[0].Amount != nil {
-		t.Errorf("MonthEntries(oct)[0].Amount = %v, want nil (no override)", got[0].Amount)
-	}
-	if got[0].Done {
-		t.Error("MonthEntries(oct)[0].Done = true, want false")
-	}
-}
-
-func TestSetMonthEntryAmountInsertsWithDoneFalse(t *testing.T) {
-	db := openTestStore(t).DB()
-	c := mustConcept(t, db)
-	sept := domain.NewPeriod(2026, time.September)
 	amount := decimal.NewFromInt(800000)
-
-	if err := SetMonthEntryAmount(db, c.ID, sept, &amount); err != nil {
+	if err := catalog.SetMonthEntryAmount(db, concept.ID, sept, &amount); err != nil {
 		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
 	}
-
-	got, err := MonthEntries(db, sept)
-	if err != nil {
-		t.Fatalf("MonthEntries() unexpected error: %v", err)
-	}
-	if len(got) != 1 || got[0].Amount == nil || !got[0].Amount.Equal(amount) {
-		t.Fatalf("MonthEntries() = %+v, want a single 800000 row", got)
-	}
-	if got[0].Done {
-		t.Error("MonthEntries()[0].Done = true, want false (a fresh row must not touch done)")
-	}
-}
-
-func TestSetMonthEntryAmountPreservesExistingDone(t *testing.T) {
-	db := openTestStore(t).DB()
-	c := mustConcept(t, db)
-	sept := domain.NewPeriod(2026, time.September)
-
-	if err := SetMonthEntryDone(db, c.ID, sept, true); err != nil {
+	if err := catalog.SetMonthEntryDone(db, concept.ID, sept, true); err != nil {
 		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
 	}
-	amount := decimal.NewFromInt(800000)
-	if err := SetMonthEntryAmount(db, c.ID, sept, &amount); err != nil {
-		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
-	}
-
-	got, err := MonthEntries(db, sept)
-	if err != nil {
-		t.Fatalf("MonthEntries() unexpected error: %v", err)
-	}
-	if len(got) != 1 || !got[0].Done {
-		t.Fatalf("MonthEntries() = %+v, want done still true after setting the amount", got)
-	}
-}
-
-func TestSetMonthEntryAmountNilClearsOverride(t *testing.T) {
-	db := openTestStore(t).DB()
-	c := mustConcept(t, db)
-	sept := domain.NewPeriod(2026, time.September)
-	amount := decimal.NewFromInt(800000)
-
-	if err := SetMonthEntryAmount(db, c.ID, sept, &amount); err != nil {
-		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
-	}
-	if err := SetMonthEntryAmount(db, c.ID, sept, nil); err != nil {
-		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
-	}
-
-	got, err := MonthEntries(db, sept)
-	if err != nil {
-		t.Fatalf("MonthEntries() unexpected error: %v", err)
-	}
-	if len(got) != 1 || got[0].Amount != nil {
-		t.Fatalf("MonthEntries() = %+v, want the override cleared back to nil", got)
-	}
-}
-
-func TestSetMonthEntryDoneInsertsWithNilAmount(t *testing.T) {
-	db := openTestStore(t).DB()
-	c := mustConcept(t, db)
-	sept := domain.NewPeriod(2026, time.September)
-
-	if err := SetMonthEntryDone(db, c.ID, sept, true); err != nil {
+	if err := catalog.SetMonthEntryDone(db, concept.ID, oct, false); err != nil {
 		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
 	}
 
-	got, err := MonthEntries(db, sept)
+	got, err := catalog.MonthEntries(db, sept)
 	if err != nil {
-		t.Fatalf("MonthEntries() unexpected error: %v", err)
+		t.Fatalf("MonthEntries(sept) unexpected error: %v", err)
 	}
-	if len(got) != 1 || !got[0].Done || got[0].Amount != nil {
-		t.Fatalf("MonthEntries() = %+v, want done true with no amount", got)
+	if diff := cmp.Diff([]catalog.MonthEntry{{ConceptID: concept.ID, Period: sept, Amount: &amount, Done: true}}, got); diff != "" {
+		t.Errorf("MonthEntries(sept) mismatch (-want +got):\n%s", diff)
+	}
+
+	got, err = catalog.MonthEntries(db, oct)
+	if err != nil {
+		t.Fatalf("MonthEntries(oct) unexpected error: %v", err)
+	}
+	if diff := cmp.Diff([]catalog.MonthEntry{{ConceptID: concept.ID, Period: oct, Done: false}}, got); diff != "" {
+		t.Errorf("MonthEntries(oct) mismatch (-want +got):\n%s", diff)
 	}
 }
 
-func TestSetMonthEntryDonePreservesExistingAmount(t *testing.T) {
-	db := openTestStore(t).DB()
-	c := mustConcept(t, db)
-	sept := domain.NewPeriod(2026, time.September)
-	amount := decimal.NewFromInt(800000)
+// step is one write against the row, and the row cmp expects right after
+// it: amount and done are independent columns, so a write to one never
+// disturbs whatever the other already holds.
+type step struct {
+	setAmount string // "" skips the write; "clear" passes nil
+	setDone   *bool
 
-	if err := SetMonthEntryAmount(db, c.ID, sept, &amount); err != nil {
-		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
-	}
-	if err := SetMonthEntryDone(db, c.ID, sept, true); err != nil {
-		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
-	}
-
-	got, err := MonthEntries(db, sept)
-	if err != nil {
-		t.Fatalf("MonthEntries() unexpected error: %v", err)
-	}
-	if len(got) != 1 || got[0].Amount == nil || !got[0].Amount.Equal(amount) || !got[0].Done {
-		t.Fatalf("MonthEntries() = %+v, want amount preserved and done true", got)
-	}
+	wantAmount string // "" means no override stored
+	wantDone   bool
 }
 
-func mustExec(t *testing.T, db *sql.DB, query string, args ...any) {
-	t.Helper()
-	if _, err := db.Exec(query, args...); err != nil {
-		t.Fatalf("exec %q: %v", query, err)
+func done(b bool) *bool { return &b }
+
+func TestMonthEntryAmountAndDoneAreIndependentColumns(t *testing.T) {
+	tests := []struct {
+		name  string
+		steps []step
+	}{
+		{
+			name: "setting the amount inserts with done false",
+			steps: []step{
+				{setAmount: "800000", wantAmount: "800000"},
+			},
+		},
+		{
+			name: "setting the amount preserves an existing done",
+			steps: []step{
+				{setDone: done(true), wantDone: true},
+				{setAmount: "800000", wantAmount: "800000", wantDone: true},
+			},
+		},
+		{
+			name: "setting done preserves an existing amount",
+			steps: []step{
+				{setAmount: "800000", wantAmount: "800000"},
+				{setDone: done(true), wantAmount: "800000", wantDone: true},
+			},
+		},
+		{
+			name: "clearing the amount leaves done untouched",
+			steps: []step{
+				{setAmount: "800000", wantAmount: "800000"},
+				{setDone: done(true), wantAmount: "800000", wantDone: true},
+				{setAmount: "clear", wantDone: true},
+			},
+		},
+		{
+			name: "setting done alone stores no amount",
+			steps: []step{
+				{setDone: done(true), wantDone: true},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := fixture.DB(t)
+			loaded := fixture.MustLoad(t, db, fixture.World{
+				Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
+			})
+			concept := loaded.Concepts["Rent"]
+
+			for i, s := range tt.steps {
+				switch s.setAmount {
+				case "":
+				case "clear":
+					if err := catalog.SetMonthEntryAmount(db, concept.ID, fixture.Period, nil); err != nil {
+						t.Fatalf("step %d: SetMonthEntryAmount(nil) unexpected error: %v", i, err)
+					}
+				default:
+					amount := decimal.RequireFromString(s.setAmount)
+					if err := catalog.SetMonthEntryAmount(db, concept.ID, fixture.Period, &amount); err != nil {
+						t.Fatalf("step %d: SetMonthEntryAmount() unexpected error: %v", i, err)
+					}
+				}
+				if s.setDone != nil {
+					if err := catalog.SetMonthEntryDone(db, concept.ID, fixture.Period, *s.setDone); err != nil {
+						t.Fatalf("step %d: SetMonthEntryDone() unexpected error: %v", i, err)
+					}
+				}
+
+				got, err := catalog.MonthEntries(db, fixture.Period)
+				if err != nil {
+					t.Fatalf("step %d: MonthEntries() unexpected error: %v", i, err)
+				}
+				if len(got) != 1 {
+					t.Fatalf("step %d: MonthEntries() = %+v, want a single row", i, got)
+				}
+
+				want := catalog.MonthEntry{ConceptID: concept.ID, Period: fixture.Period, Done: s.wantDone}
+				if s.wantAmount != "" {
+					amount := decimal.RequireFromString(s.wantAmount)
+					want.Amount = &amount
+				}
+				if diff := cmp.Diff(want, got[0]); diff != "" {
+					t.Errorf("step %d: row mismatch (-want +got):\n%s", i, diff)
+				}
+			}
+		})
 	}
 }

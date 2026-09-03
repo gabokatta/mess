@@ -1,38 +1,34 @@
-package catalog
+package catalog_test
 
 import (
-	"database/sql"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shopspring/decimal"
 
+	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/fixture"
 )
 
-func mustCategory(t *testing.T, db *sql.DB, name string) Category {
-	t.Helper()
-	cat, err := CreateCategory(db, name, 0)
+func TestCreateAndListConcepts(t *testing.T) {
+	db := fixture.DB(t)
+	cat, err := catalog.CreateCategory(db, "Home", 0)
 	if err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
-	return cat
-}
 
-func TestCreateAndListConcepts(t *testing.T) {
-	db := openTestStore(t).DB()
-	cat := mustCategory(t, db, "Home")
-
-	c := Concept{
+	c := catalog.Concept{
 		Name:       "Rent",
 		CategoryID: cat.ID,
-		Kind:       Expense,
-		Money:      &MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(785000)},
+		Kind:       catalog.Expense,
+		Money:      &catalog.MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(785000)},
 		MonthMask:  domain.Monthly,
-		ActiveFrom: domain.NewPeriod(2026, time.January),
+		ActiveFrom: domain.NewPeriod(fixture.Year, time.January),
 	}
 
-	created, err := CreateConcept(db, c)
+	created, err := catalog.CreateConcept(db, c)
 	if err != nil {
 		t.Fatalf("CreateConcept() unexpected error: %v", err)
 	}
@@ -40,175 +36,126 @@ func TestCreateAndListConcepts(t *testing.T) {
 		t.Error("CreateConcept() should assign a non-zero ID")
 	}
 
-	got, err := Concepts(db)
+	got, err := catalog.Concepts(db)
 	if err != nil {
 		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("Concepts() returned %d rows, want 1", len(got))
-	}
-
-	g := got[0]
-	if g.ID != created.ID || g.Name != c.Name || g.CategoryID != cat.ID || g.Kind != Expense ||
-		g.MonthMask != c.MonthMask || !g.ActiveFrom.Equal(c.ActiveFrom) {
-		t.Errorf("Concepts()[0] = %+v, want %+v", g, created)
-	}
-	if g.Money.Currency != domain.ARS || !g.Money.Base.Equal(decimal.NewFromInt(785000)) {
-		t.Errorf("Concepts()[0].Money = %+v, want ARS 785000", g.Money)
-	}
-	if !g.ActiveUntil.IsZero() {
-		t.Error("ActiveUntil should round-trip as zero (unbounded) when never set")
+	if diff := cmp.Diff([]catalog.Concept{created}, got); diff != "" {
+		t.Errorf("Concepts() mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestConceptsOrderByCategoryThenName(t *testing.T) {
-	db := openTestStore(t).DB()
-	home, err := CreateCategory(db, "Home", 0)
+	db := fixture.DB(t)
+	home, err := catalog.CreateCategory(db, "Home", 0)
 	if err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
-	utilities, err := CreateCategory(db, "Utilities", 1)
+	utilities, err := catalog.CreateCategory(db, "Utilities", 1)
 	if err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 
-	for _, c := range []Concept{
-		{Name: "Water", CategoryID: utilities.ID, Kind: Expense, Money: &MoneyDetails{}, MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(2026, time.January)},
-		{Name: "Rent", CategoryID: home.ID, Kind: Expense, Money: &MoneyDetails{}, MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(2026, time.January)},
-		{Name: "Gas", CategoryID: utilities.ID, Kind: Expense, Money: &MoneyDetails{}, MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(2026, time.January)},
+	for _, c := range []catalog.Concept{
+		{Name: "Water", CategoryID: utilities.ID, Kind: catalog.Expense, Money: &catalog.MoneyDetails{}, MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(fixture.Year, time.January)},
+		{Name: "Rent", CategoryID: home.ID, Kind: catalog.Expense, Money: &catalog.MoneyDetails{}, MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(fixture.Year, time.January)},
+		{Name: "Gas", CategoryID: utilities.ID, Kind: catalog.Expense, Money: &catalog.MoneyDetails{}, MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(fixture.Year, time.January)},
 	} {
-		if _, err := CreateConcept(db, c); err != nil {
+		if _, err := catalog.CreateConcept(db, c); err != nil {
 			t.Fatalf("CreateConcept(%s) unexpected error: %v", c.Name, err)
 		}
 	}
 
-	got, err := Concepts(db)
+	got, err := catalog.Concepts(db)
 	if err != nil {
 		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
-	want := []string{"Rent", "Gas", "Water"}
-	for i, name := range want {
-		if got[i].Name != name {
-			t.Fatalf("Concepts() order = %s, want %s", names(got), want)
-		}
+	names := make([]string, len(got))
+	for i, c := range got {
+		names[i] = c.Name
 	}
-}
-
-func names(concepts []Concept) []string {
-	out := make([]string, len(concepts))
-	for i, c := range concepts {
-		out[i] = c.Name
+	if diff := cmp.Diff([]string{"Rent", "Gas", "Water"}, names); diff != "" {
+		t.Errorf("Concepts() order mismatch (-want +got):\n%s", diff)
 	}
-	return out
 }
 
 func TestCreateConceptRequiresExistingCategory(t *testing.T) {
-	db := openTestStore(t).DB()
+	db := fixture.DB(t)
 
-	c := Concept{
+	c := catalog.Concept{
 		Name:       "Rent",
 		CategoryID: 999,
-		Kind:       Expense,
-		Money:      &MoneyDetails{Currency: domain.ARS},
+		Kind:       catalog.Expense,
+		Money:      &catalog.MoneyDetails{Currency: domain.ARS},
 		MonthMask:  domain.Monthly,
-		ActiveFrom: domain.NewPeriod(2026, time.January),
+		ActiveFrom: domain.NewPeriod(fixture.Year, time.January),
 	}
-	if _, err := CreateConcept(db, c); err == nil {
+	if _, err := catalog.CreateConcept(db, c); err == nil {
 		t.Error("CreateConcept() with a dangling category ID should fail the foreign key check")
 	}
 }
 
 func TestUpdateConceptRetiresViaActiveUntil(t *testing.T) {
-	db := openTestStore(t).DB()
-	cat := mustCategory(t, db, "Home")
-
-	created, err := CreateConcept(db, Concept{
-		Name:       "Netflix",
-		CategoryID: cat.ID,
-		Kind:       Expense,
-		Money:      &MoneyDetails{Currency: domain.ARS},
-		MonthMask:  domain.Monthly,
-		ActiveFrom: domain.NewPeriod(2026, time.January),
+	db := fixture.DB(t)
+	loaded := fixture.MustLoad(t, db, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Netflix", Category: "Home", Kind: catalog.Expense}},
 	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
+	concept := loaded.Concepts["Netflix"]
 
-	created.ActiveUntil = domain.NewPeriod(2026, time.June)
-	if err := UpdateConcept(db, created); err != nil {
+	concept.ActiveUntil = domain.NewPeriod(fixture.Year, time.June)
+	if err := catalog.UpdateConcept(db, concept); err != nil {
 		t.Fatalf("UpdateConcept() unexpected error: %v", err)
 	}
 
-	got, err := Concepts(db)
+	got, err := catalog.Concepts(db)
 	if err != nil {
 		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
-	if len(got) != 1 || !got[0].ActiveUntil.Equal(domain.NewPeriod(2026, time.June)) {
-		t.Errorf("Concepts()[0].ActiveUntil = %v, want 2026-06", got[0].ActiveUntil)
+	if diff := cmp.Diff([]catalog.Concept{concept}, got); diff != "" {
+		t.Errorf("Concepts() mismatch (-want +got):\n%s", diff)
 	}
 }
 
 // A chore's currency and base amount are NULL at the SQL boundary, and past
 // Concepts() a chore carrying money is a state that does not exist.
 func TestChoreRoundTripsWithoutMoney(t *testing.T) {
-	db := openTestStore(t).DB()
-	cat := mustCategory(t, db, "Home")
-
-	created, err := CreateConcept(db, Concept{
-		Name:       "Wash the house",
-		CategoryID: cat.ID,
-		Kind:       Chore,
-		MonthMask:  domain.Monthly,
-		ActiveFrom: domain.NewPeriod(2026, time.January),
+	db := fixture.DB(t)
+	loaded := fixture.MustLoad(t, db, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Wash the house", Category: "Home", Kind: catalog.Chore}},
 	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-	if created.Money != nil {
-		t.Errorf("created.Money = %+v, want nil for a Chore", created.Money)
+	if got := loaded.Concepts["Wash the house"].Money; got != nil {
+		t.Errorf("created.Money = %+v, want nil for a Chore", got)
 	}
 
-	got, err := Concepts(db)
+	got, err := catalog.Concepts(db)
 	if err != nil {
 		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
-	if len(got) != 1 || got[0].Money != nil {
-		t.Errorf("Concepts()[0] = %+v, want a money-less Chore round-tripped", got)
+	if diff := cmp.Diff([]catalog.Concept{loaded.Concepts["Wash the house"]}, got); diff != "" {
+		t.Errorf("Concepts() mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestDeleteConceptTakesItsEntriesWithIt(t *testing.T) {
-	db := openTestStore(t).DB()
-	cat := mustCategory(t, db, "Home")
-	period := domain.NewPeriod(2026, time.September)
-
-	created, err := CreateConcept(db, Concept{
-		Name:       "Rent",
-		CategoryID: cat.ID,
-		Kind:       Expense,
-		Money:      &MoneyDetails{Currency: domain.ARS},
-		MonthMask:  domain.Monthly,
-		ActiveFrom: domain.NewPeriod(2026, time.January),
+	db := fixture.DB(t)
+	loaded := fixture.MustLoad(t, db, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense}},
+		Entries:  []fixture.Entry{{Concept: "Rent", Period: fixture.Period, Done: true}},
 	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-	if err := SetMonthEntryDone(db, created.ID, period, true); err != nil {
-		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
-	}
+	concept := loaded.Concepts["Rent"]
 
-	if err := DeleteConcept(db, created.ID); err != nil {
+	if err := catalog.DeleteConcept(db, concept.ID); err != nil {
 		t.Fatalf("DeleteConcept() unexpected error: %v", err)
 	}
 
-	concepts, err := Concepts(db)
+	concepts, err := catalog.Concepts(db)
 	if err != nil {
 		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
 	if len(concepts) != 0 {
 		t.Errorf("Concepts() = %+v, want empty", concepts)
 	}
-	entries, err := MonthEntries(db, period)
+	entries, err := catalog.MonthEntries(db, fixture.Period)
 	if err != nil {
 		t.Fatalf("MonthEntries() unexpected error: %v", err)
 	}
@@ -220,19 +167,19 @@ func TestDeleteConceptTakesItsEntriesWithIt(t *testing.T) {
 func TestParseConceptKind(t *testing.T) {
 	tests := []struct {
 		input   string
-		want    ConceptKind
+		want    catalog.ConceptKind
 		wantErr bool
 	}{
-		{"Income", Income, false},
-		{"Expense", Expense, false},
-		{"Saving", Saving, false},
-		{"Chore", Chore, false},
+		{"Income", catalog.Income, false},
+		{"Expense", catalog.Expense, false},
+		{"Saving", catalog.Saving, false},
+		{"Chore", catalog.Chore, false},
 		{"Savings", 0, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got, err := ParseConceptKind(tt.input)
+			got, err := catalog.ParseConceptKind(tt.input)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("ParseConceptKind(%q) = nil error, want error", tt.input)
@@ -247,21 +194,4 @@ func TestParseConceptKind(t *testing.T) {
 			}
 		})
 	}
-}
-
-func mustConcept(t *testing.T, db *sql.DB) Concept {
-	t.Helper()
-	cat := mustCategory(t, db, "Home")
-	c, err := CreateConcept(db, Concept{
-		Name:       "Rent",
-		CategoryID: cat.ID,
-		Kind:       Expense,
-		Money:      &MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(785000)},
-		MonthMask:  domain.Monthly,
-		ActiveFrom: domain.NewPeriod(2026, time.January),
-	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-	return c
 }

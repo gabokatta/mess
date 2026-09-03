@@ -1,51 +1,38 @@
 package month
 
 import (
-	"database/sql"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shopspring/decimal"
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/fixture"
 )
 
-func confirm(t *testing.T, db *sql.DB, conceptID int64, p domain.Period, amount int64) {
-	t.Helper()
-	value := decimal.NewFromInt(amount)
-	if err := catalog.SetMonthEntryAmount(db, conceptID, p, &value); err != nil {
-		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
-	}
-}
-
 func TestLoadYear(t *testing.T) {
-	db := openTestStore(t)
-
-	rent := seedConcept(t, db, "Home", catalog.Concept{
-		Name: "Rent", Kind: catalog.Expense,
-		Money: &catalog.MoneyDetails{Currency: domain.ARS},
+	db := fixture.DB(t)
+	loaded := fixture.MustLoad(t, db, fixture.World{
+		Concepts: []fixture.Concept{
+			{Name: "Rent", Category: "Home", Kind: catalog.Expense},
+			{Name: "Gas", Category: "Utilities", Kind: catalog.Expense},
+			{Name: "Dollars", Category: "Home", Kind: catalog.Saving, Currency: domain.USD},
+		},
+		Entries: []fixture.Entry{
+			{Concept: "Rent", Period: period(time.January), Amount: "700000"},
+			{Concept: "Gas", Period: period(time.January), Amount: "30000"},
+			{Concept: "Rent", Period: period(time.February), Amount: "750000"},
+			{Concept: "Dollars", Period: period(time.February), Amount: "400"},
+		},
 	})
-	gas := seedConcept(t, db, "Utilities", catalog.Concept{
-		Name: "Gas", Kind: catalog.Expense,
-		Money: &catalog.MoneyDetails{Currency: domain.ARS},
-	})
-	dollars := seedConcept(t, db, "Home", catalog.Concept{
-		Name: "Dollars", Kind: catalog.Saving,
-		Money: &catalog.MoneyDetails{Currency: domain.USD},
-	})
-
-	january := domain.NewPeriod(2026, time.January)
-	february := domain.NewPeriod(2026, time.February)
-	confirm(t, db, rent.ID, january, 700000)
-	confirm(t, db, gas.ID, january, 30000)
-	confirm(t, db, rent.ID, february, 750000)
-	confirm(t, db, dollars.ID, february, 400)
+	dollars := loaded.Concepts["Dollars"]
 
 	fx := NewFxTable([]catalog.FxRate{closeAt(time.January, 1000), closeAt(time.February, 1200)},
-		decimal.Decimal{}, false, domain.NewPeriod(2026, time.December))
+		decimal.Decimal{}, false, domain.NewPeriod(fixture.Year, time.December))
 
-	y, err := LoadYear(db, 2026, fx)
+	y, err := LoadYear(db, fixture.Year, fx)
 	if err != nil {
 		t.Fatalf("LoadYear() unexpected error: %v", err)
 	}
@@ -68,8 +55,8 @@ func TestLoadYear(t *testing.T) {
 	if !y.SavedTotal.Equal(decimal.NewFromInt(480000)) {
 		t.Errorf("SavedTotal = %s, want 480000", y.SavedTotal)
 	}
-	if len(y.SavingConcepts) != 1 || y.SavingConcepts[0].ID != dollars.ID {
-		t.Errorf("SavingConcepts = %+v, want just Dollars", y.SavingConcepts)
+	if diff := cmp.Diff([]catalog.Concept{dollars}, y.SavingConcepts); diff != "" {
+		t.Errorf("SavingConcepts mismatch (-want +got):\n%s", diff)
 	}
 
 	byCategory := map[string]decimal.Decimal{}
@@ -87,17 +74,24 @@ func TestLoadYear(t *testing.T) {
 // Every figure resolves from the periods on screen; nothing accumulates
 // from an opening anchor, so a year with nothing confirmed reads as zero.
 func TestLoadYearWithNothingConfirmed(t *testing.T) {
-	db := openTestStore(t)
-	seedConcept(t, db, "Home", catalog.Concept{
-		Name: "Rent", Kind: catalog.Expense,
-		Money: &catalog.MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(785000)},
+	db := fixture.DB(t)
+	fixture.MustLoad(t, db, fixture.World{
+		Concepts: []fixture.Concept{
+			{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"},
+		},
 	})
 
-	y, err := LoadYear(db, 2026, NewFxTable(nil, decimal.Decimal{}, false, domain.NewPeriod(2026, time.September)))
+	y, err := LoadYear(db, fixture.Year, NewFxTable(nil, decimal.Decimal{}, false, fixture.Period))
 	if err != nil {
 		t.Fatalf("LoadYear() unexpected error: %v", err)
 	}
-	if !y.SpentTotal.IsZero() || !y.SavedTotal.IsZero() || len(y.Categories) != 0 {
-		t.Errorf("LoadYear() = %+v, want everything zero", y)
+	if !y.SpentTotal.IsZero() {
+		t.Errorf("SpentTotal = %s, want zero", y.SpentTotal)
+	}
+	if !y.SavedTotal.IsZero() {
+		t.Errorf("SavedTotal = %s, want zero", y.SavedTotal)
+	}
+	if len(y.Categories) != 0 {
+		t.Errorf("Categories = %+v, want none", y.Categories)
 	}
 }

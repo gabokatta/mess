@@ -30,8 +30,11 @@ func TestCheckboxes(t *testing.T) {
 
 func TestProgress(t *testing.T) {
 	done, total := Progress(body)
-	if done != 1 || total != 3 {
-		t.Errorf("Progress() = %d/%d, want 1/3", done, total)
+	if done != 1 {
+		t.Errorf("Progress() done = %d, want 1", done)
+	}
+	if total != 3 {
+		t.Errorf("Progress() total = %d, want 3", total)
 	}
 }
 
