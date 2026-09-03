@@ -2,16 +2,17 @@ package tui
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-
 	"github.com/gabokatta/mess/internal/catalog"
-	"github.com/gabokatta/mess/internal/dolarapi"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/month"
+	"github.com/gabokatta/mess/internal/note"
+	"github.com/gabokatta/mess/internal/rates"
 )
 
 type view int
@@ -19,392 +20,316 @@ type view int
 const (
 	viewMonth view = iota
 	viewYear
+	viewNotes
 	viewConcepts
-	viewLists
-	viewSettings
+	viewRates
 )
 
-var viewNames = [...]string{"Month", "Year", "Concepts", "Lists", "Settings"}
+var viewNames = [...]string{"Month", "Year", "Notes", "Concepts", "Rates"}
 
 func (v view) String() string { return viewNames[v] }
 
 type Model struct {
-	theme             Theme
-	view              view
-	width             int
-	height            int
-	db                *sql.DB
-	fxClient          *dolarapi.Client
-	period            domain.Period
-	lines             []month.Line
-	loadErr           error
-	cursor            int
-	editing           *editState
-	saveErr           error
-	fxErr             error
-	year              month.Year
-	yearErr           error
-	yearSeries        trendSeries
-	yearConceptCursor int
-	yearDrillDown     *catalog.Concept
+	theme  Theme
+	view   view
+	width  int
+	height int
 
-	allocations       []catalog.SavingAllocation
-	rates             []catalog.FxRate
-	allocationsErr    error
-	allocationForm    *allocationFormState
-	allocationSaveErr error
+	db     *sql.DB
+	client *rates.Client
 
-	incomeConfirmForm  *incomeConfirmFormState
-	incomeConfirmShown map[domain.Period]bool
+	// today is read once, at start-up: which month is still running decides
+	// every period's status and whether its rate is live or closed.
+	today  domain.Period
+	period domain.Period
 
-	lastMonthUnfinished int
-	lastMonthChoresErr  error
+	settings catalog.Settings
+	lines    []month.Line
+	year     month.Year
+	notes    []catalog.Note
 
-	lists            []catalog.List
-	listsErr         error
-	listCursor       int
-	showClosed       bool
-	listEditing      *listEditState
-	listSaveErr      error
-	newList          *newListFormState
-	periodAssignForm *periodAssignFormState
+	concepts   []catalog.Concept
+	categories []catalog.Category
 
-	concepts        []catalog.Concept
-	categories      []catalog.Category
-	baseAmounts     map[int64][]catalog.BaseAmount
-	conceptsErr     error
-	conceptCursor   int
-	conceptForm     *conceptFormState
-	conceptEditForm *conceptEditFormState
-	conceptSaveErr  error
+	stored []catalog.FxRate
+	quotes []rates.Quote
+	house  int
 
-	settings        catalog.Settings
-	settingsErr     error
-	settingsForm    *settingsFormState
-	settingsSaveErr error
+	monthList    scroller
+	notesList    scroller
+	conceptsList scroller
+	detail       scroller
+	openNote     *catalog.Note
 
-	dbPath     string
-	exportForm *exportFormState
-	importForm *importFormState
-	backupMsg  string
-	backupErr  error
-
-	fxOverrideForm *fxOverrideFormState
-	fxOverrideErr  error
+	modal   modal
+	lastErr error
 }
 
 func New(db *sql.DB) Model {
+	now := domain.PeriodFromTime(time.Now())
 	return Model{
-		theme:              NewTheme(true),
-		db:                 db,
-		fxClient:           dolarapi.NewClient(),
-		period:             domain.PeriodFromTime(time.Now()),
-		incomeConfirmShown: make(map[domain.Period]bool),
+		theme:  NewTheme(true),
+		db:     db,
+		client: rates.NewClient(),
+		today:  now,
+		period: now,
 	}
 }
 
-// WithDBPath attaches the on-disk database path, which the Settings view's
-// export/import actions need for backup.Snapshot but the rest of the app
-// never touches. Optional: tests that don't exercise backup can skip it.
-func (m Model) WithDBPath(path string) Model {
-	m.dbPath = path
-	return m
-}
-
+// Init reads through the savedMsg that seeding reports, so the first
+// catalog read cannot race the seed.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		tea.RequestBackgroundColor,
-		loadMonth(m.db, m.period),
-		loadAllocations(m.db, m.period),
-		loadLastMonthChores(m.db, m.period),
-		fillCurrentFxRate(m.db, m.fxClient, m.period),
-		loadYear(m.db, m.period.Year()),
-		loadLists(m.db),
-		ensureDefaultCategories(m.db),
-		loadConcepts(m.db),
-		loadSettings(m.db),
+		seedCategories(m.db),
+		fetchQuotes(m.client),
+		backfillCloses(m.db, m.client, m.period.Year(), m.today),
 	)
 }
 
-// loadView reloads whatever view v shows, so a write made in one view is
-// never stale in another.
-func (m Model) loadView(v view) tea.Cmd {
-	switch v {
-	case viewMonth:
-		return tea.Batch(loadMonth(m.db, m.period), loadAllocations(m.db, m.period), loadLastMonthChores(m.db, m.period))
-	case viewYear:
-		return loadYear(m.db, m.period.Year())
-	case viewLists:
-		return loadLists(m.db)
-	case viewConcepts:
-		return loadConcepts(m.db)
-	case viewSettings:
-		return loadSettings(m.db)
-	default:
-		return nil
-	}
+// reload re-reads every view. The database is a few hundred rows, so a
+// write reloads the lot rather than routing each one to what it touches.
+func (m Model) reload() tea.Cmd {
+	return tea.Batch(
+		loadMonth(m.db, m.period),
+		loadYear(m.db, m.period.Year(), m.fx()),
+		loadNotes(m.db),
+		loadCatalog(m.db),
+		loadRates(m.db),
+	)
+}
+
+// fx is the stored closes plus today's quote for the month still running,
+// read from whichever house the Rates view has adopted.
+func (m Model) fx() month.FxTable {
+	live, ok := rates.Sell(m.quotes, m.settings.FxHouse)
+	return month.NewFxTable(m.stored, live, ok, m.today)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	return next.sync(), cmd
+}
+
+func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.BackgroundColorMsg:
 		m.theme = NewTheme(msg.IsDark())
 
-	case monthLoadedMsg:
-		m.lines, m.loadErr = msg.lines, msg.err
-		if !m.incomeConfirmShown[m.period] && msg.err == nil {
-			if form := m.maybeIncomeConfirmForm(); form != nil {
-				m.incomeConfirmShown[m.period] = true
-				m.incomeConfirmForm = form
-				return m, form.form.Init()
-			}
-		}
-
-	case entrySavedMsg:
-		m.saveErr = msg.err
-		return m, loadMonth(m.db, m.period)
-
-	case allocationsLoadedMsg:
-		m.allocations, m.rates, m.allocationsErr = msg.allocations, msg.rates, msg.err
-
-	case allocationSavedMsg:
-		m.allocationSaveErr = msg.err
-		return m, loadAllocations(m.db, m.period)
-
-	case lastMonthChoresLoadedMsg:
-		m.lastMonthUnfinished, m.lastMonthChoresErr = msg.unfinished, msg.err
-
-	case incomeConfirmedMsg:
-		return m, loadMonth(m.db, m.period)
-
-	case backupDoneMsg:
-		m.backupMsg, m.backupErr = msg.message, msg.err
-		return m, loadSettings(m.db)
-
-	case fxOverrideMsg:
-		m.fxOverrideErr = msg.err
-
-	case fxFilledMsg:
-		m.fxErr = msg.err
-
-	case yearLoadedMsg:
-		m.year, m.yearErr = msg.year, msg.err
-
-	case listsLoadedMsg:
-		m.lists, m.listsErr = msg.lists, msg.err
-
-	case listSavedMsg:
-		m.listSaveErr = msg.err
-		return m, loadLists(m.db)
-
-	case categoriesSeededMsg:
-		return m, loadConcepts(m.db)
-
-	case conceptsLoadedMsg:
-		m.concepts, m.categories, m.baseAmounts, m.conceptsErr = msg.concepts, msg.categories, msg.baseAmounts, msg.err
-
-	case conceptSavedMsg:
-		m.conceptSaveErr = msg.err
-		return m, tea.Batch(loadConcepts(m.db), loadMonth(m.db, m.period))
-
-	case settingsLoadedMsg:
-		m.settings, m.settingsErr = msg.settings, msg.err
-
-	case settingsSavedMsg:
-		m.settingsSaveErr = msg.err
-		return m, loadSettings(m.db)
-
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		return m.forwardToModal(msg)
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 
+	case monthMsg:
+		m.lines, m.lastErr = msg.lines, msg.err
+
+	case yearMsg:
+		m.year, m.lastErr = msg.year, msg.err
+
+	case notesMsg:
+		m.notes, m.lastErr = msg.notes, msg.err
+		m.openNote = reopen(m.openNote, msg.notes)
+
+	case catalogMsg:
+		m.concepts, m.categories, m.lastErr = msg.concepts, msg.categories, msg.err
+
+	case ratesMsg:
+		m.stored, m.settings, m.lastErr = msg.stored, msg.settings, msg.err
+		return m, loadYear(m.db, m.period.Year(), m.fx())
+
+	case quotesMsg:
+		m.quotes, m.lastErr = msg.quotes, msg.err
+		return m, loadYear(m.db, m.period.Year(), m.fx())
+
+	case backfilledMsg:
+		if msg.saved == 0 {
+			return m, nil
+		}
+		return m, loadRates(m.db)
+
+	case savedMsg:
+		m.lastErr = msg.err
+		return m, m.reload()
+
 	default:
-		// Non-key messages from an open Huh form (field/group advancement)
-		// round-trip back through here rather than handleKey.
-		if m.conceptForm != nil {
-			return m.forwardConceptForm(msg)
-		}
-		if m.settingsForm != nil {
-			return m.forwardSettingsForm(msg)
-		}
-		if m.newList != nil {
-			return m.forwardNewList(msg)
-		}
-		if m.allocationForm != nil {
-			return m.forwardAllocationForm(msg)
-		}
-		if m.incomeConfirmForm != nil {
-			return m.forwardIncomeConfirmForm(msg)
-		}
-		if m.exportForm != nil {
-			return m.forwardExportForm(msg)
-		}
-		if m.importForm != nil {
-			return m.forwardImportForm(msg)
-		}
-		if m.conceptEditForm != nil {
-			return m.forwardConceptEditForm(msg)
-		}
-		if m.fxOverrideForm != nil {
-			return m.forwardFxOverrideForm(msg)
-		}
-		if m.periodAssignForm != nil {
-			return m.forwardPeriodAssignForm(msg)
-		}
+		return m.forwardToModal(msg)
 	}
 	return m, nil
+}
+
+// forwardToModal hands a message to an open overlay as well as the model —
+// a resize has to reach the form or textarea that is on screen.
+func (m Model) forwardToModal(msg tea.Msg) (Model, tea.Cmd) {
+	if m.modal == nil {
+		return m, nil
+	}
+	next, cmd := m.modal.Update(msg)
+	m.modal = next
+	return m, cmd
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
-	if m.editing != nil {
-		return m.updateEditing(msg)
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
 	}
-	if m.listEditing != nil {
-		return m.updateListEditing(msg)
-	}
-	if m.newList != nil {
-		return m.updateNewList(msg)
-	}
-	if m.conceptForm != nil {
-		return m.updateConceptForm(msg)
-	}
-	if m.settingsForm != nil {
-		return m.updateSettingsForm(msg)
-	}
-	if m.allocationForm != nil {
-		return m.updateAllocationForm(msg)
-	}
-	if m.incomeConfirmForm != nil {
-		return m.updateIncomeConfirmForm(msg)
-	}
-	if m.exportForm != nil {
-		return m.updateExportForm(msg)
-	}
-	if m.importForm != nil {
-		return m.updateImportForm(msg)
-	}
-	if m.conceptEditForm != nil {
-		return m.updateConceptEditForm(msg)
-	}
-	if m.fxOverrideForm != nil {
-		return m.updateFxOverrideForm(msg)
-	}
-	if m.periodAssignForm != nil {
-		return m.updatePeriodAssignForm(msg)
-	}
-	if m.yearDrillDown != nil {
-		return m.updateYearDrillDown(msg)
+	if m.modal != nil {
+		return m.forwardToModal(msg)
 	}
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "q":
 		return m, tea.Quit
-	case "tab", "l":
-		m.view = (m.view + 1) % view(len(viewNames))
-		return m, m.loadView(m.view)
-	case "shift+tab", "h":
-		m.view = (m.view - 1 + view(len(viewNames))) % view(len(viewNames))
-		return m, m.loadView(m.view)
-	case "j", "down":
-		if m.view == viewMonth {
-			m.cursor = m.moveCursor(1)
-		} else if m.view == viewLists {
-			m.listCursor = m.moveListCursor(1)
-		} else if m.view == viewConcepts {
-			m.conceptCursor = m.moveConceptCursor(1)
-		} else if m.view == viewYear {
-			m.yearConceptCursor = m.moveYearConceptCursor(1)
+	case "tab":
+		return m.switchView(1)
+	case "shift+tab":
+		return m.switchView(-1)
+	case "left":
+		return m.shiftPeriod(-1)
+	case "right":
+		return m.shiftPeriod(1)
+	case "t":
+		if !m.wandered() {
+			return m, nil
 		}
-	case "k", "up":
-		if m.view == viewMonth {
-			m.cursor = m.moveCursor(-1)
-		} else if m.view == viewLists {
-			m.listCursor = m.moveListCursor(-1)
-		} else if m.view == viewConcepts {
-			m.conceptCursor = m.moveConceptCursor(-1)
-		} else if m.view == viewYear {
-			m.yearConceptCursor = m.moveYearConceptCursor(-1)
+		return m.goTo(m.today)
+	case "up":
+		return m.moveCursor(-1), nil
+	case "down":
+		return m.moveCursor(1), nil
+	}
+
+	switch m.view {
+	case viewMonth:
+		return m.handleMonthKey(msg)
+	case viewNotes:
+		if m.openNote != nil {
+			return m.handleNoteDetailKey(msg)
 		}
-	case "[":
-		if m.view == viewMonth {
-			return m.shiftPeriod(-1)
-		}
-	case "]":
-		if m.view == viewMonth {
-			return m.shiftPeriod(1)
-		}
-	case "space":
-		if m.view == viewMonth {
-			return m.toggleDone()
-		} else if m.view == viewLists {
-			return m.toggleListCheckbox()
-		}
-	case "e":
-		if m.view == viewMonth {
-			return m.startEdit()
-		} else if m.view == viewLists {
-			return m.startListEdit()
-		} else if m.view == viewSettings {
-			return m.startSettingsEdit()
-		} else if m.view == viewConcepts {
-			return m.startConceptEdit()
-		}
-	case "c":
-		if m.view == viewLists {
-			return m.toggleListClosed()
-		}
-	case "p":
-		if m.view == viewLists {
-			return m.startPeriodAssign()
-		}
-	case "f":
-		if m.view == viewLists {
-			m.showClosed = !m.showClosed
-			m.listCursor = 0
-		}
-	case "n":
-		if m.view == viewLists {
-			return m.startNewList()
-		} else if m.view == viewConcepts {
-			return m.startNewConcept()
-		}
-	case "a":
-		if m.view == viewMonth {
-			return m.startAllocationPanel()
-		}
-	case "d":
-		if m.view == viewMonth {
-			return m.deleteCursorAllocation()
-		}
-	case "s":
-		if m.view == viewYear {
-			m.yearSeries = nextTrendSeries(m.yearSeries)
-		}
-	case "enter":
-		if m.view == viewYear {
-			return m.startYearDrillDown()
-		}
-	case "x":
-		if m.view == viewSettings {
-			return m.startExport()
-		}
-	case "i":
-		if m.view == viewSettings {
-			return m.startImport()
-		}
-	case "r":
-		if m.view == viewSettings {
-			return m.startFxOverride()
-		}
+		return m.handleNotesKey(msg)
+	case viewConcepts:
+		return m.handleConceptsKey(msg)
+	case viewRates:
+		return m.handleRatesKey(msg)
 	}
 	return m, nil
 }
 
-// Below this floor renderTooSmall takes over instead of a garbled layout.
+func (m Model) openModal(next modal) (Model, tea.Cmd) {
+	m.modal = next
+	return m, next.Init()
+}
+
+func (m Model) switchView(delta int) (Model, tea.Cmd) {
+	n := view(len(viewNames))
+	m.view = (m.view + view(delta) + n) % n
+	m.openNote = nil
+	if m.view == viewRates {
+		m.house = houseIndex(m.settings.FxHouse)
+	}
+	return m, nil
+}
+
+// showsPeriod reports whether a period is on screen for the arrows to move.
+// The catalog is period-free, and the note detail is one note rather than a
+// month of them.
+func (m Model) showsPeriod() bool {
+	switch m.view {
+	case viewConcepts:
+		return false
+	case viewNotes:
+		return m.openNote == nil
+	default:
+		return true
+	}
+}
+
+// shiftPeriod moves a year at a time in the Year view, since a year is the
+// unit on that screen.
+func (m Model) shiftPeriod(delta int) (Model, tea.Cmd) {
+	if !m.showsPeriod() {
+		return m, nil
+	}
+	if m.view == viewYear {
+		delta *= 12
+	}
+	return m.goTo(m.period.AddMonths(delta))
+}
+
+// goTo shows another period. The cursor resets because the row it pointed at
+// belongs to the month being left.
+func (m Model) goTo(p domain.Period) (Model, tea.Cmd) {
+	previousYear := m.period.Year()
+	m.period = p
+	m.monthList.cursor = 0
+	m.notesList.cursor = 0
+	m.openNote = nil
+
+	cmds := []tea.Cmd{loadMonth(m.db, m.period), loadYear(m.db, m.period.Year(), m.fx())}
+	if m.period.Year() != previousYear {
+		cmds = append(cmds, backfillCloses(m.db, m.client, m.period.Year(), m.today))
+	}
+	return m, tea.Batch(cmds...)
+}
+
+// wandered reports whether the shown period is somewhere other than the
+// month still running, which is the only time going back to it means
+// anything.
+func (m Model) wandered() bool {
+	return m.showsPeriod() && !m.period.Equal(m.today)
+}
+
+func (m Model) moveCursor(delta int) Model {
+	switch m.view {
+	case viewMonth:
+		m.monthList = m.monthList.move(delta, len(m.lines))
+	case viewNotes:
+		if m.openNote != nil {
+			m.detail = m.detail.move(delta, len(note.Checkboxes(m.openNote.BodyMD)))
+			break
+		}
+		m.notesList = m.notesList.move(delta, len(m.shownNotes()))
+	case viewConcepts:
+		m.conceptsList = m.conceptsList.move(delta, len(m.concepts))
+	case viewRates:
+		m.house = clamp(m.house+delta, len(rates.Houses))
+	}
+	return m
+}
+
+// sync rebuilds the focused view's scrolling region after every message, so
+// the rendered rows and the cursor can never disagree.
+func (m Model) sync() Model {
+	width := m.contentWidth()
+	switch m.view {
+	case viewMonth:
+		m.monthList.cursor = clamp(m.monthList.cursor, len(m.lines))
+		rows, anchors := m.monthRows()
+		m.monthList = m.monthList.show(rows, anchors, width, m.bodyHeight(3))
+	case viewNotes:
+		if m.openNote != nil {
+			rows, anchors := m.noteDetailRows()
+			m.detail = m.detail.show(rows, anchors, m.detailWidth(), m.bodyHeight(2))
+			break
+		}
+		m.notesList.cursor = clamp(m.notesList.cursor, len(m.shownNotes()))
+		rows, anchors := m.noteRows()
+		m.notesList = m.notesList.show(rows, anchors, width, m.bodyHeight(2))
+	case viewConcepts:
+		m.conceptsList.cursor = clamp(m.conceptsList.cursor, len(m.concepts))
+		rows, anchors := m.conceptRows()
+		m.conceptsList = m.conceptsList.show(rows, anchors, width, m.bodyHeight(2))
+	}
+	return m
+}
+
+// Set above what the layout strictly needs: mess is full-screen only, so a
+// cramped screen is worth less than a prompt to resize.
 const (
-	minUsableWidth  = 40
-	minUsableHeight = 10
+	minUsableWidth        = 100
+	minUsableHeight       = 30
+	tooSmallHeadlineWidth = 41
 )
 
 func (m Model) View() tea.View {
@@ -420,25 +345,29 @@ func (m Model) View() tea.View {
 	return v
 }
 
-// centerInBox centers content inside the app's box, both horizontally and
-// vertically — the same treatment renderTooSmall already gives the "grow
-// your terminal" message, applied here to any view whose content is
-// shorter than the box: an empty state, a lone drill-down chart, Settings'
-// handful of fields.
-func (m Model) centerInBox(content string) string {
-	w := m.width - 6
-	h := m.height - 6
-	if w < 1 {
-		w = 1
-	}
-	if h < 1 {
-		h = 1
-	}
-	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, content)
+func (m Model) contentWidth() int  { return max(m.width-6, 1) }
+func (m Model) contentHeight() int { return max(m.height-4, 1) }
+
+// bodyHeight is the box minus the view's own header lines, the blank line
+// above the help, and the help itself — which is two rows on a narrow
+// terminal with a busy view, so it is measured rather than assumed.
+func (m Model) bodyHeight(headerLines int) int {
+	return max(m.contentHeight()-headerLines-1-lipgloss.Height(m.helpBlock()), 1)
 }
 
-// renderTooSmall reports the "grow your terminal" message once a real,
-// too-small size is known, or "" when the normal layout should render.
+// helpBlock wraps the help to the room the logo leaves, so it cannot run
+// past the border and push the layout off the bottom.
+func (m Model) helpBlock() string {
+	return m.theme.Help.Width(max(m.contentWidth()-logoTail-logoGap-logoWidth, 1)).Render(m.help())
+}
+
+func (m Model) helpRow() string {
+	return lipgloss.JoinHorizontal(lipgloss.Bottom,
+		m.helpBlock(),
+		strings.Repeat(" ", logoGap),
+		m.theme.Logo.Render(logoLines[0]))
+}
+
 func (m Model) renderTooSmall() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
@@ -446,31 +375,33 @@ func (m Model) renderTooSmall() string {
 	if m.width >= minUsableWidth && m.height >= minUsableHeight {
 		return ""
 	}
-	msg := m.theme.Muted.Width(m.width).Align(lipgloss.Center).Render("make the terminal bigger to see your mess")
-	return lipgloss.PlaceVertical(m.height, lipgloss.Center, msg)
+
+	headline := m.theme.Muted.Width(min(m.width, tooSmallHeadlineWidth)).Align(lipgloss.Center).
+		Render("make the terminal bigger to see your mess")
+	have := m.theme.Muted.Render("have ") + m.shortSide(m.width, minUsableWidth) +
+		m.theme.Muted.Render(" × ") + m.shortSide(m.height, minUsableHeight)
+	need := m.theme.Muted.Render(fmt.Sprintf("need %3d × %3d", minUsableWidth, minUsableHeight))
+
+	block := lipgloss.JoinVertical(lipgloss.Center, headline, "", have, need)
+	return lipgloss.PlaceVertical(m.height, lipgloss.Center,
+		lipgloss.PlaceHorizontal(m.width, lipgloss.Center, block))
+}
+
+// shortSide colours only the dimension that falls short, so a glance says
+// which way to drag.
+func (m Model) shortSide(have, need int) string {
+	text := fmt.Sprintf("%3d", have)
+	if have >= need {
+		return m.theme.Muted.Render(text)
+	}
+	return m.theme.Alert.Render(text)
 }
 
 func (m Model) renderApp() string {
-	footer := m.renderFooter()
-	footerRows := strings.Count(footer, "\n") + 1
-	boxHeight := m.height - footerRows
-	app := m.theme.App
-	if m.width > 0 && boxHeight > 0 {
-		app = app.Width(m.width).Height(boxHeight)
-	}
-	rendered := app.Render(m.viewContent())
-	if m.width >= logoMinWidth && m.height >= logoMinHeight {
-		rendered = overlayLogo(rendered, m.theme.Logo)
-	}
-
+	footer := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Right).Render(m.tabs())
+	app := m.theme.App.Width(m.width).Height(m.height - 1)
+	rendered := overlayLogo(app.Render(m.viewContent()), m.theme.Logo)
 	return rendered + "\n" + footer
-}
-
-// renderFooter is the strip below the box: just the tab strip, right-aligned
-// — the key legend lives inside the box now, as the last line of each
-// view's own content.
-func (m Model) renderFooter() string {
-	return lipgloss.NewStyle().Width(m.width).Align(lipgloss.Right).Render(m.tabs())
 }
 
 func (m Model) tabs() string {
@@ -478,64 +409,83 @@ func (m Model) tabs() string {
 	for i, name := range viewNames {
 		style := m.theme.Tab
 		if view(i) == m.view {
-			style = m.theme.TabActive
+			style = m.theme.Active
 		}
 		labels[i] = style.Render(name)
 	}
 	return strings.Join(labels, "")
 }
 
-// viewContent renders the focused view's body plus its own help line, the
-// last line of every view's content — form or not — now that the footer
-// carries only the tab strip.
+// viewContent pads the body so the help always lands on the last line
+// inside the box rather than floating under a short view.
 func (m Model) viewContent() string {
-	var body string
-	switch m.view {
-	case viewMonth:
-		body = m.renderMonth()
-	case viewYear:
-		body = m.renderYear()
-	case viewLists:
-		body = m.renderLists()
-	case viewConcepts:
-		body = m.renderConcepts()
-	case viewSettings:
-		body = m.renderSettings()
-	default:
-		body = m.theme.Muted.Render(m.view.String() + " — not built yet")
+	help := m.helpBlock()
+	height := m.contentHeight() - 1 - lipgloss.Height(help)
+	body := lipgloss.NewStyle().Height(height).MaxHeight(height).Render(m.renderBody())
+
+	status := ""
+	if m.lastErr != nil {
+		status = m.theme.Muted.Render(m.lastErr.Error())
 	}
-	return body + "\n\n" + m.theme.Help.Render(m.helpText())
+	return body + "\n" + status + "\n" + m.helpRow()
 }
 
-func (m Model) helpText() string {
-	if m.editing != nil {
-		return "enter confirm · esc cancel"
+// renderBody hands over to an open modal, except the inline amount edit,
+// which draws inside the Month row it belongs to.
+func (m Model) renderBody() string {
+	if _, inline := m.modal.(*amountEdit); m.modal != nil && !inline {
+		return m.viewTitle() + "\n\n" + m.modal.View()
 	}
-	if m.listEditing != nil {
-		return "ctrl+s save · esc cancel"
+	switch m.view {
+	case viewMonth:
+		return m.renderMonth()
+	case viewYear:
+		return m.renderYear()
+	case viewNotes:
+		return m.renderNotes()
+	case viewConcepts:
+		return m.renderConcepts()
+	default:
+		return m.renderRates()
 	}
-	if m.newList != nil || m.conceptForm != nil || m.settingsForm != nil || m.allocationForm != nil ||
-		m.incomeConfirmForm != nil || m.exportForm != nil || m.importForm != nil ||
-		m.conceptEditForm != nil || m.fxOverrideForm != nil || m.periodAssignForm != nil {
-		return "esc cancel"
+}
+
+func (m Model) viewTitle() string {
+	return m.theme.Muted.Render(m.view.String() + " · " + m.period.String())
+}
+
+func (m Model) help() string {
+	if m.modal != nil {
+		return m.modal.Help()
 	}
-	if m.view == viewMonth {
-		return "↑/↓ move · space tick · e edit · a allocate · d delete allocation · [/] month · tab/shift+tab switch · q quit"
+	keys := m.viewKeys()
+	if m.wandered() {
+		keys = append(keys, "t today")
 	}
-	if m.view == viewLists {
-		return "↑/↓ move · space tick · e edit · c close · p period · f pending/closed · n new · tab/shift+tab switch · q quit"
+	return strings.Join(append(keys, "tab switch", "q quit"), " · ")
+}
+
+// viewKeys is what the focused view adds to the two every screen carries.
+func (m Model) viewKeys() []string {
+	switch m.view {
+	case viewMonth:
+		return []string{"↑/↓", "space tick", "e edit", "←/→ month"}
+	case viewYear:
+		return []string{"←/→ year"}
+	case viewNotes:
+		if m.openNote != nil {
+			return []string{"↑/↓", "space tick", "e edit", "esc back"}
+		}
+		return []string{"↑/↓", "enter open", "c done", "p pin", "n new", "←/→ month"}
+	case viewConcepts:
+		return []string{"↑/↓", "n new", "e edit", "d delete"}
+	default:
+		return []string{"↑/↓", "enter use house", "e set rate", "←/→ month"}
 	}
-	if m.view == viewConcepts {
-		return "↑/↓ move · e edit · n new · tab/shift+tab switch · q quit"
-	}
-	if m.view == viewSettings {
-		return "e edit · x export · i import · r fx rate · tab/shift+tab switch · q quit"
-	}
-	if m.view == viewYear && m.yearDrillDown != nil {
-		return "esc back"
-	}
-	if m.view == viewYear {
-		return "↑/↓ move · enter drill down · s cycle trend series · tab/shift+tab switch · q quit"
-	}
-	return "tab/shift+tab switch · q quit"
+}
+
+// centerInBox centers sparse content rather than pinning it top-left.
+// headerRows is what the view has already drawn above it.
+func (m Model) centerInBox(content string, headerRows int) string {
+	return lipgloss.Place(m.contentWidth(), m.bodyHeight(headerRows), lipgloss.Center, lipgloss.Center, content)
 }

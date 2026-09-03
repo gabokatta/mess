@@ -3,38 +3,22 @@ package catalog
 import (
 	"database/sql"
 	"errors"
-
-	"github.com/shopspring/decimal"
+	"time"
 
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// OpeningBalances anchors the net-worth and leftover-pesos folds. A zero
-// Period means the settings row doesn't exist yet — nothing to fold, just
-// the zero anchors.
-type OpeningBalances struct {
-	Period        domain.Period
-	LeftoverPesos decimal.Decimal
-	CashUSD       decimal.Decimal
-	InvestedUSD   decimal.Decimal
-}
-
-// Settings is the singleton settings row: the fx house quotes are drawn
-// from, and the opening balances that anchor the net-worth fold.
 type Settings struct {
-	FxHouse domain.FxHouse
-	Opening OpeningBalances
+	FxHouse    domain.FxHouse
+	LastExport *time.Time // nil means never exported
 }
 
-// LoadSettings returns the settings row, or Settings{FxHouse: domain.Blue}
-// — every other field at its zero value — when the row doesn't exist yet.
+// LoadSettings falls back to Blue and no export on a database that has
+// never been configured.
 func LoadSettings(db *sql.DB) (Settings, error) {
-	var house, leftover, cash, invested string
-	var period sql.NullString
-	err := db.QueryRow(`
-		SELECT fx_house, opening_period, opening_leftover_pesos, opening_cash_usd, opening_invested_usd
-		FROM settings WHERE id = 1`).
-		Scan(&house, &period, &leftover, &cash, &invested)
+	var house string
+	var lastExport sql.NullString
+	err := db.QueryRow(`SELECT fx_house, last_export FROM settings WHERE id = 1`).Scan(&house, &lastExport)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Settings{FxHouse: domain.Blue}, nil
 	}
@@ -46,50 +30,33 @@ func LoadSettings(db *sql.DB) (Settings, error) {
 	if s.FxHouse, err = domain.ParseFxHouse(house); err != nil {
 		return Settings{}, err
 	}
-	if period.Valid {
-		if s.Opening.Period, err = domain.ParsePeriod(period.String); err != nil {
+	if lastExport.Valid {
+		t, err := time.Parse(time.RFC3339, lastExport.String)
+		if err != nil {
 			return Settings{}, err
 		}
-	}
-	if s.Opening.LeftoverPesos, err = decimal.NewFromString(leftover); err != nil {
-		return Settings{}, err
-	}
-	if s.Opening.CashUSD, err = decimal.NewFromString(cash); err != nil {
-		return Settings{}, err
-	}
-	if s.Opening.InvestedUSD, err = decimal.NewFromString(invested); err != nil {
-		return Settings{}, err
+		s.LastExport = &t
 	}
 	return s, nil
 }
 
-// SaveSettings upserts the singleton settings row.
-func SaveSettings(db *sql.DB, s Settings) error {
+func SetFxHouse(db *sql.DB, house domain.FxHouse) error {
 	_, err := db.Exec(`
-		INSERT INTO settings
-			(id, fx_house, opening_period, opening_leftover_pesos, opening_cash_usd, opening_invested_usd)
-		VALUES (1, ?, ?, ?, ?, ?)
-		ON CONFLICT (id) DO UPDATE SET
-			fx_house = excluded.fx_house,
-			opening_period = excluded.opening_period,
-			opening_leftover_pesos = excluded.opening_leftover_pesos,
-			opening_cash_usd = excluded.opening_cash_usd,
-			opening_invested_usd = excluded.opening_invested_usd`,
-		s.FxHouse.String(), nullablePeriod(s.Opening.Period),
-		s.Opening.LeftoverPesos.String(), s.Opening.CashUSD.String(), s.Opening.InvestedUSD.String())
+		INSERT INTO settings (id, fx_house) VALUES (1, ?)
+		ON CONFLICT (id) DO UPDATE SET fx_house = excluded.fx_house`,
+		house.String())
 	return err
 }
 
-// FxHouse returns the configured fx house, defaulting to Blue when the
-// settings row hasn't been created yet.
+func MarkExported(db *sql.DB, at time.Time) error {
+	_, err := db.Exec(`
+		INSERT INTO settings (id, fx_house, last_export) VALUES (1, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET last_export = excluded.last_export`,
+		domain.Blue.String(), at.UTC().Format(time.RFC3339))
+	return err
+}
+
 func FxHouse(db *sql.DB) (domain.FxHouse, error) {
 	s, err := LoadSettings(db)
 	return s.FxHouse, err
-}
-
-// LoadOpeningBalances returns the settings row's opening balances, or the
-// zero value when the settings row hasn't been created yet.
-func LoadOpeningBalances(db *sql.DB) (OpeningBalances, error) {
-	s, err := LoadSettings(db)
-	return s.Opening, err
 }

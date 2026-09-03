@@ -77,8 +77,3 @@ func EnsureDefaultCategories(db *sql.DB) error {
 	}
 	return nil
 }
-
-func UpdateCategory(db *sql.DB, c Category) error {
-	_, err := db.Exec(`UPDATE category SET name = ?, sort_order = ? WHERE id = ?`, c.Name, c.SortOrder, c.ID)
-	return err
-}

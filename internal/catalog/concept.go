@@ -14,6 +14,7 @@ type ConceptKind int
 const (
 	Income ConceptKind = iota
 	Expense
+	Saving
 	Chore
 )
 
@@ -23,6 +24,8 @@ func (k ConceptKind) String() string {
 		return "Income"
 	case Expense:
 		return "Expense"
+	case Saving:
+		return "Saving"
 	case Chore:
 		return "Chore"
 	default:
@@ -36,6 +39,8 @@ func ParseConceptKind(s string) (ConceptKind, error) {
 		return Income, nil
 	case "Expense":
 		return Expense, nil
+	case "Saving":
+		return Saving, nil
 	case "Chore":
 		return Chore, nil
 	default:
@@ -43,19 +48,15 @@ func ParseConceptKind(s string) (ConceptKind, error) {
 	}
 }
 
-// MoneyDetails is a concept's monetary attributes: what currency it's in and
-// what share of the household cost is yours. A Chore carries neither, so
-// this lives behind a pointer rather than as fields every Concept has —
-// nil is how "this concept has no money" gets represented, not a currency
-// and share that just happen to be zero.
+// MoneyDetails hangs off a pointer so nil, not a zero amount in a
+// defaulted currency, is how a Chore's absence of money is represented.
 type MoneyDetails struct {
 	Currency domain.Currency
-	Share    domain.Percent
+	Base     decimal.Decimal
 }
 
-// Concept is a catalog entry: what a line is, not what it's worth in any
-// given month. A money concept's amount lives in base_amount/month_entry,
-// resolved per period elsewhere; a Chore has none to resolve.
+// Concept is what a line is, not what it cost: Base is only what the edit
+// box opens with, and the amount you typed lives in month_entry.
 type Concept struct {
 	ID          int64
 	Name        string
@@ -63,25 +64,18 @@ type Concept struct {
 	Kind        ConceptKind
 	Money       *MoneyDetails // nil for Kind: Chore
 	MonthMask   domain.Cadence
-	DueDay      int // 0 means unset
-	SortOrder   int
 	ActiveFrom  domain.Period
 	ActiveUntil domain.Period // zero value means still active
 }
 
-// fullShare is the default a money concept's Share gets when left at its
-// zero value: most concepts are entirely yours.
-var fullShare = domain.NewPercent(100)
-
 func CreateConcept(db *sql.DB, c Concept) (Concept, error) {
-	c.normalizeShare()
-	currency, share := c.nullableMoney()
+	currency, base := c.nullableMoney()
 	res, err := db.Exec(`
 		INSERT INTO concept
-			(name, category_id, kind, currency, month_mask, share, due_day, sort_order, active_from, active_until)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.Name, c.CategoryID, c.Kind.String(), currency, int(c.MonthMask), share,
-		nullableDueDay(c.DueDay), c.SortOrder, c.ActiveFrom.String(), nullablePeriod(c.ActiveUntil))
+			(name, category_id, kind, currency, base_amount, month_mask, active_from, active_until)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.Name, c.CategoryID, c.Kind.String(), currency, base, int(c.MonthMask),
+		c.ActiveFrom.String(), nullablePeriod(c.ActiveUntil))
 	if err != nil {
 		return Concept{}, err
 	}
@@ -93,28 +87,41 @@ func CreateConcept(db *sql.DB, c Concept) (Concept, error) {
 	return c, nil
 }
 
-// normalizeShare fills the default 100% share on a money concept left at
-// its zero value. A no-op for a Chore, which has no Money to default.
-func (c *Concept) normalizeShare() {
-	if c.Money != nil && c.Money.Share.Fraction().IsZero() {
-		c.Money.Share = fullShare
-	}
+func UpdateConcept(db *sql.DB, c Concept) error {
+	currency, base := c.nullableMoney()
+	_, err := db.Exec(`
+		UPDATE concept
+		SET name = ?, category_id = ?, kind = ?, currency = ?, base_amount = ?,
+		    month_mask = ?, active_from = ?, active_until = ?
+		WHERE id = ?`,
+		c.Name, c.CategoryID, c.Kind.String(), currency, base, int(c.MonthMask),
+		c.ActiveFrom.String(), nullablePeriod(c.ActiveUntil), c.ID)
+	return err
 }
 
-// nullableMoney reports c's currency and share as SQL-ready values, NULL for
-// a Chore — the SQL boundary where Concept.Money's nil-ness becomes the
-// column's NULL-ness.
-func (c Concept) nullableMoney() (currency, share any) {
-	if c.Money == nil {
-		return nil, nil
+func DeleteConcept(db *sql.DB, id int64) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
 	}
-	return c.Money.Currency.String(), c.Money.Share.Fraction().String()
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM month_entry WHERE concept_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM concept WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
+// Concepts orders by category then name, the order every view lists in.
 func Concepts(db *sql.DB) ([]Concept, error) {
 	rows, err := db.Query(`
-		SELECT id, name, category_id, kind, currency, month_mask, share, due_day, sort_order, active_from, active_until
-		FROM concept ORDER BY sort_order, name`)
+		SELECT c.id, c.name, c.category_id, c.kind, c.currency, c.base_amount,
+		       c.month_mask, c.active_from, c.active_until
+		FROM concept c JOIN category cat ON cat.id = c.category_id
+		ORDER BY cat.sort_order, cat.name, c.name`)
 	if err != nil {
 		return nil, err
 	}
@@ -131,36 +138,27 @@ func Concepts(db *sql.DB) ([]Concept, error) {
 	return concepts, rows.Err()
 }
 
-func UpdateConcept(db *sql.DB, c Concept) error {
-	c.normalizeShare()
-	currency, share := c.nullableMoney()
-	_, err := db.Exec(`
-		UPDATE concept
-		SET name = ?, category_id = ?, kind = ?, currency = ?, month_mask = ?, share = ?,
-		    due_day = ?, sort_order = ?, active_from = ?, active_until = ?
-		WHERE id = ?`,
-		c.Name, c.CategoryID, c.Kind.String(), currency, int(c.MonthMask), share,
-		nullableDueDay(c.DueDay), c.SortOrder, c.ActiveFrom.String(), nullablePeriod(c.ActiveUntil), c.ID)
-	return err
+func (c Concept) nullableMoney() (currency, base any) {
+	if c.Money == nil {
+		return nil, nil
+	}
+	return c.Money.Currency.String(), c.Money.Base.String()
 }
 
-// scanConcept parses a concept row into Concept, the boundary where a
-// nullable currency/share column becomes Money's nil-ness — a Chore with a
-// currency is a state that doesn't exist once past this point, even though
-// the columns underneath still allow it.
+// scanConcept is where the nullable currency/base_amount pair becomes
+// Money's nil-ness: past here, a chore carrying money does not exist.
 func scanConcept(row *sql.Rows) (Concept, error) {
 	var (
 		c           Concept
 		kind        string
 		currency    sql.NullString
+		base        sql.NullString
 		monthMask   int
-		share       sql.NullString
-		dueDay      sql.NullInt64
 		activeFrom  string
 		activeUntil sql.NullString
 	)
-	if err := row.Scan(&c.ID, &c.Name, &c.CategoryID, &kind, &currency, &monthMask,
-		&share, &dueDay, &c.SortOrder, &activeFrom, &activeUntil); err != nil {
+	if err := row.Scan(&c.ID, &c.Name, &c.CategoryID, &kind, &currency, &base,
+		&monthMask, &activeFrom, &activeUntil); err != nil {
 		return Concept{}, err
 	}
 
@@ -173,14 +171,13 @@ func scanConcept(row *sql.Rows) (Concept, error) {
 		if err != nil {
 			return Concept{}, err
 		}
-		shareFraction, err := decimal.NewFromString(share.String)
+		amount, err := decimal.NewFromString(base.String)
 		if err != nil {
 			return Concept{}, err
 		}
-		c.Money = &MoneyDetails{Currency: cur, Share: domain.NewPercentFromFraction(shareFraction)}
+		c.Money = &MoneyDetails{Currency: cur, Base: amount}
 	}
 	c.MonthMask = domain.Cadence(monthMask)
-	c.DueDay = int(dueDay.Int64)
 	if c.ActiveFrom, err = domain.ParsePeriod(activeFrom); err != nil {
 		return Concept{}, err
 	}
@@ -190,13 +187,6 @@ func scanConcept(row *sql.Rows) (Concept, error) {
 		}
 	}
 	return c, nil
-}
-
-func nullableDueDay(d int) any {
-	if d == 0 {
-		return nil
-	}
-	return d
 }
 
 func nullablePeriod(p domain.Period) any {

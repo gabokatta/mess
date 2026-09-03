@@ -6,12 +6,13 @@ import (
 	glamour "charm.land/glamour/v2"
 )
 
-// checkboxGlyphs are the literal prefixes Glamour's dark and light styles
-// both use for a task-list item — the fixed point that lets markCheckboxCursor
-// find a checkbox's rendered line without re-parsing the markdown.
+// checkboxGlyphs are what Glamour's dark and light styles both emit for a
+// task-list item, which is how a rendered line is found without re-parsing
+// the markdown.
 var checkboxGlyphs = []string{"[ ] ", "[✓] "}
 
 func renderMarkdown(body string, width int, dark bool) (string, error) {
+	width = max(width, 20)
 	style := glamour.WithStandardStyle("light")
 	if dark {
 		style = glamour.WithStandardStyle("dark")
@@ -23,28 +24,31 @@ func renderMarkdown(body string, width int, dark bool) (string, error) {
 	return r.Render(body)
 }
 
-// markCheckboxCursor prefixes every rendered line with a two-column gutter,
-// putting ">" on the target-th checkbox glyph in document order (Toggle's
-// same indexing) and nothing everywhere else. target < 0 marks no line.
-func markCheckboxCursor(rendered string, target int) string {
-	lines := strings.Split(rendered, "\n")
-	occurrence := -1
-	for i, line := range lines {
-		if containsCheckboxGlyph(line) {
-			occurrence++
+// startsWithCheckbox reports whether a task-list glyph opens the line's
+// visible content. Glamour always puts the marker first, so a "[ ] " sitting
+// inside prose is not a checkbox and must not take a cursor position — the
+// cursor indexes the source, and a phantom here would shift every toggle
+// after it onto the wrong line.
+func startsWithCheckbox(line string) bool {
+	for i := 0; i < len(line); i++ {
+		switch {
+		case line[i] == ' ' || line[i] == '\t':
+		case line[i] == escape:
+			for i < len(line) && line[i] != 'm' {
+				i++
+			}
+		default:
+			return hasCheckboxGlyph(line[i:])
 		}
-		gutter := "  "
-		if occurrence == target {
-			gutter = "> "
-		}
-		lines[i] = gutter + line
 	}
-	return strings.Join(lines, "\n")
+	return false
 }
 
-func containsCheckboxGlyph(line string) bool {
+const escape = 0x1b
+
+func hasCheckboxGlyph(s string) bool {
 	for _, g := range checkboxGlyphs {
-		if strings.Contains(line, g) {
+		if strings.HasPrefix(s, g) {
 			return true
 		}
 	}

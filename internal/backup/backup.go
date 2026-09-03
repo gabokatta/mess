@@ -1,8 +1,6 @@
-// Package backup dumps and restores every table wholesale — the engine
-// behind both the export/import CLI subcommands and the Settings actions
-// that will call the same functions. It reads and writes raw rows, not
-// typed catalog models, so a table with no Go model yet (settings) backs
-// up and restores exactly like any other.
+// Package backup dumps and restores every table wholesale, behind the
+// export and import subcommands. It reads raw rows rather than typed
+// catalog models, so every table backs up the same way.
 package backup
 
 import (
@@ -13,23 +11,19 @@ import (
 	"time"
 )
 
-// tableOrder is every table in foreign-key dependency order, parents
-// first. Export writes them in this order for a readable file; Import
-// deletes them in reverse and reloads them in this order so every
-// reference is satisfied as it's written.
+// tableOrder is foreign-key dependency order, parents first. Import
+// deletes in reverse and reloads in this order, so every reference is
+// satisfied as it is written.
 var tableOrder = []string{
 	"category",
 	"concept",
-	"base_amount",
 	"month_entry",
-	"saving_allocation",
-	"list",
+	"note",
 	"fx_rate",
 	"settings",
 }
 
-// Data is a full database snapshot: every table's rows, keyed by table
-// name, each row keyed by column name.
+// Data keys each table's rows by table name, each row by column name.
 type Data struct {
 	Tables map[string][]map[string]any `json:"tables"`
 }
@@ -46,10 +40,8 @@ func Export(db *sql.DB) (Data, error) {
 	return data, nil
 }
 
-// Snapshot writes a standalone, consistent copy of the database beside
-// dbPath, timestamped so repeated snapshots never collide, and returns its
-// path. Import calls this first — the irreversible-overwrite safety net a
-// wholesale replace needs.
+// Snapshot copies the database beside dbPath, timestamped so repeated
+// snapshots never collide, and returns the path it wrote.
 func Snapshot(db *sql.DB, dbPath string) (string, error) {
 	dest := fmt.Sprintf("%s.%s.bak", dbPath, time.Now().UTC().Format("20060102T150405.000000000Z"))
 	if _, err := db.Exec("VACUUM INTO ?", dest); err != nil {
@@ -58,11 +50,9 @@ func Snapshot(db *sql.DB, dbPath string) (string, error) {
 	return dest, nil
 }
 
-// Import replaces every table wholesale: every row in data.Tables, and
-// nothing else. There is no version guard — a row shaped for a schema
-// Import doesn't have fails the INSERT, and the whole import rolls back.
-// Like dumpTable, the table names it interpolates come only from
-// tableOrder, never from data or a caller.
+// Import replaces every table with data.Tables and nothing else. There is
+// no version guard: a row shaped for a schema this binary does not have
+// fails its INSERT and rolls the whole import back.
 func Import(db *sql.DB, data Data) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -85,9 +75,8 @@ func Import(db *sql.DB, data Data) error {
 	return tx.Commit()
 }
 
-// insertRow writes row's columns in sorted order — sorted only so the
-// generated statement is deterministic to read in a failure, since named
-// placeholders make the actual order irrelevant to correctness.
+// insertRow sorts columns only so a failed statement is deterministic to
+// read; placeholders make the order irrelevant to correctness.
 func insertRow(tx *sql.Tx, table string, row map[string]any) error {
 	cols := make([]string, 0, len(row))
 	for c := range row {
@@ -107,8 +96,8 @@ func insertRow(tx *sql.Tx, table string, row map[string]any) error {
 	return err
 }
 
-// dumpTable is a bounded, hardcoded lookup into tableOrder, never a caller-
-// supplied string, so the interpolation below never carries injected SQL.
+// table is always a tableOrder constant, never caller-supplied, so the
+// interpolation below cannot carry injected SQL.
 func dumpTable(db *sql.DB, table string) ([]map[string]any, error) {
 	rows, err := db.Query("SELECT * FROM " + table)
 	if err != nil {

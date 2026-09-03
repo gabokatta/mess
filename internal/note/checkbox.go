@@ -1,6 +1,6 @@
-// Package list holds the pure logic over a list's markdown body: the
-// only structure mess imposes on that text is its task-list checkboxes.
-package list
+// Package note holds the pure logic over a note's markdown body: the only
+// structure mess imposes on that text is its task-list checkboxes.
+package note
 
 import (
 	"regexp"
@@ -12,14 +12,14 @@ import (
 // only syntax mess treats as a checkbox rather than plain prose or a bullet.
 var checkboxPattern = regexp.MustCompile(`^(\s*[-*]\s\[)([ xX])(\]\s+)(.*)$`)
 
-// Checkbox is one task-list item found in a list's markdown body.
+// Checkbox is one task-list item found in a note's markdown body.
 type Checkbox struct {
 	Text string
 	Done bool
 }
 
-// Checkboxes returns every task-list item in body, in document order —
-// the same order Toggle addresses them by index.
+// Checkboxes returns every task-list item in body, in document order — the
+// same order Toggle addresses them by index.
 func Checkboxes(body string) []Checkbox {
 	var boxes []Checkbox
 	for _, line := range strings.Split(body, "\n") {
@@ -30,8 +30,7 @@ func Checkboxes(body string) []Checkbox {
 	return boxes
 }
 
-// Progress counts done checkboxes against the total, for a list's "3/7"
-// summary.
+// Progress counts done checkboxes against the total, for a note's "3/7".
 func Progress(body string) (done, total int) {
 	for _, c := range Checkboxes(body) {
 		total++

@@ -1,150 +1,103 @@
 package month
 
 import (
+	"database/sql"
 	"testing"
 	"time"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-func TestLoadYearResolvesEachPeriodOfTheYear(t *testing.T) {
-	db := openTestStore(t)
-	cat, err := catalog.CreateCategory(db, "Servicios", 0)
-	if err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-	rent, err := catalog.CreateConcept(db, catalog.Concept{
-		Name:       "Alquiler",
-		CategoryID: cat.ID,
-		Kind:       catalog.Expense,
-		Money:      &catalog.MoneyDetails{Currency: domain.ARS},
-		MonthMask:  domain.Monthly,
-		ActiveFrom: domain.NewPeriod(2026, time.January),
-	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-	if err := catalog.SetBaseAmount(db, rent.ID, domain.NewPeriod(2026, time.January), amount(785000)); err != nil {
-		t.Fatalf("SetBaseAmount() unexpected error: %v", err)
-	}
-
-	got, err := LoadYear(db, 2026)
-	if err != nil {
-		t.Fatalf("LoadYear() unexpected error: %v", err)
-	}
-
-	if len(got.Periods) != 12 || len(got.Months) != 12 {
-		t.Fatalf("LoadYear() has %d periods and %d months, want 12 each", len(got.Periods), len(got.Months))
-	}
-	if want := domain.NewPeriod(2026, time.January); !got.Periods[0].Equal(want) {
-		t.Errorf("Periods[0] = %s, want %s", got.Periods[0], want)
-	}
-	if want := domain.NewPeriod(2026, time.December); !got.Periods[11].Equal(want) {
-		t.Errorf("Periods[11] = %s, want %s", got.Periods[11], want)
-	}
-	for i, p := range got.Periods {
-		lines := got.Months[i].Lines
-		if len(lines) != 1 || !lines[0].Money.Amount.Equal(amount(785000)) {
-			t.Errorf("Months[%d] (%s) lines = %+v, want Alquiler at 785000", i, p, lines)
-		}
+func confirm(t *testing.T, db *sql.DB, conceptID int64, p domain.Period, amount int64) {
+	t.Helper()
+	value := decimal.NewFromInt(amount)
+	if err := catalog.SetMonthEntryAmount(db, conceptID, p, &value); err != nil {
+		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
 	}
 }
 
-func TestLoadYearCategoryTotalsSumExpensesOnlyInArs(t *testing.T) {
+func TestLoadYear(t *testing.T) {
 	db := openTestStore(t)
-	servicios, err := catalog.CreateCategory(db, "Servicios", 0)
-	if err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-	ingresos, err := catalog.CreateCategory(db, "Ingresos", 1)
-	if err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-	jan := domain.NewPeriod(2026, time.January)
 
-	rent, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Alquiler", CategoryID: servicios.ID, Kind: catalog.Expense,
-		Money: &catalog.MoneyDetails{Currency: domain.ARS}, MonthMask: domain.Monthly, ActiveFrom: jan,
+	rent := seedConcept(t, db, "Home", catalog.Concept{
+		Name: "Rent", Kind: catalog.Expense,
+		Money: &catalog.MoneyDetails{Currency: domain.ARS},
 	})
-	if err != nil {
-		t.Fatalf("CreateConcept(rent) unexpected error: %v", err)
-	}
-	if err := catalog.SetBaseAmount(db, rent.ID, jan, amount(100000)); err != nil {
-		t.Fatalf("SetBaseAmount(rent) unexpected error: %v", err)
-	}
-
-	internet, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Internet", CategoryID: servicios.ID, Kind: catalog.Expense,
-		Money: &catalog.MoneyDetails{Currency: domain.ARS}, MonthMask: domain.Monthly, ActiveFrom: jan,
+	gas := seedConcept(t, db, "Utilities", catalog.Concept{
+		Name: "Gas", Kind: catalog.Expense,
+		Money: &catalog.MoneyDetails{Currency: domain.ARS},
 	})
-	if err != nil {
-		t.Fatalf("CreateConcept(internet) unexpected error: %v", err)
-	}
-	if err := catalog.SetBaseAmount(db, internet.ID, jan, amount(20000)); err != nil {
-		t.Fatalf("SetBaseAmount(internet) unexpected error: %v", err)
-	}
-
-	vps, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "VPS", CategoryID: servicios.ID, Kind: catalog.Expense,
-		Money: &catalog.MoneyDetails{Currency: domain.USD}, MonthMask: domain.Monthly, ActiveFrom: jan,
+	dollars := seedConcept(t, db, "Home", catalog.Concept{
+		Name: "Dollars", Kind: catalog.Saving,
+		Money: &catalog.MoneyDetails{Currency: domain.USD},
 	})
-	if err != nil {
-		t.Fatalf("CreateConcept(vps) unexpected error: %v", err)
-	}
-	if err := catalog.SetBaseAmount(db, vps.ID, jan, amount(5)); err != nil {
-		t.Fatalf("SetBaseAmount(vps) unexpected error: %v", err)
-	}
 
-	salary, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Sueldo", CategoryID: ingresos.ID, Kind: catalog.Income,
-		Money: &catalog.MoneyDetails{Currency: domain.ARS}, MonthMask: domain.Monthly, ActiveFrom: jan,
-	})
-	if err != nil {
-		t.Fatalf("CreateConcept(salary) unexpected error: %v", err)
-	}
-	if err := catalog.SetBaseAmount(db, salary.ID, jan, amount(1000000)); err != nil {
-		t.Fatalf("SetBaseAmount(salary) unexpected error: %v", err)
-	}
+	january := domain.NewPeriod(2026, time.January)
+	february := domain.NewPeriod(2026, time.February)
+	confirm(t, db, rent.ID, january, 700000)
+	confirm(t, db, gas.ID, january, 30000)
+	confirm(t, db, rent.ID, february, 750000)
+	confirm(t, db, dollars.ID, february, 400)
 
-	got, err := LoadYear(db, 2026)
+	fx := NewFxTable([]catalog.FxRate{closeAt(time.January, 1000), closeAt(time.February, 1200)},
+		decimal.Decimal{}, false, domain.NewPeriod(2026, time.December))
+
+	y, err := LoadYear(db, 2026, fx)
 	if err != nil {
 		t.Fatalf("LoadYear() unexpected error: %v", err)
 	}
 
-	if len(got.Categories) != 1 {
-		t.Fatalf("Categories = %+v, want exactly Servicios (income and zero-total categories excluded)", got.Categories)
+	if len(y.Periods) != 12 {
+		t.Fatalf("LoadYear() returned %d periods, want 12", len(y.Periods))
 	}
-	want := amount((100000 + 20000) * 12)
-	if got.Categories[0].Category.ID != servicios.ID || !got.Categories[0].Total.Equal(want) {
-		t.Errorf("Categories[0] = %+v, want Servicios at %s (rent+internet across 12 months, VPS excluded as USD)",
-			got.Categories[0], want)
+	if !y.Spent[0].Equal(decimal.NewFromInt(730000)) {
+		t.Errorf("Spent[jan] = %s, want 730000", y.Spent[0])
+	}
+	if !y.Spent[1].Equal(decimal.NewFromInt(750000)) {
+		t.Errorf("Spent[feb] = %s, want 750000", y.Spent[1])
+	}
+	if !y.SpentTotal.Equal(decimal.NewFromInt(1480000)) {
+		t.Errorf("SpentTotal = %s, want 1480000", y.SpentTotal)
+	}
+	if !y.Saved[1][dollars.ID].Equal(decimal.NewFromInt(480000)) {
+		t.Errorf("Saved[feb][Dollars] = %s, want 400 USD at 1200", y.Saved[1][dollars.ID])
+	}
+	if !y.SavedTotal.Equal(decimal.NewFromInt(480000)) {
+		t.Errorf("SavedTotal = %s, want 480000", y.SavedTotal)
+	}
+	if len(y.SavingConcepts) != 1 || y.SavingConcepts[0].ID != dollars.ID {
+		t.Errorf("SavingConcepts = %+v, want just Dollars", y.SavingConcepts)
+	}
+
+	byCategory := map[string]decimal.Decimal{}
+	for _, c := range y.Categories {
+		byCategory[c.Category.Name] = c.Total
+	}
+	if !byCategory["Home"].Equal(decimal.NewFromInt(1450000)) {
+		t.Errorf("Home total = %s, want 1450000", byCategory["Home"])
+	}
+	if !byCategory["Utilities"].Equal(decimal.NewFromInt(30000)) {
+		t.Errorf("Utilities total = %s, want 30000", byCategory["Utilities"])
 	}
 }
 
-func TestLoadYearNetWorthSeriesFoldsAllocationsAcrossTheYear(t *testing.T) {
+// Every figure resolves from the periods on screen; nothing accumulates
+// from an opening anchor, so a year with nothing confirmed reads as zero.
+func TestLoadYearWithNothingConfirmed(t *testing.T) {
 	db := openTestStore(t)
-	if _, err := catalog.CreateSavingAllocation(db, catalog.SavingAllocation{
-		Period: domain.NewPeriod(2026, time.March), Destination: catalog.Invested, Amount: amount(100), Currency: domain.USD,
-	}); err != nil {
-		t.Fatalf("CreateSavingAllocation() unexpected error: %v", err)
-	}
+	seedConcept(t, db, "Home", catalog.Concept{
+		Name: "Rent", Kind: catalog.Expense,
+		Money: &catalog.MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(785000)},
+	})
 
-	got, err := LoadYear(db, 2026)
+	y, err := LoadYear(db, 2026, NewFxTable(nil, decimal.Decimal{}, false, domain.NewPeriod(2026, time.September)))
 	if err != nil {
 		t.Fatalf("LoadYear() unexpected error: %v", err)
 	}
-
-	if len(got.NetWorth) != 12 || len(got.Leftover) != 12 {
-		t.Fatalf("NetWorth/Leftover series have %d/%d entries, want 12 each", len(got.NetWorth), len(got.Leftover))
-	}
-	if !got.NetWorth[1].Invested.IsZero() {
-		t.Errorf("NetWorth[Feb].Invested = %s, want 0 (allocation not reached yet)", got.NetWorth[1].Invested)
-	}
-	if !got.NetWorth[2].Invested.Equal(amount(100)) {
-		t.Errorf("NetWorth[Mar].Invested = %s, want 100 (allocation folded in)", got.NetWorth[2].Invested)
-	}
-	if !got.NetWorth[11].Invested.Equal(amount(100)) {
-		t.Errorf("NetWorth[Dec].Invested = %s, want 100 (still folded in at year end)", got.NetWorth[11].Invested)
+	if !y.SpentTotal.IsZero() || !y.SavedTotal.IsZero() || len(y.Categories) != 0 {
+		t.Errorf("LoadYear() = %+v, want everything zero", y)
 	}
 }

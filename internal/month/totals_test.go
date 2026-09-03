@@ -2,6 +2,7 @@ package month
 
 import (
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -9,109 +10,129 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-func lineOf(kind catalog.ConceptKind, cur domain.Currency, amt int64, share int64, confirmed bool) Line {
+func line(kind catalog.ConceptKind, currency domain.Currency, amount int64, confirmed bool) Line {
 	return Line{
-		Concept: catalog.Concept{
-			Kind:  kind,
-			Money: &catalog.MoneyDetails{Currency: cur, Share: domain.NewPercent(share)},
+		Concept: catalog.Concept{Kind: kind, Money: &catalog.MoneyDetails{Currency: currency}},
+		Money: &LineMoney{
+			Amount:    domain.NewMoney(decimal.NewFromInt(amount), currency),
+			Confirmed: confirmed,
 		},
-		Money: &LineMoney{Amount: amount(amt), Confirmed: confirmed},
 	}
 }
 
-func TestResolveTotalsNetsIncomeAgainstExpenses(t *testing.T) {
-	lines := []Line{
-		lineOf(catalog.Income, domain.ARS, 1000000, 100, true),
-		lineOf(catalog.Expense, domain.ARS, 785000, 100, false),
+func rateOf(n int64) Rate {
+	return Rate{Value: decimal.NewFromInt(n), Origin: RateLive}
+}
+
+func TestResolveTotals(t *testing.T) {
+	totals := ResolveTotals([]Line{
+		line(catalog.Income, domain.ARS, 2400000, true),
+		line(catalog.Expense, domain.ARS, 785000, true),
+		line(catalog.Expense, domain.ARS, 34200, true),
+		line(catalog.Saving, domain.ARS, 480000, true),
+	}, rateOf(1200))
+
+	want := decimal.NewFromInt(2400000 - 785000 - 34200)
+	if !totals.Available.Amount().Equal(want) {
+		t.Errorf("Available = %s, want %s", totals.Available.Amount(), want)
 	}
-
-	totals := ResolveTotals(lines)
-
-	got := totals.Projected[domain.ARS].Household
-	if !got.Equal(amount(215000)) {
-		t.Errorf("Projected household = %s, want 215000 (1000000 income - 785000 expense)", got)
+	if !totals.Saved.Amount().Equal(decimal.NewFromInt(480000)) {
+		t.Errorf("Saved = %s, want 480000", totals.Saved.Amount())
+	}
+	if !totals.Pocket.Amount().Equal(want.Sub(decimal.NewFromInt(480000))) {
+		t.Errorf("Pocket = %s, want available - saved", totals.Pocket.Amount())
+	}
+	if totals.Available.Currency() != domain.ARS {
+		t.Error("the header rolls up in ARS")
 	}
 }
 
-func TestResolveTotalsSharesAppliesConceptShare(t *testing.T) {
-	lines := []Line{lineOf(catalog.Expense, domain.ARS, 785000, 50, true)}
+// A baseline you have not typed over is a guess; the header states what you
+// actually did.
+func TestResolveTotalsCountsConfirmedLinesOnly(t *testing.T) {
+	totals := ResolveTotals([]Line{
+		line(catalog.Income, domain.ARS, 2400000, true),
+		line(catalog.Expense, domain.ARS, 785000, false),
+	}, rateOf(1200))
 
-	totals := ResolveTotals(lines)
-
-	got := totals.Projected[domain.ARS].Share
-	if !got.Equal(amount(-392500)) {
-		t.Errorf("Projected share = %s, want -392500 (50%% of -785000)", got)
+	if !totals.Available.Amount().Equal(decimal.NewFromInt(2400000)) {
+		t.Errorf("Available = %s, want the unconfirmed expense left out", totals.Available.Amount())
 	}
 }
 
-func TestResolveTotalsConfirmedOnlyCountsOverrides(t *testing.T) {
-	lines := []Line{
-		lineOf(catalog.Expense, domain.ARS, 785000, 100, true),
-		lineOf(catalog.Expense, domain.ARS, 15000, 100, false),
-	}
+// A chore has no money and never reaches the arithmetic.
+func TestResolveTotalsIgnoresChores(t *testing.T) {
+	totals := ResolveTotals([]Line{
+		{Concept: catalog.Concept{Kind: catalog.Chore}, Done: true},
+	}, rateOf(1200))
 
-	totals := ResolveTotals(lines)
-
-	if got := totals.Projected[domain.ARS].Household; !got.Equal(amount(-800000)) {
-		t.Errorf("Projected household = %s, want -800000 (both lines)", got)
-	}
-	if got := totals.Confirmed[domain.ARS].Household; !got.Equal(amount(-785000)) {
-		t.Errorf("Confirmed household = %s, want -785000 (only the confirmed line)", got)
+	if !totals.Available.Amount().IsZero() || !totals.Saved.Amount().IsZero() {
+		t.Errorf("totals = %+v, want everything zero", totals)
 	}
 }
 
-func TestResolveTotalsGroupsByCurrency(t *testing.T) {
-	lines := []Line{
-		lineOf(catalog.Expense, domain.ARS, 785000, 100, true),
-		lineOf(catalog.Expense, domain.USD, 50, 100, true),
+func TestResolveTotalsFoldsUSDAtThePeriodRate(t *testing.T) {
+	totals := ResolveTotals([]Line{
+		line(catalog.Income, domain.ARS, 2400000, true),
+		line(catalog.Expense, domain.USD, 150, true),
+		line(catalog.Saving, domain.USD, 400, true),
+	}, rateOf(1200))
+
+	if !totals.Available.Amount().Equal(decimal.NewFromInt(2400000 - 150*1200)) {
+		t.Errorf("Available = %s, want the USD expense converted at 1200", totals.Available.Amount())
 	}
-
-	totals := ResolveTotals(lines)
-
-	if got := totals.Projected[domain.ARS].Household; !got.Equal(amount(-785000)) {
-		t.Errorf("ARS household = %s, want -785000 (USD line must not bleed in)", got)
-	}
-	if got := totals.Projected[domain.USD].Household; !got.Equal(amount(-50)) {
-		t.Errorf("USD household = %s, want -50", got)
-	}
-}
-
-func TestResolveHeaderNetFoldsUSDLineIntoARSAtRate(t *testing.T) {
-	lines := []Line{
-		lineOf(catalog.Expense, domain.ARS, 785000, 100, true),
-		lineOf(catalog.Expense, domain.USD, 450, 100, true),
-	}
-
-	h := ResolveHeaderNet(lines, amount(1000), true)
-
-	want := amount(-785000).Sub(amount(450000))
-	if !h.Net.Household.Equal(want) {
-		t.Errorf("Household = %s, want %s (785000 ARS + 450 USD at 1000)", h.Net.Household, want)
+	if !totals.Saved.Amount().Equal(decimal.NewFromInt(400 * 1200)) {
+		t.Errorf("Saved = %s, want 480000", totals.Saved.Amount())
 	}
 }
 
-func TestResolveHeaderNetCountsConfirmedOverTotalLines(t *testing.T) {
-	lines := []Line{
-		lineOf(catalog.Expense, domain.ARS, 785000, 100, true),
-		lineOf(catalog.Expense, domain.ARS, 15000, 100, false),
+// With no rate the header drops what it cannot convert and says how many —
+// counting a USD line as zero would quietly understate the month.
+func TestResolveTotalsExcludesUnconvertibleLines(t *testing.T) {
+	totals := ResolveTotals([]Line{
+		line(catalog.Income, domain.ARS, 2400000, true),
+		line(catalog.Expense, domain.USD, 150, true),
+	}, Rate{})
+
+	if !totals.Available.Amount().Equal(decimal.NewFromInt(2400000)) {
+		t.Errorf("Available = %s, want the USD line dropped, not zeroed", totals.Available.Amount())
 	}
-
-	h := ResolveHeaderNet(lines, decimal.Decimal{}, false)
-
-	if h.Confirmed != 1 || h.Lines != 2 {
-		t.Errorf("Confirmed/Lines = %d/%d, want 1/2", h.Confirmed, h.Lines)
+	if totals.Excluded != 1 {
+		t.Errorf("Excluded = %d, want 1", totals.Excluded)
 	}
 }
 
-func TestResolveHeaderNetSkipsUnconvertibleLineWithoutRate(t *testing.T) {
-	lines := []Line{lineOf(catalog.Expense, domain.USD, 450, 100, true)}
+// Over-saving is legal: a bonus you never modelled, or money sitting from
+// last month. Pocket goes negative rather than the input being refused.
+func TestPocketGoesNegativeWhenOverSaved(t *testing.T) {
+	totals := ResolveTotals([]Line{
+		line(catalog.Income, domain.ARS, 100000, true),
+		line(catalog.Saving, domain.ARS, 130000, true),
+	}, rateOf(1200))
 
-	h := ResolveHeaderNet(lines, decimal.Decimal{}, false)
-
-	if !h.Net.Household.IsZero() {
-		t.Errorf("Household = %s, want 0 (no rate to convert the USD line)", h.Net.Household)
+	if !totals.Pocket.Amount().Equal(decimal.NewFromInt(-30000)) {
+		t.Errorf("Pocket = %s, want -30000", totals.Pocket.Amount())
 	}
-	if h.Confirmed != 1 {
-		t.Errorf("Confirmed = %d, want 1 (still counted, just not folded into Net)", h.Confirmed)
+}
+
+func TestSavedUSD(t *testing.T) {
+	totals := ResolveTotals([]Line{
+		line(catalog.Saving, domain.USD, 400, true),
+	}, rateOf(1200))
+
+	if got := totals.SavedUSD(rateOf(1200)); !got.Equal(decimal.NewFromInt(400)) {
+		t.Errorf("SavedUSD() = %s, want 400", got)
+	}
+	if got := totals.SavedUSD(Rate{}); !got.IsZero() {
+		t.Errorf("SavedUSD() without a rate = %s, want zero", got)
+	}
+}
+
+func TestResolveTotalsSkipsAPeriodWithNothingConfirmed(t *testing.T) {
+	totals := ResolveTotals(Resolve(domain.NewPeriod(2026, time.September),
+		[]catalog.Concept{concept(1, catalog.Expense, 785000)}, nil), rateOf(1200))
+
+	if !totals.Available.Amount().IsZero() || totals.Excluded != 0 {
+		t.Errorf("totals = %+v, want a month you have not touched to read zero", totals)
 	}
 }

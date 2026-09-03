@@ -9,83 +9,80 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-func TestFillFetchedFxRateInsertsWhenAbsent(t *testing.T) {
+func TestSaveFxCloseInsertsWhenAbsent(t *testing.T) {
 	db := openTestStore(t).DB()
-	sept := domain.NewPeriod(2026, time.September)
-	value := decimal.NewFromInt(1200)
+	august := domain.NewPeriod(2026, time.August)
 
-	if err := FillFetchedFxRate(db, sept, value); err != nil {
-		t.Fatalf("FillFetchedFxRate() unexpected error: %v", err)
+	if err := SaveFxClose(db, august, decimal.NewFromInt(1200)); err != nil {
+		t.Fatalf("SaveFxClose() unexpected error: %v", err)
 	}
 
 	got, err := FxRates(db)
 	if err != nil {
 		t.Fatalf("FxRates() unexpected error: %v", err)
 	}
-	if len(got) != 1 || !got[0].Value.Equal(value) || got[0].Source != Fetched {
-		t.Fatalf("FxRates() = %+v, want a single Fetched 1200 row", got)
+	if len(got) != 1 || !got[0].Value.Equal(decimal.NewFromInt(1200)) || got[0].Source != Close {
+		t.Fatalf("FxRates() = %+v, want a single Close 1200 row", got)
 	}
 }
 
-func TestFillFetchedFxRateNeverOverwritesExistingRow(t *testing.T) {
+// Backfill never overwrites: a stored close is final, and a rate you set by
+// hand is never replaced by an automatic one.
+func TestSaveFxCloseNeverOverwrites(t *testing.T) {
 	db := openTestStore(t).DB()
-	sept := domain.NewPeriod(2026, time.September)
-	manual := decimal.NewFromInt(1300)
+	august := domain.NewPeriod(2026, time.August)
 
-	if err := SetFxRate(db, sept, manual); err != nil {
-		t.Fatalf("SetFxRate() unexpected error: %v", err)
+	if err := SetManualFxRate(db, august, decimal.NewFromInt(1300)); err != nil {
+		t.Fatalf("SetManualFxRate() unexpected error: %v", err)
 	}
-	if err := FillFetchedFxRate(db, sept, decimal.NewFromInt(1200)); err != nil {
-		t.Fatalf("FillFetchedFxRate() unexpected error: %v", err)
+	if err := SaveFxClose(db, august, decimal.NewFromInt(1200)); err != nil {
+		t.Fatalf("SaveFxClose() unexpected error: %v", err)
 	}
 
 	got, err := FxRates(db)
 	if err != nil {
 		t.Fatalf("FxRates() unexpected error: %v", err)
 	}
-	if len(got) != 1 || !got[0].Value.Equal(manual) || got[0].Source != Manual {
+	if len(got) != 1 || !got[0].Value.Equal(decimal.NewFromInt(1300)) || got[0].Source != Manual {
 		t.Fatalf("FxRates() = %+v, want the manual 1300 row untouched", got)
 	}
 }
 
-func TestSetFxRateOverwritesAnyExistingRow(t *testing.T) {
+func TestSetManualFxRateOverwritesAStoredClose(t *testing.T) {
 	db := openTestStore(t).DB()
-	sept := domain.NewPeriod(2026, time.September)
+	august := domain.NewPeriod(2026, time.August)
 
-	if err := FillFetchedFxRate(db, sept, decimal.NewFromInt(1200)); err != nil {
-		t.Fatalf("FillFetchedFxRate() unexpected error: %v", err)
+	if err := SaveFxClose(db, august, decimal.NewFromInt(1200)); err != nil {
+		t.Fatalf("SaveFxClose() unexpected error: %v", err)
 	}
-	manual := decimal.NewFromInt(1300)
-	if err := SetFxRate(db, sept, manual); err != nil {
-		t.Fatalf("SetFxRate() unexpected error: %v", err)
+	if err := SetManualFxRate(db, august, decimal.NewFromInt(1450)); err != nil {
+		t.Fatalf("SetManualFxRate() unexpected error: %v", err)
 	}
 
 	got, err := FxRates(db)
 	if err != nil {
 		t.Fatalf("FxRates() unexpected error: %v", err)
 	}
-	if len(got) != 1 || !got[0].Value.Equal(manual) || got[0].Source != Manual {
-		t.Fatalf("FxRates() = %+v, want the fetched row replaced by the 1300 manual one", got)
+	if len(got) != 1 || !got[0].Value.Equal(decimal.NewFromInt(1450)) || got[0].Source != Manual {
+		t.Fatalf("FxRates() = %+v, want a single Manual 1450 row", got)
 	}
 }
 
-func TestFxRatesOrdersByPeriod(t *testing.T) {
+func TestFxRatesComeBackInPeriodOrder(t *testing.T) {
 	db := openTestStore(t).DB()
-	oct := domain.NewPeriod(2026, time.October)
-	sept := domain.NewPeriod(2026, time.September)
-
-	if err := SetFxRate(db, oct, decimal.NewFromInt(1250)); err != nil {
-		t.Fatalf("SetFxRate() unexpected error: %v", err)
-	}
-	if err := SetFxRate(db, sept, decimal.NewFromInt(1200)); err != nil {
-		t.Fatalf("SetFxRate() unexpected error: %v", err)
+	for _, m := range []time.Month{time.March, time.January, time.February} {
+		if err := SaveFxClose(db, domain.NewPeriod(2026, m), decimal.NewFromInt(1000)); err != nil {
+			t.Fatalf("SaveFxClose(%s) unexpected error: %v", m, err)
+		}
 	}
 
 	got, err := FxRates(db)
 	if err != nil {
 		t.Fatalf("FxRates() unexpected error: %v", err)
 	}
-	if len(got) != 2 || !got[0].Period.Equal(sept) || !got[1].Period.Equal(oct) {
-		t.Fatalf("FxRates() = %+v, want September before October", got)
+	for i, want := range []time.Month{time.January, time.February, time.March} {
+		if got[i].Period.Month() != want {
+			t.Fatalf("FxRates()[%d] = %s, want %s", i, got[i].Period, want)
+		}
 	}
 }

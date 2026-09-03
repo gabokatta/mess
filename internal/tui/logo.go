@@ -7,41 +7,40 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// logoLines is the mess wordmark, stamped into the bottom-right corner once
-// the terminal is roomy enough not to crowd the content above it.
+// logoLines is the mess wordmark, stamped into the bottom-right corner:
+// the upper line beside the help, the lower one in the border below it.
 var logoLines = []string{
 	`┏┳┓┏┓┏┏`,
 	`┛┗┗┗ ┛┛`,
 }
 
 const (
-	logoMinWidth  = 80
-	logoMinHeight = 24
-	logoGap       = 3
+	logoGap = 3
 	// logoTail keeps the border's corner intact past the logo.
 	logoTail = 8
 )
 
-// overlayLogo splices logoLines into canvas's trailing rows: logoGap blank
-// columns, the glyph, logoGap more, then the row's original last logoTail
-// runes untouched. Rows are sliced by rune count, so canvas and style must
-// stay ANSI-free there — a color code would throw the column count off.
+var (
+	logoWidth   = utf8.RuneCountInString(logoLines[0])
+	logoSegment = 2*logoGap + logoWidth
+)
+
+// overlayLogo splices the logo's lower line into canvas's bottom border,
+// keeping the row's last logoTail runes so the corner survives. The row is
+// sliced by rune count, so the border must stay ANSI-free.
 func overlayLogo(canvas string, style lipgloss.Style) string {
 	lines := strings.Split(canvas, "\n")
-	start := len(lines) - len(logoLines)
-	if start < 0 {
+	last := len(lines) - 1
+	if last < 0 {
 		return canvas
 	}
-	for i, l := range logoLines {
-		segment := 2*logoGap + utf8.RuneCountInString(l)
-		row := []rune(lines[start+i])
-		if len(row) < segment+logoTail {
-			return canvas
-		}
-		cut := len(row) - logoTail - segment
-		head, tail := row[:cut], row[len(row)-logoTail:]
-		gap := strings.Repeat(" ", logoGap)
-		lines[start+i] = string(head) + gap + style.Render(l) + gap + string(tail)
+	row := []rune(lines[last])
+	cut := len(row) - logoTail - logoSegment
+	if cut < 0 {
+		return canvas
 	}
+	head, tail := row[:cut], row[len(row)-logoTail:]
+	gap := strings.Repeat(" ", logoGap)
+	lines[last] = string(head) + gap + style.Render(logoLines[1]) + gap + string(tail)
 	return strings.Join(lines, "\n")
 }

@@ -20,10 +20,10 @@ func openTestStore(t *testing.T) *store.Store {
 func TestCreateAndListCategories(t *testing.T) {
 	db := openTestStore(t).DB()
 
-	if _, err := CreateCategory(db, "Servicios", 1); err != nil {
+	if _, err := CreateCategory(db, "Utilities", 1); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
-	if _, err := CreateCategory(db, "Hogar", 0); err != nil {
+	if _, err := CreateCategory(db, "Home", 0); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 
@@ -35,8 +35,8 @@ func TestCreateAndListCategories(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("Categories() returned %d rows, want 2", len(got))
 	}
-	if got[0].Name != "Hogar" || got[1].Name != "Servicios" {
-		t.Errorf("Categories() = %+v, want Hogar (sort_order 0) before Servicios (sort_order 1)", got)
+	if got[0].Name != "Home" || got[1].Name != "Utilities" {
+		t.Errorf("Categories() = %+v, want Home (sort_order 0) before Utilities (sort_order 1)", got)
 	}
 	if got[0].ID == 0 {
 		t.Error("CreateCategory() should assign a non-zero ID")
@@ -46,22 +46,22 @@ func TestCreateAndListCategories(t *testing.T) {
 func TestCreateCategoryDuplicateNameFails(t *testing.T) {
 	db := openTestStore(t).DB()
 
-	if _, err := CreateCategory(db, "Hogar", 0); err != nil {
+	if _, err := CreateCategory(db, "Home", 0); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
-	if _, err := CreateCategory(db, "Hogar", 1); err == nil {
+	if _, err := CreateCategory(db, "Home", 1); err == nil {
 		t.Error("CreateCategory() with a duplicate name should fail the UNIQUE constraint")
 	}
 }
 
 func TestFindOrCreateCategoryReturnsExistingByName(t *testing.T) {
 	db := openTestStore(t).DB()
-	want, err := CreateCategory(db, "Hogar", 0)
+	want, err := CreateCategory(db, "Home", 0)
 	if err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 
-	got, err := FindOrCreateCategory(db, "Hogar")
+	got, err := FindOrCreateCategory(db, "Home")
 	if err != nil {
 		t.Fatalf("FindOrCreateCategory() unexpected error: %v", err)
 	}
@@ -80,16 +80,16 @@ func TestFindOrCreateCategoryReturnsExistingByName(t *testing.T) {
 
 func TestFindOrCreateCategoryCreatesWhenMissing(t *testing.T) {
 	db := openTestStore(t).DB()
-	if _, err := CreateCategory(db, "Hogar", 0); err != nil {
+	if _, err := CreateCategory(db, "Home", 0); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 
-	got, err := FindOrCreateCategory(db, "Servicios")
+	got, err := FindOrCreateCategory(db, "Utilities")
 	if err != nil {
 		t.Fatalf("FindOrCreateCategory() unexpected error: %v", err)
 	}
-	if got.Name != "Servicios" || got.SortOrder != 1 {
-		t.Errorf("FindOrCreateCategory() = %+v, want Servicios appended at sort_order 1", got)
+	if got.Name != "Utilities" || got.SortOrder != 1 {
+		t.Errorf("FindOrCreateCategory() = %+v, want Utilities appended at sort_order 1", got)
 	}
 	if got.ID == 0 {
 		t.Error("FindOrCreateCategory() should assign a non-zero ID")
@@ -133,28 +133,5 @@ func TestEnsureDefaultCategoriesLeavesAnExistingTableAlone(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Name != "Custom" {
 		t.Errorf("Categories() = %+v, want only the pre-existing Custom row", got)
-	}
-}
-
-func TestUpdateCategory(t *testing.T) {
-	db := openTestStore(t).DB()
-
-	cat, err := CreateCategory(db, "Hogar", 0)
-	if err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-
-	cat.Name = "Casa"
-	cat.SortOrder = 5
-	if err := UpdateCategory(db, cat); err != nil {
-		t.Fatalf("UpdateCategory() unexpected error: %v", err)
-	}
-
-	got, err := Categories(db)
-	if err != nil {
-		t.Fatalf("Categories() unexpected error: %v", err)
-	}
-	if len(got) != 1 || got[0].Name != "Casa" || got[0].SortOrder != 5 {
-		t.Errorf("Categories() = %+v, want a single Casa row with sort_order 5", got)
 	}
 }
