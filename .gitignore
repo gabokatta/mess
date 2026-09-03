@@ -1,5 +1,4 @@
 # Personal data — never publish
-.nest/
 .data/
 *.db
 *.db-shm
