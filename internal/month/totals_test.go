@@ -128,6 +128,34 @@ func TestSavedUSD(t *testing.T) {
 	}
 }
 
+func TestAvailableUSD(t *testing.T) {
+	totals := ResolveTotals([]Line{
+		line(catalog.Income, domain.ARS, 2400000, true),
+	}, rateOf(1200))
+
+	if got := totals.AvailableUSD(rateOf(1200)); !got.Equal(decimal.NewFromInt(2000)) {
+		t.Errorf("AvailableUSD() = %s, want 2000", got)
+	}
+	if got := totals.AvailableUSD(Rate{}); !got.IsZero() {
+		t.Errorf("AvailableUSD() without a rate = %s, want zero", got)
+	}
+}
+
+// PocketUSD keeps Pocket's sign, so an over-saved month divides negative too.
+func TestPocketUSD(t *testing.T) {
+	totals := ResolveTotals([]Line{
+		line(catalog.Income, domain.ARS, 100000, true),
+		line(catalog.Saving, domain.ARS, 130000, true),
+	}, rateOf(1200))
+
+	if got := totals.PocketUSD(rateOf(1200)); !got.Equal(decimal.NewFromInt(-30000).Div(decimal.NewFromInt(1200))) {
+		t.Errorf("PocketUSD() = %s, want pocket / 1200", got)
+	}
+	if got := totals.PocketUSD(Rate{}); !got.IsZero() {
+		t.Errorf("PocketUSD() without a rate = %s, want zero", got)
+	}
+}
+
 func TestResolveTotalsSkipsAPeriodWithNothingConfirmed(t *testing.T) {
 	totals := ResolveTotals(Resolve(domain.NewPeriod(2026, time.September),
 		[]catalog.Concept{concept(1, catalog.Expense, 785000)}, nil), rateOf(1200))

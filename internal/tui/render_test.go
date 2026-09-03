@@ -35,7 +35,7 @@ func richWorld() fixture.World {
 
 // Every view renders at a real terminal size without panicking or spilling.
 func TestEveryViewRenders(t *testing.T) {
-	const width, height = 100, 32
+	const width, height = minUsableWidth, 32
 	m := modelFor(t, richWorld(), width, height)
 
 	for range viewNames {
@@ -51,26 +51,29 @@ func TestEveryViewRenders(t *testing.T) {
 	}
 }
 
-// Wiring, not arithmetic: the header must show whatever ResolveTotals says.
-// totals_test.go is the only place the arithmetic is asserted.
+// Wiring, not arithmetic: the screen must show whatever ResolveTotals and
+// DoneCount say. totals_test.go is the only place the arithmetic is asserted.
 func TestMonthHeaderShowsTheArithmetic(t *testing.T) {
-	m := modelFor(t, richWorld(), 100, 32)
-	header := stripANSI(m.monthHeader())
+	m := modelFor(t, richWorld(), minUsableWidth, 32)
+	content := stripANSI(m.renderMonth())
 
 	totals := month.ResolveTotals(m.lines, m.fx().At(m.period))
 	done, total := month.DoneCount(m.lines)
 
 	want := []string{
-		fixture.Period.String(),
+		"SEPTEMBER 2026",
 		"current",
-		fmt.Sprintf("%d of %d done", done, total),
-		"available " + formatAmount(totals.Available.Amount()),
-		"saved " + formatAmount(totals.Saved.Amount()),
-		"pocket " + formatAmount(totals.Pocket.Amount()),
+		fmt.Sprintf("done  %d / %d", done, total),
+		"available",
+		formatAmount(totals.Available.Amount()),
+		"saved",
+		formatAmount(totals.Saved.Amount()),
+		"pocket",
+		formatAmount(totals.Pocket.Amount()),
 	}
 	for _, w := range want {
-		if !strings.Contains(header, w) {
-			t.Errorf("header is missing %q:\n%s", w, header)
+		if !strings.Contains(content, w) {
+			t.Errorf("renderMonth is missing %q:\n%s", w, content)
 		}
 	}
 }

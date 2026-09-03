@@ -59,10 +59,20 @@ func eachConfirmedARS(lines []Line, rate Rate, fn func(Line, decimal.Decimal)) i
 	return excluded
 }
 
+// AvailableUSD is Available back in dollars, zero when there is no rate to
+// divide by.
+func (t Totals) AvailableUSD(rate Rate) decimal.Decimal { return usd(t.Available.Amount(), rate) }
+
 // SavedUSD is Saved back in dollars, zero when there is no rate to divide by.
-func (t Totals) SavedUSD(rate Rate) decimal.Decimal {
+func (t Totals) SavedUSD(rate Rate) decimal.Decimal { return usd(t.Saved.Amount(), rate) }
+
+// PocketUSD is Pocket back in dollars, zero when there is no rate to divide
+// by. It carries Pocket's sign, so an over-saved month divides negative too.
+func (t Totals) PocketUSD(rate Rate) decimal.Decimal { return usd(t.Pocket.Amount(), rate) }
+
+func usd(amount decimal.Decimal, rate Rate) decimal.Decimal {
 	if !rate.OK() || rate.Value.IsZero() {
 		return decimal.Decimal{}
 	}
-	return t.Saved.Amount().Div(rate.Value)
+	return amount.Div(rate.Value)
 }

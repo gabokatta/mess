@@ -61,6 +61,13 @@ func groupedRows(groups []group) (rows []string, anchors []int) {
 	return rows, anchors
 }
 
+// hidden counts the rows scrolled off each end of the viewport, so a view can
+// tell the reader there is more list than there is screen.
+func (s scroller) hidden() (above, below int) {
+	above = s.vp.YOffset()
+	return above, max(s.vp.TotalLineCount()-above-s.vp.Height(), 0)
+}
+
 func (s scroller) move(delta, count int) scroller {
 	s.cursor = clamp(s.cursor+delta, count)
 	return s

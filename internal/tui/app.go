@@ -286,7 +286,15 @@ func (m Model) sync() Model {
 	case viewMonth:
 		m.monthList.cursor = clamp(m.monthList.cursor, len(m.lines))
 		rows, anchors := m.monthRows()
-		m.monthList = m.monthList.show(rows, anchors, width, m.bodyHeight(3))
+		// A month that fits gets a viewport its own size, so renderMonth can
+		// centre the card rather than pad it out; a month that doesn't fills
+		// the screen, keeping a line back for the scroll hint.
+		avail := m.monthAvailHeight()
+		height := max(len(rows), 1)
+		if len(rows) > avail {
+			height = max(avail-1, 1)
+		}
+		m.monthList = m.monthList.show(rows, anchors, tableWidth, height)
 	case viewNotes:
 		if m.openNote != nil {
 			rows, anchors := m.noteDetailRows()
@@ -306,7 +314,7 @@ func (m Model) sync() Model {
 
 // Set above what the layout strictly needs: mess is full-screen only.
 const (
-	minUsableWidth        = 100
+	minUsableWidth        = 105
 	minUsableHeight       = 30
 	tooSmallHeadlineWidth = 41
 )
