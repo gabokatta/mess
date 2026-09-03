@@ -3,259 +3,143 @@ package tui
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/shopspring/decimal"
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// conceptsLoadedMsg is the result of loadConcepts' Cmd, delivered back to
-// Update once the database read completes.
-type conceptsLoadedMsg struct {
-	concepts    []catalog.Concept
-	categories  []catalog.Category
-	baseAmounts map[int64][]catalog.BaseAmount
-	err         error
+// newCategory is the zero value, so a form built before any category exists
+// defaults to the "New category" option.
+const newCategory int64 = 0
+
+func (m Model) cursorConcept() (catalog.Concept, bool) {
+	if m.conceptsList.cursor >= len(m.concepts) {
+		return catalog.Concept{}, false
+	}
+	return m.concepts[m.conceptsList.cursor], true
 }
 
-// categoriesSeededMsg is the result of ensureDefaultCategories' Cmd. It
-// always triggers a concepts reload, so a freshly seeded database shows the
-// defaults on first render.
-type categoriesSeededMsg struct {
-	err error
+func (m Model) handleConceptsKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if msg.String() == "n" {
+		return m.openModal(m.conceptForm(m.newConcept()))
+	}
+
+	c, ok := m.cursorConcept()
+	if !ok {
+		return m, nil
+	}
+	switch msg.String() {
+	case "e":
+		return m.openModal(m.conceptForm(c))
+	case "d":
+		return m.openModal(m.deleteConceptForm(c))
+	}
+	return m, nil
 }
 
-// ensureDefaultCategories seeds catalog.DefaultCategoryNames once, on an
-// empty category table. Run from Init rather than loadConcepts, so seeding
-// happens before the read that would otherwise race it.
-func ensureDefaultCategories(db *sql.DB) tea.Cmd {
-	return func() tea.Msg {
-		return categoriesSeededMsg{err: catalog.EnsureDefaultCategories(db)}
+// newConcept is what "n" starts from. It goes active this month, not in
+// whatever period another view was left on: the catalog has no period, and
+// active_from is a field you can type.
+func (m Model) newConcept() catalog.Concept {
+	return catalog.Concept{
+		Kind:       catalog.Expense,
+		MonthMask:  domain.Monthly,
+		ActiveFrom: m.today,
+		Money:      &catalog.MoneyDetails{},
 	}
 }
 
-func loadConcepts(db *sql.DB) tea.Cmd {
-	return func() tea.Msg {
-		concepts, err := catalog.Concepts(db)
-		if err != nil {
-			return conceptsLoadedMsg{err: err}
-		}
-		categories, err := catalog.Categories(db)
-		if err != nil {
-			return conceptsLoadedMsg{err: err}
-		}
-		baseAmounts, err := catalog.AllBaseAmounts(db)
-		return conceptsLoadedMsg{concepts: concepts, categories: categories, baseAmounts: baseAmounts, err: err}
-	}
-}
-
-// conceptSavedMsg is the result of a new-concept write, which always
-// triggers a reload so the rendered list reflects it.
-type conceptSavedMsg struct {
-	err error
-}
-
-// newCategorySentinel is the Category select's "+ New category" option —
-// the zero value, so a form built with no categories yet defaults there.
-const newCategorySentinel int64 = 0
-
-// createConcept resolves the category — an existing ID reuses it directly,
-// the sentinel finds-or-creates newCategory by name — then writes the
-// concept and, for a money concept, its opening base amount as one Cmd. A
-// Chore has no base amount to set.
-func createConcept(db *sql.DB, c catalog.Concept, categoryID int64, newCategory string, amount decimal.Decimal) tea.Cmd {
-	return func() tea.Msg {
-		if categoryID == newCategorySentinel {
-			cat, err := catalog.FindOrCreateCategory(db, newCategory)
-			if err != nil {
-				return conceptSavedMsg{err: err}
-			}
-			categoryID = cat.ID
-		}
-		c.CategoryID = categoryID
-		created, err := catalog.CreateConcept(db, c)
-		if err != nil {
-			return conceptSavedMsg{err: err}
-		}
-		if created.Money == nil {
-			return conceptSavedMsg{}
-		}
-		return conceptSavedMsg{err: catalog.SetBaseAmount(db, created.ID, c.ActiveFrom, amount)}
-	}
-}
-
-// conceptFormValues are the huh-bound values for the new-concept form. Kind,
-// currency, category and months are typed directly via Select/MultiSelect;
-// everything else stays a string, parsed once the form completes.
-type conceptFormValues struct {
+// conceptValues keeps everything a Select cannot type as a string, parsed
+// once on completion past each field's own validator.
+type conceptValues struct {
 	name        string
 	categoryID  int64
-	newCategory string
+	newName     string
 	kind        catalog.ConceptKind
 	currency    domain.Currency
-	amount      string
-	share       string
+	base        string
+	preset      monthPreset
 	months      []time.Month
-	dueDay      string
 	activeFrom  string
 	activeUntil string
 }
 
-// conceptFormState is the new-concept form in progress. It only ever
-// creates — editing an existing concept is a later slice.
-type conceptFormState struct {
-	form   *huh.Form
-	values *conceptFormValues
-}
-
-func newConceptForm(theme Theme, width, height int, current domain.Period, categories []catalog.Category) *conceptFormState {
-	v := &conceptFormValues{
-		months:     allMonths(),
-		activeFrom: current.String(),
+// conceptForm creates when c.ID is zero, and edits otherwise.
+func (m Model) conceptForm(c catalog.Concept) *form {
+	v := &conceptValues{
+		name:        c.Name,
+		categoryID:  c.CategoryID,
+		kind:        c.Kind,
+		months:      c.MonthMask.Months(),
+		activeFrom:  c.ActiveFrom.String(),
+		activeUntil: periodOrBlank(c.ActiveUntil),
 	}
-	if len(categories) > 0 {
-		v.categoryID = categories[0].ID
+	if c.Money != nil {
+		v.currency = c.Money.Currency
+		v.base = c.Money.Base.StringFixed(2)
+	}
+	v.preset = presetOf(c.MonthMask)
+	if v.categoryID == newCategory && len(m.categories) > 0 {
+		v.categoryID = m.categories[0].ID
 	}
 
-	categoryOptions := buildCategoryOptions(categories)
-	monthOptions := buildMonthOptions()
+	title := "New concept"
+	if c.ID != 0 {
+		title = "Edit " + c.Name
+	}
 
-	form := huh.NewForm(
+	groups := []*huh.Group{
 		huh.NewGroup(
 			huh.NewInput().Title("Name").Value(&v.name).Validate(huh.ValidateNotEmpty()),
-			huh.NewSelect[int64]().Title("Category").
-				Options(categoryOptions...).Value(&v.categoryID),
-			huh.NewSelect[catalog.ConceptKind]().Title("Kind").
-				Options(conceptKindOptions...).Value(&v.kind),
-		).Title("New concept"),
-		moneyGroup(&v.currency, &v.amount, &v.share, "Base amount", func() bool { return v.kind == catalog.Chore }),
+			huh.NewSelect[int64]().Title("Category").Options(categoryOptions(m.categories)...).Value(&v.categoryID),
+			huh.NewSelect[catalog.ConceptKind]().Title("Kind").Options(kindOptions...).Value(&v.kind),
+		).Title(title),
 		huh.NewGroup(
-			huh.NewMultiSelect[time.Month]().Title("Months").
-				Description("deselect to skip months, e.g. only June + December").
-				Options(monthOptions...).Value(&v.months),
-			huh.NewInput().Title("Due day").Description("blank = none").
-				Value(&v.dueDay).Validate(validateOptionalDueDay),
-			huh.NewInput().Title("Active from").Value(&v.activeFrom).Validate(validateRequiredPeriod),
+			huh.NewSelect[domain.Currency]().Title("Currency").
+				Options(huh.NewOption("ARS", domain.ARS), huh.NewOption("USD", domain.USD)).
+				Value(&v.currency),
+			huh.NewInput().Title("Base amount").Description("what the edit box opens with").
+				Value(&v.base).Validate(validateDecimal),
+		).Title("Money").WithHideFunc(func() bool { return v.kind == catalog.Chore }),
+		huh.NewGroup(
+			huh.NewSelect[monthPreset]().Title("Months").
+				Options(presetOptions...).Value(&v.preset),
+			huh.NewInput().Title("Active from").Value(&v.activeFrom).Validate(validatePeriod),
 			huh.NewInput().Title("Active until").Description("blank = open-ended").
 				Value(&v.activeUntil).Validate(validateOptionalPeriod),
 		),
 		huh.NewGroup(
-			huh.NewInput().Title("New category name").Value(&v.newCategory).Validate(huh.ValidateNotEmpty()),
-		).Title("New category").WithHideFunc(func() bool { return newCategoryStepHidden(v.categoryID) }),
-	).WithTheme(themeFor(theme)).WithWidth(width - 6).WithHeight(formHeight(height))
-
-	return &conceptFormState{form: form, values: v}
-}
-
-// conceptKindOptions is the Kind select's option list, shared by the
-// new-concept and edit-concept forms.
-var conceptKindOptions = []huh.Option[catalog.ConceptKind]{
-	huh.NewOption("Income", catalog.Income),
-	huh.NewOption("Expense", catalog.Expense),
-	huh.NewOption("Chore", catalog.Chore),
-}
-
-// moneyGroup is the currency/amount/share fields shared by the new-concept
-// and edit-concept forms, hidden by hideFunc when Kind: Chore is selected —
-// a chore has no money to enter. amountTitle differs between the two forms
-// ("Base amount" for a new concept, "Amount" alongside its effective date
-// for an edit).
-func moneyGroup(currency *domain.Currency, amount, share *string, amountTitle string, hideFunc func() bool) *huh.Group {
-	return huh.NewGroup(
-		huh.NewSelect[domain.Currency]().Title("Currency").
-			Options(huh.NewOption("ARS", domain.ARS), huh.NewOption("USD", domain.USD)).
-			Value(currency),
-		huh.NewInput().Title(amountTitle).Value(amount).Validate(validateRequiredDecimal),
-		huh.NewInput().Title("Share %").Description("blank = 100%").
-			Value(share).Validate(validateOptionalWholePercent),
-	).Title("Money").WithHideFunc(hideFunc)
-}
-
-// newCategoryStepHidden reports whether the "New category name" step should
-// be skipped — true whenever Category picked an existing row rather than the
-// sentinel, so the prompt only ever appears when it's actually needed.
-func newCategoryStepHidden(categoryID int64) bool {
-	return categoryID != newCategorySentinel
-}
-
-// buildCategoryOptions is the Category select's option list, shared by the
-// new-concept and edit-concept forms: every existing category, plus the
-// New category sentinel.
-func buildCategoryOptions(categories []catalog.Category) []huh.Option[int64] {
-	options := make([]huh.Option[int64], 0, len(categories)+1)
-	for _, cat := range categories {
-		options = append(options, huh.NewOption(cat.Name, cat.ID))
-	}
-	return append(options, huh.NewOption("New category", newCategorySentinel))
-}
-
-// buildMonthOptions is the Months multi-select's option list, shared by
-// every form that picks a Cadence: concept, chore, and concept-edit.
-func buildMonthOptions() []huh.Option[time.Month] {
-	options := make([]huh.Option[time.Month], 12)
-	for i := range 12 {
-		m := time.Month(i + 1)
-		options[i] = huh.NewOption(m.String(), m)
-	}
-	return options
-}
-
-func allMonths() []time.Month {
-	months := make([]time.Month, 12)
-	for i := range months {
-		months[i] = time.Month(i + 1)
-	}
-	return months
-}
-
-func (m Model) startNewConcept() (Model, tea.Cmd) {
-	m.conceptForm = newConceptForm(m.theme, m.width, m.height, m.period, m.categories)
-	return m, m.conceptForm.form.Init()
-}
-
-func (m Model) updateConceptForm(msg tea.KeyPressMsg) (Model, tea.Cmd) {
-	if msg.String() == "esc" {
-		m.conceptForm = nil
-		return m, nil
-	}
-	return m.forwardConceptForm(msg)
-}
-
-// forwardConceptForm drives the form with any tea.Msg: Huh advances fields
-// and groups via its own internal messages, returned as a tea.Cmd rather
-// than applied synchronously, so those need the same round trip a key does.
-func (m Model) forwardConceptForm(msg tea.Msg) (Model, tea.Cmd) {
-	updated, cmd := m.conceptForm.form.Update(msg)
-	if f, ok := updated.(*huh.Form); ok {
-		m.conceptForm.form = f
+			huh.NewMultiSelect[time.Month]().Title("Pick months").
+				Options(monthOptions()...).Value(&v.months),
+		).WithHideFunc(func() bool { return v.preset != presetPicked }),
+		huh.NewGroup(
+			huh.NewInput().Title("New category name").Value(&v.newName).Validate(huh.ValidateNotEmpty()),
+		).WithHideFunc(func() bool { return v.categoryID != newCategory }),
 	}
 
-	switch m.conceptForm.form.State {
-	case huh.StateCompleted:
-		c, categoryID, newCategory, amount := m.conceptForm.values.build()
-		m.conceptForm = nil
-		return m, tea.Batch(cmd, createConcept(m.db, c, categoryID, newCategory, amount))
-	case huh.StateAborted:
-		m.conceptForm = nil
-		return m, nil
-	}
-	return m, cmd
+	id := c.ID
+	return newForm(m.theme, m.width, m.height, groups, func() tea.Cmd {
+		return write(func() error { return v.save(m.db, id) })
+	})
 }
 
-// build converts the form's validated strings into a Concept. Every parse
-// here already passed the matching field's Validate func, so an error would
-// mean a bug in that pairing rather than bad user input. Money stays nil for
-// a Chore, whatever's left over in the hidden currency/amount/share fields.
-func (v *conceptFormValues) build() (catalog.Concept, int64, string, decimal.Decimal) {
-	dueDay := 0
-	if v.dueDay != "" {
-		dueDay, _ = strconv.Atoi(v.dueDay)
+// save's parses have all passed their field's validator, so a failure here
+// would be a bug in that pairing rather than bad input.
+func (v *conceptValues) save(db *sql.DB, id int64) error {
+	categoryID := v.categoryID
+	if categoryID == newCategory {
+		cat, err := catalog.FindOrCreateCategory(db, v.newName)
+		if err != nil {
+			return err
+		}
+		categoryID = cat.ID
 	}
 
 	activeFrom, _ := domain.ParsePeriod(v.activeFrom)
@@ -265,24 +149,181 @@ func (v *conceptFormValues) build() (catalog.Concept, int64, string, decimal.Dec
 	}
 
 	c := catalog.Concept{
-		Name: v.name, Kind: v.kind, MonthMask: domain.NewCadence(v.months...),
-		DueDay: dueDay, ActiveFrom: activeFrom, ActiveUntil: activeUntil,
+		ID:          id,
+		Name:        v.name,
+		CategoryID:  categoryID,
+		Kind:        v.kind,
+		MonthMask:   v.cadence(),
+		ActiveFrom:  activeFrom,
+		ActiveUntil: activeUntil,
 	}
-	if v.kind == catalog.Chore {
-		return c, v.categoryID, v.newCategory, decimal.Decimal{}
+	if v.preset == presetOnce {
+		c.ActiveUntil = activeFrom
+	}
+	if v.kind != catalog.Chore {
+		base, _ := decimal.NewFromString(v.base)
+		c.Money = &catalog.MoneyDetails{Currency: v.currency, Base: base}
 	}
 
-	amount, _ := decimal.NewFromString(v.amount)
-	var share domain.Percent
-	if v.share != "" {
-		wholePercent, _ := strconv.ParseInt(v.share, 10, 64)
-		share = domain.NewPercent(wholePercent)
+	if id == 0 {
+		_, err := catalog.CreateConcept(db, c)
+		return err
 	}
-	c.Money = &catalog.MoneyDetails{Currency: v.currency, Share: share}
-	return c, v.categoryID, v.newCategory, amount
+	return catalog.UpdateConcept(db, c)
 }
 
-func validateRequiredDecimal(s string) error {
+func (m Model) deleteConceptForm(c catalog.Concept) *form {
+	var confirmed bool
+	f := newForm(m.theme, m.width, m.height,
+		[]*huh.Group{
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Delete " + c.Name + "? Its ticks and amounts go with it.").
+					Affirmative("Delete").Negative("Keep").Value(&confirmed),
+			),
+		},
+		func() tea.Cmd {
+			if !confirmed {
+				return nil
+			}
+			return write(func() error { return catalog.DeleteConcept(m.db, c.ID) })
+		})
+	f.help = "←/→ choose · enter confirm · esc cancel"
+	return f
+}
+
+// monthPreset is the cadence picker. Anything the three named presets do
+// not cover falls to presetPicked, which reveals the month-by-month list.
+type monthPreset int
+
+const (
+	presetMonthly monthPreset = iota
+	presetAguinaldo
+	presetOnce
+	presetPicked
+)
+
+var presetOptions = []huh.Option[monthPreset]{
+	huh.NewOption("Every month", presetMonthly),
+	huh.NewOption("June and December", presetAguinaldo),
+	huh.NewOption("This month only", presetOnce),
+	huh.NewOption("Pick months", presetPicked),
+}
+
+func presetOf(mask domain.Cadence) monthPreset {
+	switch mask {
+	case domain.Monthly:
+		return presetMonthly
+	case domain.Aguinaldo:
+		return presetAguinaldo
+	default:
+		return presetPicked
+	}
+}
+
+// cadence resolves the preset. presetOnce is one bit plus the one-month
+// active range save() gives it, so there is no OneOff case to branch on.
+func (v *conceptValues) cadence() domain.Cadence {
+	switch v.preset {
+	case presetMonthly:
+		return domain.Monthly
+	case presetAguinaldo:
+		return domain.Aguinaldo
+	case presetOnce:
+		from, _ := domain.ParsePeriod(v.activeFrom)
+		return domain.NewCadence(from.Month())
+	default:
+		return domain.NewCadence(v.months...)
+	}
+}
+
+var kindOptions = []huh.Option[catalog.ConceptKind]{
+	huh.NewOption("Income", catalog.Income),
+	huh.NewOption("Expense", catalog.Expense),
+	huh.NewOption("Saving", catalog.Saving),
+	huh.NewOption("Chore", catalog.Chore),
+}
+
+func categoryOptions(categories []catalog.Category) []huh.Option[int64] {
+	options := make([]huh.Option[int64], 0, len(categories)+1)
+	for _, c := range categories {
+		options = append(options, huh.NewOption(c.Name, c.ID))
+	}
+	return append(options, huh.NewOption("New category", newCategory))
+}
+
+func monthOptions() []huh.Option[time.Month] {
+	options := make([]huh.Option[time.Month], 12)
+	for i := range options {
+		m := time.Month(i + 1)
+		options[i] = huh.NewOption(m.String(), m)
+	}
+	return options
+}
+
+func (m Model) renderConcepts() string {
+	title := m.theme.Muted.Render("Concepts")
+	if len(m.concepts) == 0 {
+		return title + "\n\n" + m.centerInBox(m.theme.Muted.Render("no concepts yet — press n to add one"), 2)
+	}
+	return title + "\n\n" + m.conceptsList.View()
+}
+
+func (m Model) conceptRows() ([]string, []int) {
+	var groups []group
+	var current int64
+	for i, c := range m.concepts {
+		if c.CategoryID != current || i == 0 {
+			current = c.CategoryID
+			groups = append(groups, group{label: categoryStyle(m.categories, c.CategoryID).Bold(true).
+				Render(strings.ToUpper(categoryName(m.categories, c.CategoryID)))})
+		}
+		last := &groups[len(groups)-1]
+		last.rows = append(last.rows, m.renderConceptRow(c, i == m.conceptsList.cursor))
+	}
+	return groupedRows(groups)
+}
+
+func (m Model) renderConceptRow(c catalog.Concept, selected bool) string {
+	cursor := "  "
+	if selected {
+		cursor = m.theme.Accent.Render("> ")
+	}
+	name := m.theme.Bright.Width(nameWidth).MaxWidth(nameWidth).Render(c.Name)
+	kind := m.theme.Muted.Width(9).Render(c.Kind.String())
+
+	money := strings.Repeat(" ", amountWidth+4)
+	if c.Money != nil {
+		money = m.theme.Muted.Render(c.Money.Currency.String()) + " " +
+			m.theme.Bright.Width(amountWidth).Align(lipgloss.Right).Render(formatAmount(c.Money.Base))
+	}
+
+	active := c.ActiveFrom.String()
+	if !c.ActiveUntil.IsZero() {
+		active += " – " + c.ActiveUntil.String()
+	}
+	cadence := m.theme.Muted.Width(7).Render(fmt.Sprintf("%d/12", len(c.MonthMask.Months())))
+
+	return cursor + name + kind + money + "  " + cadence + m.theme.Muted.Render(active)
+}
+
+func categoryName(categories []catalog.Category, id int64) string {
+	for _, c := range categories {
+		if c.ID == id {
+			return c.Name
+		}
+	}
+	return "?"
+}
+
+func periodOrBlank(p domain.Period) string {
+	if p.IsZero() {
+		return ""
+	}
+	return p.String()
+}
+
+func validateDecimal(s string) error {
 	if s == "" {
 		return fmt.Errorf("required")
 	}
@@ -290,37 +331,7 @@ func validateRequiredDecimal(s string) error {
 	return err
 }
 
-func validateOptionalDecimal(s string) error {
-	if s == "" {
-		return nil
-	}
-	_, err := decimal.NewFromString(s)
-	return err
-}
-
-func validateOptionalWholePercent(s string) error {
-	if s == "" {
-		return nil
-	}
-	_, err := strconv.ParseInt(s, 10, 64)
-	return err
-}
-
-func validateOptionalDueDay(s string) error {
-	if s == "" {
-		return nil
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return err
-	}
-	if n < 1 || n > 31 {
-		return fmt.Errorf("must be 1-31")
-	}
-	return nil
-}
-
-func validateRequiredPeriod(s string) error {
+func validatePeriod(s string) error {
 	if s == "" {
 		return fmt.Errorf("required")
 	}
@@ -334,118 +345,4 @@ func validateOptionalPeriod(s string) error {
 	}
 	_, err := domain.ParsePeriod(s)
 	return err
-}
-
-// orderedConcepts is m.concepts in the same grouped-by-category order the
-// Concepts view renders, so cursor index and render index always agree.
-func (m Model) orderedConcepts() []catalog.Concept {
-	var out []catalog.Concept
-	for _, cat := range m.categories {
-		out = append(out, conceptsForCategory(m.concepts, cat.ID)...)
-	}
-	return out
-}
-
-func (m Model) moveConceptCursor(delta int) int {
-	n := len(m.orderedConcepts())
-	if n == 0 {
-		return 0
-	}
-	cursor := m.conceptCursor + delta
-	if cursor < 0 {
-		return 0
-	}
-	if cursor >= n {
-		return n - 1
-	}
-	return cursor
-}
-
-// cursorConcept reports the concept under the cursor, if the list isn't empty.
-func (m Model) cursorConcept() (catalog.Concept, bool) {
-	list := m.orderedConcepts()
-	if m.conceptCursor >= len(list) {
-		return catalog.Concept{}, false
-	}
-	return list[m.conceptCursor], true
-}
-
-func (m Model) renderConcepts() string {
-	var b strings.Builder
-	b.WriteString(m.theme.Muted.Render(m.view.String() + " · " + m.period.String()))
-
-	if m.conceptsErr != nil {
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render("failed to load: " + m.conceptsErr.Error()))
-		return b.String()
-	}
-
-	if m.conceptForm != nil {
-		b.WriteString("\n\n")
-		b.WriteString(m.conceptForm.form.View())
-		return b.String()
-	}
-	if m.conceptEditForm != nil {
-		b.WriteString("\n\n")
-		b.WriteString(m.conceptEditForm.form.View())
-		return b.String()
-	}
-
-	if len(m.concepts) == 0 {
-		b.WriteString("\n")
-		b.WriteString(m.centerInBox(m.theme.Muted.Render("no concepts yet — press n to add one")))
-		return b.String()
-	}
-
-	idx := 0
-	for _, cat := range m.categories {
-		group := conceptsForCategory(m.concepts, cat.ID)
-		if len(group) == 0 {
-			continue
-		}
-		b.WriteString("\n\n")
-		b.WriteString(categoryStyle(m.categories, cat.ID).Bold(true).Render(cat.Name))
-		for _, c := range group {
-			b.WriteString("\n")
-			b.WriteString(m.renderConceptRow(c, idx == m.conceptCursor))
-			idx++
-		}
-	}
-
-	if m.conceptSaveErr != nil {
-		b.WriteString("\n\n")
-		b.WriteString(m.theme.Muted.Render("failed to save: " + m.conceptSaveErr.Error()))
-	}
-	return b.String()
-}
-
-func conceptsForCategory(concepts []catalog.Concept, categoryID int64) []catalog.Concept {
-	var out []catalog.Concept
-	for _, c := range concepts {
-		if c.CategoryID == categoryID {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-func (m Model) renderConceptRow(c catalog.Concept, selected bool) string {
-	cursor := " "
-	if selected {
-		cursor = ">"
-	}
-	currency := "—"
-	amount := "—"
-	if c.Money != nil {
-		currency = c.Money.Currency.String()
-		if latest, ok := catalog.LatestBaseAmount(m.baseAmounts[c.ID]); ok {
-			amount = latest.Amount.StringFixed(2)
-		}
-	}
-	active := c.ActiveFrom.String()
-	if !c.ActiveUntil.IsZero() {
-		active += " – " + c.ActiveUntil.String()
-	}
-	name := categoryStyle(m.categories, c.CategoryID).Render(fmt.Sprintf("%-20s", c.Name))
-	return fmt.Sprintf("%s %s %-14s %s %12s  %s", cursor, name, c.Kind, currency, amount, active)
 }

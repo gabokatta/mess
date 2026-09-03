@@ -1,25 +1,106 @@
 package month
 
 import (
+	"time"
+
 	"github.com/shopspring/decimal"
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// ResolveFxRate picks period's own rate if one was recorded, else the
-// latest known rate before it. rates must be sorted ascending by Period, the
-// order catalog.FxRates already returns them in. ok is false when no rate at
-// or before period exists — there is no hardcoded fallback constant.
-func ResolveFxRate(period domain.Period, rates []catalog.FxRate) (decimal.Decimal, bool) {
-	var value decimal.Decimal
-	found := false
-	for _, r := range rates {
+// RateOrigin is where a period's rate came from. The Rates view shows it so
+// a stale rate is visible rather than silently in effect.
+type RateOrigin int
+
+const (
+	RateNone RateOrigin = iota
+	RateLive
+	RateClose
+	RateManual
+	RateInherited
+)
+
+// Rate is the dollar rate in effect for one period.
+type Rate struct {
+	Value  decimal.Decimal
+	Origin RateOrigin
+	From   domain.Period // the period an inherited rate was taken from
+}
+
+func (r Rate) OK() bool { return r.Origin != RateNone }
+
+func (r Rate) Label() string {
+	switch r.Origin {
+	case RateLive:
+		return "live"
+	case RateClose:
+		return "close"
+	case RateManual:
+		return "manual"
+	case RateInherited:
+		return "inherited from " + r.From.String()
+	default:
+		return "no rate"
+	}
+}
+
+// FxTable answers "what was a peso worth that month" for every period at
+// once: the stored closes, plus today's quote for the month still running.
+// Conversion is read-time, so a corrected rate cascades through every total
+// as if it had been right all along.
+type FxTable struct {
+	stored  []catalog.FxRate
+	live    decimal.Decimal
+	hasLive bool
+	today   domain.Period
+}
+
+// NewFxTable takes the stored rows in the ascending order catalog.FxRates
+// returns them, plus today's quote — hasLive is false when the fetch failed
+// or has not landed yet.
+func NewFxTable(stored []catalog.FxRate, live decimal.Decimal, hasLive bool, today domain.Period) FxTable {
+	return FxTable{stored: stored, live: live, hasLive: hasLive, today: today}
+}
+
+// At resolves period's rate: a rate you set by hand wins outright, the
+// running month falls to today's quote, a completed month to its own close,
+// and a completed month with no close of its own inherits the last one
+// before it.
+func (t FxTable) At(period domain.Period) Rate {
+	var inherited Rate
+	for _, r := range t.stored {
 		if r.Period.After(period) {
 			break
 		}
-		value = r.Value
-		found = true
+		if r.Period.Equal(period) {
+			if r.Source == catalog.Manual {
+				return Rate{Value: r.Value, Origin: RateManual}
+			}
+			return Rate{Value: r.Value, Origin: RateClose}
+		}
+		inherited = Rate{Value: r.Value, Origin: RateInherited, From: r.Period}
 	}
-	return value, found
+	if period.Equal(t.today) && t.hasLive {
+		return Rate{Value: t.live, Origin: RateLive}
+	}
+	return inherited
+}
+
+// MissingCloses is every completed month of year with no stored rate, the
+// backfill list — at most twelve periods, and empty once a year is filled
+// in, so a stored close is never refetched.
+func MissingCloses(year int, today domain.Period, stored []catalog.FxRate) []domain.Period {
+	have := make(map[domain.Period]bool, len(stored))
+	for _, r := range stored {
+		have[r.Period] = true
+	}
+	var missing []domain.Period
+	for m := 1; m <= 12; m++ {
+		p := domain.NewPeriod(year, time.Month(m))
+		if p.Before(today) && !have[p] {
+			missing = append(missing, p)
+		}
+	}
+	return missing
 }

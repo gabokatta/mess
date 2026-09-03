@@ -35,8 +35,8 @@ func ParseCurrency(s string) (Currency, error) {
 	}
 }
 
-const currencyScale = 2
-
+// Money is an amount that always carries its currency, so nothing sums two
+// of them without deciding what to do about the pair.
 type Money struct {
 	amount   decimal.Decimal
 	currency Currency
@@ -53,24 +53,19 @@ func (m Money) Equal(other Money) bool {
 	return m.currency == other.currency && m.amount.Equal(other.amount)
 }
 
-func (m Money) Add(other Money) (Money, error) {
-	if m.currency != other.currency {
-		return Money{}, fmt.Errorf("domain: cannot add %s to %s", other.currency, m.currency)
+// ToARS converts m at rate pesos per dollar. It reports false for a USD
+// amount with no rate to convert it with, so a caller drops the line from a
+// roll-up rather than counting it as zero.
+func (m Money) ToARS(rate decimal.Decimal, hasRate bool) (Money, bool) {
+	if m.currency == ARS {
+		return m, true
 	}
-	return Money{amount: m.amount.Add(other.amount), currency: m.currency}, nil
-}
-
-func (m Money) Sub(other Money) (Money, error) {
-	if m.currency != other.currency {
-		return Money{}, fmt.Errorf("domain: cannot subtract %s from %s", other.currency, m.currency)
+	if !hasRate {
+		return Money{}, false
 	}
-	return Money{amount: m.amount.Sub(other.amount), currency: m.currency}, nil
+	return Money{amount: m.amount.Mul(rate), currency: ARS}, true
 }
 
-func (m Money) Negate() Money {
-	return Money{amount: m.amount.Neg(), currency: m.currency}
-}
-
-func (m Money) Share(p Percent) Money {
-	return Money{amount: m.amount.Mul(p.Fraction()).Round(currencyScale), currency: m.currency}
+func (m Money) String() string {
+	return m.currency.String() + " " + m.amount.StringFixed(2)
 }

@@ -15,11 +15,7 @@ func TestOpenCreatesSchema(t *testing.T) {
 	}
 	defer s.Close()
 
-	tables := []string{
-		"category", "concept", "base_amount", "month_entry",
-		"saving_allocation", "list",
-		"fx_rate", "settings",
-	}
+	tables := []string{"category", "concept", "month_entry", "note", "fx_rate", "settings"}
 	for _, name := range tables {
 		var got string
 		err := s.DB().QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", name).Scan(&got)
@@ -72,7 +68,7 @@ func TestOpenEnforcesForeignKeys(t *testing.T) {
 
 	_, err = s.DB().Exec(`INSERT INTO concept
 		(name, category_id, kind, currency, month_mask, active_from)
-		VALUES ('Alquiler', 999, 'Expense', 'ARS', 4095, '2026-01')`)
+		VALUES ('Rent', 999, 'Expense', 'ARS', 4095, '2026-01')`)
 	if err == nil {
 		t.Error("insert with dangling category_id should have failed foreign key check")
 	}

@@ -3,7 +3,7 @@
 *.db
 *.db-shm
 *.db-wal
-mes-export-*.json
+mess-*.json
 
 # Build output
 /bin/

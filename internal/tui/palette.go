@@ -8,10 +8,9 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 )
 
-// categoryPalette is Okabe-Ito, chosen for staying distinguishable under the
-// common forms of color blindness. One palette, not a light/dark pair — the
-// hues read fine on both.
-var categoryPalette = [8]color.Color{
+// palette is Okabe-Ito, which stays distinguishable under the common forms
+// of color blindness and reads on both light and dark grounds.
+var palette = [8]color.Color{
 	lipgloss.Color("#E69F00"),
 	lipgloss.Color("#56B4E9"),
 	lipgloss.Color("#009E73"),
@@ -19,25 +18,26 @@ var categoryPalette = [8]color.Color{
 	lipgloss.Color("#0072B2"),
 	lipgloss.Color("#D55E00"),
 	lipgloss.Color("#CC79A7"),
-	lipgloss.Color("#000000"),
+	lipgloss.Color("#999999"),
 }
 
-// categoryColor resolves categoryID's color from its position in categories,
-// which must already be sorted the way catalog.Categories returns them —
-// never stored, so the mapping can't drift out of sync with the category
-// list itself. Past 8 categories, colors repeat. An ID not found in
-// categories (data not loaded yet) falls back to the first color.
+// categoryColor indexes by position, so categories must arrive sorted the
+// way catalog.Categories returns them. Past eight, colors repeat.
 func categoryColor(categories []catalog.Category, categoryID int64) color.Color {
 	for i, c := range categories {
 		if c.ID == categoryID {
-			return categoryPalette[i%len(categoryPalette)]
+			return palette[i%len(palette)]
 		}
 	}
-	return categoryPalette[0]
+	return palette[0]
 }
 
-// categoryStyle is categoryColor as a Style, for callers that render text
-// rather than a chart bar.
 func categoryStyle(categories []catalog.Category, categoryID int64) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(categoryColor(categories, categoryID))
+}
+
+// groupStyle keeps the accent free for the one thing per screen that earns
+// it.
+func groupStyle(index int) lipgloss.Style {
+	return lipgloss.NewStyle().Bold(true).Foreground(palette[index%len(palette)])
 }

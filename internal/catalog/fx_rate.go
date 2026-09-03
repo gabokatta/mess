@@ -9,19 +9,19 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// FxSource marks whether a period's rate came from the app fetching a quote
-// or from you overriding it by hand.
+// FxSource separates a month's real close from a rate you set by hand.
+// Nothing automatic ever replaces a Manual row.
 type FxSource int
 
 const (
-	Fetched FxSource = iota
+	Close FxSource = iota
 	Manual
 )
 
 func (s FxSource) String() string {
 	switch s {
-	case Fetched:
-		return "Fetched"
+	case Close:
+		return "Close"
 	case Manual:
 		return "Manual"
 	default:
@@ -31,8 +31,8 @@ func (s FxSource) String() string {
 
 func ParseFxSource(s string) (FxSource, error) {
 	switch s {
-	case "Fetched":
-		return Fetched, nil
+	case "Close":
+		return Close, nil
 	case "Manual":
 		return Manual, nil
 	default:
@@ -40,16 +40,15 @@ func ParseFxSource(s string) (FxSource, error) {
 	}
 }
 
-// FxRate is one period's dollar rate: one row per period, never more.
+// FxRate is a completed month: the current month is never stored, so a row
+// here never needs refetching.
 type FxRate struct {
 	Period domain.Period
 	Value  decimal.Decimal
 	Source FxSource
 }
 
-// SetFxRate records a manual override for period, replacing whatever rate —
-// fetched or manual — was stored for it.
-func SetFxRate(db *sql.DB, period domain.Period, value decimal.Decimal) error {
+func SetManualFxRate(db *sql.DB, period domain.Period, value decimal.Decimal) error {
 	_, err := db.Exec(`
 		INSERT INTO fx_rate (period, value, source) VALUES (?, ?, 'Manual')
 		ON CONFLICT (period) DO UPDATE SET value = excluded.value, source = excluded.source`,
@@ -57,12 +56,11 @@ func SetFxRate(db *sql.DB, period domain.Period, value decimal.Decimal) error {
 	return err
 }
 
-// FillFetchedFxRate stores value as period's rate only if no rate exists yet
-// for it. The app calls this on open with today's quote; it never overwrites
-// a rate you already have, fetched or manual.
-func FillFetchedFxRate(db *sql.DB, period domain.Period, value decimal.Decimal) error {
+// SaveFxClose leaves any rate already recorded for that period alone, so
+// backfill never overwrites and a Manual row survives it.
+func SaveFxClose(db *sql.DB, period domain.Period, value decimal.Decimal) error {
 	_, err := db.Exec(`
-		INSERT INTO fx_rate (period, value, source) VALUES (?, ?, 'Fetched')
+		INSERT INTO fx_rate (period, value, source) VALUES (?, ?, 'Close')
 		ON CONFLICT (period) DO NOTHING`,
 		period.String(), value.String())
 	return err
@@ -78,13 +76,13 @@ func FxRates(db *sql.DB) ([]FxRate, error) {
 	var rates []FxRate
 	for rows.Next() {
 		var (
-			r                   FxRate
-			periodStr, valueStr string
-			sourceStr           string
+			r                              FxRate
+			periodStr, valueStr, sourceStr string
 		)
 		if err := rows.Scan(&periodStr, &valueStr, &sourceStr); err != nil {
 			return nil, err
 		}
+		var err error
 		if r.Period, err = domain.ParsePeriod(periodStr); err != nil {
 			return nil, err
 		}

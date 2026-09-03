@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 
 	"github.com/gabokatta/mess/internal/backup"
+	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/store"
 	"github.com/gabokatta/mess/internal/tui"
 )
@@ -27,7 +30,7 @@ func run(args []string, stdout io.Writer) error {
 		case "export":
 			return runExport(args[1:], stdout)
 		case "import":
-			return runImport(args[1:])
+			return runImport(args[1:], stdout, confirmReplace)
 		}
 	}
 	return runTUI(args)
@@ -51,7 +54,7 @@ func runTUI(args []string) error {
 	}
 	defer s.Close()
 
-	_, err = tea.NewProgram(tui.New(s.DB()).WithDBPath(path)).Run()
+	_, err = tea.NewProgram(tui.New(s.DB())).Run()
 	return err
 }
 
@@ -77,10 +80,17 @@ func runExport(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return json.NewEncoder(stdout).Encode(data)
+	if err := json.NewEncoder(stdout).Encode(data); err != nil {
+		return err
+	}
+	return catalog.MarkExported(s.DB(), time.Now())
 }
 
-func runImport(args []string) error {
+// confirm gates the wholesale replace. It is a parameter so a test can
+// answer it; the only real implementation is confirmReplace.
+type confirm func(dbPath string) (bool, error)
+
+func runImport(args []string, stdout io.Writer, ask confirm) error {
 	fs := flag.NewFlagSet("mess import", flag.ExitOnError)
 	dbPath := fs.String("db", "", "database path (default: user config dir)")
 	if err := fs.Parse(args); err != nil {
@@ -110,10 +120,36 @@ func runImport(args []string) error {
 	}
 	defer s.Close()
 
-	if _, err := backup.Snapshot(s.DB(), path); err != nil {
+	confirmed, err := ask(path)
+	if err != nil {
 		return err
 	}
-	return backup.Import(s.DB(), data)
+	if !confirmed {
+		return nil
+	}
+
+	snapshot, err := backup.Snapshot(s.DB(), path)
+	if err != nil {
+		return err
+	}
+	if err := backup.Import(s.DB(), data); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "imported; the database as it was is at", snapshot)
+	return nil
+}
+
+// confirmReplace is the gate itself. Import is a recovery action run by
+// hand, not the crontab half of backup, so it can ask.
+func confirmReplace(dbPath string) (bool, error) {
+	var confirmed bool
+	err := huh.NewConfirm().
+		Title("Replace every table in " + dbPath + " with this backup?").
+		Description("A timestamped copy of the current database is written first.").
+		Affirmative("Replace").Negative("Cancel").
+		Value(&confirmed).
+		Run()
+	return confirmed, err
 }
 
 func resolveDBPath(override string) (string, error) {

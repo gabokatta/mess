@@ -6,316 +6,209 @@ import (
 	"testing"
 	"time"
 
-	"charm.land/huh/v2"
+	tea "charm.land/bubbletea/v2"
+	"github.com/shopspring/decimal"
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-func conceptsModel(t *testing.T, db *sql.DB, period domain.Period) Model {
+func conceptsModel(t *testing.T, db *sql.DB) Model {
 	t.Helper()
-	m := New(db)
-	m.width, m.height = 100, 40
-	m.period = period
-	m.view = viewConcepts
 	concepts, err := catalog.Concepts(db)
 	if err != nil {
-		t.Fatalf("catalog.Concepts() unexpected error: %v", err)
+		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
 	categories, err := catalog.Categories(db)
 	if err != nil {
-		t.Fatalf("catalog.Categories() unexpected error: %v", err)
-	}
-	baseAmounts, err := catalog.AllBaseAmounts(db)
-	if err != nil {
-		t.Fatalf("catalog.AllBaseAmounts() unexpected error: %v", err)
-	}
-	updated, _ := m.Update(conceptsLoadedMsg{concepts: concepts, categories: categories, baseAmounts: baseAmounts})
-	return updated.(Model)
-}
-
-func TestConceptsViewRendersEmptyState(t *testing.T) {
-	db := openTestStore(t)
-	m := conceptsModel(t, db, domain.NewPeriod(2026, time.September))
-	content := m.View().Content
-	if !strings.Contains(content, "no concepts yet") {
-		t.Errorf("content = %q, want the empty state", content)
-	}
-}
-
-func TestConceptsViewListsConceptsGroupedByCategory(t *testing.T) {
-	db := openTestStore(t)
-	cat, err := catalog.CreateCategory(db, "Hogar", 0)
-	if err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-	concept, err := catalog.CreateConcept(db, catalog.Concept{
-		Name: "Alquiler", CategoryID: cat.ID, Kind: catalog.Expense, Money: &catalog.MoneyDetails{Currency: domain.ARS},
-		MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(2026, 1),
-	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-	if err := catalog.SetBaseAmount(db, concept.ID, domain.NewPeriod(2026, 1), amountFor(t, "785000")); err != nil {
-		t.Fatalf("SetBaseAmount() unexpected error: %v", err)
+		t.Fatalf("Categories() unexpected error: %v", err)
 	}
 
-	m := conceptsModel(t, db, domain.NewPeriod(2026, time.September))
-	content := m.View().Content
-	for _, want := range []string{"Hogar", "Alquiler", "785000"} {
-		if !strings.Contains(content, want) {
-			t.Errorf("content = %q, want it to contain %q", content, want)
-		}
-	}
-}
-
-func TestNKeyOpensNewConceptFormAndRendersIt(t *testing.T) {
-	db := openTestStore(t)
-	m := conceptsModel(t, db, domain.NewPeriod(2026, time.September))
-
-	updated, cmd := m.Update(key("n"))
-	m = updated.(Model)
-	if m.conceptForm == nil {
-		t.Fatal("conceptForm = nil, want a form opened")
-	}
-	m = settle(t, m, cmd)
-
-	content := m.View().Content
-	if !strings.Contains(content, "New concept") || !strings.Contains(content, "Name") {
-		t.Errorf("content = %q, want the form's title and Name field", content)
-	}
-}
-
-// completeConceptForm fills the bound values as if the user had, then flips
-// the form to StateCompleted directly — Huh's own field-by-field navigation
-// and widget key handling are its library's concern, not this app's.
-func completeConceptForm(m Model, mutate func(*conceptFormValues)) Model {
-	mutate(m.conceptForm.values)
-	m.conceptForm.form.State = huh.StateCompleted
+	m := New(db)
+	m.today = september
+	m.period = september
+	m.view = viewConcepts
+	m, _ = send(t, m, tea.WindowSizeMsg{Width: 100, Height: 30},
+		catalogMsg{concepts: concepts, categories: categories})
 	return m
 }
 
-func TestCompletingFormCreatesConceptCategoryAndBaseAmount(t *testing.T) {
-	db := openTestStore(t)
-	current := domain.NewPeriod(2026, time.September)
-	m := conceptsModel(t, db, current)
-
-	updated, _ := m.Update(key("n"))
-	m = updated.(Model)
-	m = completeConceptForm(m, func(v *conceptFormValues) {
-		v.name = "Alquiler"
-		v.newCategory = "Hogar"
-		v.kind = catalog.Expense
-		v.currency = domain.ARS
-		v.amount = "785000"
-		v.dueDay = "10"
-		v.activeFrom = "2026-01"
-		v.months = []time.Month{time.January, time.February, time.March, time.April, time.May, time.June,
-			time.July, time.August, time.September, time.October, time.November, time.December}
-	})
-
-	updated, cmd := m.Update(keyEnter())
-	m = updated.(Model)
-	if m.conceptForm != nil {
-		t.Fatal("a completed form should close")
+func mustSeed(t *testing.T, db *sql.DB, category, name string, kind catalog.ConceptKind) catalog.Concept {
+	t.Helper()
+	cat, err := catalog.FindOrCreateCategory(db, category)
+	if err != nil {
+		t.Fatalf("FindOrCreateCategory() unexpected error: %v", err)
 	}
-	m = settle(t, m, cmd)
+	c := catalog.Concept{
+		Name: name, CategoryID: cat.ID, Kind: kind,
+		MonthMask: domain.Monthly, ActiveFrom: domain.NewPeriod(2026, time.January),
+	}
+	if kind != catalog.Chore {
+		c.Money = &catalog.MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(1000)}
+	}
+	created, err := catalog.CreateConcept(db, c)
+	if err != nil {
+		t.Fatalf("CreateConcept() unexpected error: %v", err)
+	}
+	return created
+}
+
+// Rows group by category and the cursor runs over the concepts, skipping
+// the headers between them.
+func TestConceptRowsGroupByCategory(t *testing.T) {
+	db := testDB(t)
+	mustSeed(t, db, "Home", "Rent", catalog.Expense)
+	mustSeed(t, db, "Utilities", "Gas", catalog.Expense)
+	mustSeed(t, db, "Home", "Wash the house", catalog.Chore)
+
+	m := conceptsModel(t, db)
+
+	rows, anchors := m.conceptRows()
+	if len(anchors) != 3 {
+		t.Fatalf("anchors = %v, want one per concept", anchors)
+	}
+	if !strings.Contains(rows[0], "HOME") {
+		t.Errorf("first row = %q, want the HOME group header", rows[0])
+	}
+
+	m, _ = send(t, m, key("down"), key("down"))
+	if got, _ := m.cursorConcept(); got.Name != "Gas" {
+		t.Errorf("cursor after two downs = %q, want Gas", got.Name)
+	}
+}
+
+func TestConceptEditFormOpensOnTheCursorConcept(t *testing.T) {
+	db := testDB(t)
+	mustSeed(t, db, "Home", "Rent", catalog.Expense)
+	m := conceptsModel(t, db)
+
+	m, _ = send(t, m, key("e"))
+	if _, ok := m.modal.(*form); !ok {
+		t.Fatalf("modal = %T, want *form", m.modal)
+	}
+	if !strings.Contains(m.modal.View(), "Rent") {
+		t.Errorf("form view does not name the concept:\n%s", m.modal.View())
+	}
+}
+
+// Deleting is gated behind a confirm, and Keep leaves the catalog alone.
+func TestConceptDeleteIsGatedAndKeepIsANoOp(t *testing.T) {
+	db := testDB(t)
+	mustSeed(t, db, "Home", "Rent", catalog.Expense)
+	m := conceptsModel(t, db)
+
+	m, cmd := send(t, m, key("d"))
+	if _, ok := m.modal.(*form); !ok {
+		t.Fatalf("modal = %T, want a confirm form", m.modal)
+	}
+	m, _ = pump(t, m, cmd)
+
+	m, cmd = send(t, m, key("enter"))
+	m, writes := pump(t, m, cmd)
+	if m.modal != nil {
+		t.Fatal("answering the confirm should close it")
+	}
+	if len(writes) != 0 {
+		t.Fatalf("writes = %+v, want none — the confirm defaults to Keep", writes)
+	}
 
 	concepts, err := catalog.Concepts(db)
 	if err != nil {
-		t.Fatalf("catalog.Concepts() unexpected error: %v", err)
+		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
 	if len(concepts) != 1 {
-		t.Fatalf("Concepts() returned %d rows, want 1", len(concepts))
-	}
-	c := concepts[0]
-	if c.Name != "Alquiler" || c.Kind != catalog.Expense || c.Money == nil || c.Money.Currency != domain.ARS || c.DueDay != 10 {
-		t.Errorf("Concepts()[0] = %+v, want the entered fields", c)
-	}
-	if c.MonthMask != domain.Monthly {
-		t.Errorf("Concepts()[0].MonthMask = %v, want Monthly (every month selected)", c.MonthMask)
-	}
-
-	categories, err := catalog.Categories(db)
-	if err != nil {
-		t.Fatalf("catalog.Categories() unexpected error: %v", err)
-	}
-	if len(categories) != 1 || categories[0].Name != "Hogar" {
-		t.Errorf("Categories() = %+v, want a single Hogar row created from the form", categories)
-	}
-
-	amounts, err := catalog.BaseAmounts(db, c.ID)
-	if err != nil {
-		t.Fatalf("catalog.BaseAmounts() unexpected error: %v", err)
-	}
-	if len(amounts) != 1 || !amounts[0].Amount.Equal(amountFor(t, "785000")) {
-		t.Errorf("BaseAmounts() = %+v, want a single 785000 entry", amounts)
+		t.Errorf("Concepts() = %+v, want the concept still there", concepts)
 	}
 }
 
-func TestCompletingFormWithDeselectedMonthsWritesPartialCadence(t *testing.T) {
-	db := openTestStore(t)
-	current := domain.NewPeriod(2026, time.September)
-	m := conceptsModel(t, db, current)
+// A chore has no money fields to fill in; the form hides them outright.
+func TestConceptFormHidesMoneyForAChore(t *testing.T) {
+	db := testDB(t)
+	mustSeed(t, db, "Home", "Wash the house", catalog.Chore)
+	m := conceptsModel(t, db)
 
-	updated, _ := m.Update(key("n"))
-	m = updated.(Model)
-	m = completeConceptForm(m, func(v *conceptFormValues) {
-		v.name = "Aguinaldo"
-		v.newCategory = "Ingresos"
-		v.kind = catalog.Income
-		v.currency = domain.ARS
-		v.amount = "500000"
-		v.activeFrom = "2026-01"
-		v.months = []time.Month{time.June, time.December}
-	})
+	m, cmd := send(t, m, key("e"))
+	m, _ = pump(t, m, cmd)
 
-	updated, cmd := m.Update(keyEnter())
-	m = updated.(Model)
-	m = settle(t, m, cmd)
-
-	concepts, err := catalog.Concepts(db)
-	if err != nil {
-		t.Fatalf("catalog.Concepts() unexpected error: %v", err)
-	}
-	if len(concepts) != 1 || concepts[0].MonthMask != domain.Aguinaldo {
-		t.Errorf("Concepts() = %+v, want MonthMask = Aguinaldo (June + December only)", concepts)
+	if strings.Contains(m.modal.View(), "Base amount") {
+		t.Errorf("chore form shows the money fields:\n%s", m.modal.View())
 	}
 }
 
-func TestNewConceptFormDefaultsCategoryToTheFirstExisting(t *testing.T) {
-	db := openTestStore(t)
-	cat, err := catalog.CreateCategory(db, "Hogar", 0)
-	if err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
+func TestMonthPresetResolvesToACadence(t *testing.T) {
+	tests := []struct {
+		preset monthPreset
+		months []time.Month
+		want   domain.Cadence
+	}{
+		{presetMonthly, nil, domain.Monthly},
+		{presetAguinaldo, nil, domain.Aguinaldo},
+		{presetOnce, nil, domain.NewCadence(time.September)},
+		{presetPicked, []time.Month{time.March, time.July}, domain.NewCadence(time.March, time.July)},
 	}
-	m := conceptsModel(t, db, domain.NewPeriod(2026, time.September))
-
-	updated, _ := m.Update(key("n"))
-	m = updated.(Model)
-	if m.conceptForm.values.categoryID != cat.ID {
-		t.Errorf("values.categoryID = %d, want %d (the existing category, not the New category sentinel)", m.conceptForm.values.categoryID, cat.ID)
-	}
-}
-
-func TestCompletingFormWithAnExistingCategorySelectedReusesItById(t *testing.T) {
-	db := openTestStore(t)
-	cat, err := catalog.CreateCategory(db, "Hogar", 0)
-	if err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-	m := conceptsModel(t, db, domain.NewPeriod(2026, time.September))
-
-	updated, _ := m.Update(key("n"))
-	m = updated.(Model)
-	m = completeConceptForm(m, func(v *conceptFormValues) {
-		v.name = "Alquiler"
-		v.categoryID = cat.ID
-		v.kind = catalog.Expense
-		v.currency = domain.ARS
-		v.amount = "785000"
-		v.activeFrom = "2026-01"
-	})
-
-	updated, cmd := m.Update(keyEnter())
-	m = updated.(Model)
-	m = settle(t, m, cmd)
-
-	categories, err := catalog.Categories(db)
-	if err != nil {
-		t.Fatalf("catalog.Categories() unexpected error: %v", err)
-	}
-	if len(categories) != 1 {
-		t.Fatalf("Categories() = %+v, want the existing Hogar row reused, not a duplicate", categories)
-	}
-
-	concepts, err := catalog.Concepts(db)
-	if err != nil {
-		t.Fatalf("catalog.Concepts() unexpected error: %v", err)
-	}
-	if len(concepts) != 1 || concepts[0].CategoryID != cat.ID {
-		t.Errorf("Concepts()[0].CategoryID = %d, want %d", concepts[0].CategoryID, cat.ID)
-	}
-}
-
-func TestNewCategoryStepHiddenUnlessCategoryIsTheSentinel(t *testing.T) {
-	if !newCategoryStepHidden(42) {
-		t.Error("newCategoryStepHidden(42) = false, want true (an existing category was picked)")
-	}
-	if newCategoryStepHidden(newCategorySentinel) {
-		t.Error("newCategoryStepHidden(sentinel) = true, want false (New category was picked)")
-	}
-}
-
-func TestCompletingFormWithNewCategoryPromptsForItsName(t *testing.T) {
-	db := openTestStore(t)
-	if _, err := catalog.CreateCategory(db, "Hogar", 0); err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-	m := conceptsModel(t, db, domain.NewPeriod(2026, time.September))
-
-	updated, _ := m.Update(key("n"))
-	m = updated.(Model)
-	m = completeConceptForm(m, func(v *conceptFormValues) {
-		v.name = "Aguinaldo"
-		v.categoryID = newCategorySentinel
-		v.newCategory = "Ingresos"
-		v.kind = catalog.Income
-		v.currency = domain.ARS
-		v.amount = "500000"
-		v.activeFrom = "2026-01"
-	})
-
-	updated, cmd := m.Update(keyEnter())
-	m = updated.(Model)
-	m = settle(t, m, cmd)
-
-	categories, err := catalog.Categories(db)
-	if err != nil {
-		t.Fatalf("catalog.Categories() unexpected error: %v", err)
-	}
-	if len(categories) != 2 {
-		t.Fatalf("Categories() = %+v, want Hogar plus the newly created Ingresos", categories)
-	}
-
-	concepts, err := catalog.Concepts(db)
-	if err != nil {
-		t.Fatalf("catalog.Concepts() unexpected error: %v", err)
-	}
-	if len(concepts) != 1 || concepts[0].Name != "Aguinaldo" {
-		t.Fatalf("Concepts() = %+v, want Aguinaldo created", concepts)
-	}
-	var got catalog.Category
-	for _, c := range categories {
-		if c.ID == concepts[0].CategoryID {
-			got = c
+	for _, tt := range tests {
+		v := &conceptValues{preset: tt.preset, months: tt.months, activeFrom: september.String()}
+		if got := v.cadence(); got != tt.want {
+			t.Errorf("preset %d cadence = %012b, want %012b", tt.preset, got, tt.want)
 		}
 	}
-	if got.Name != "Ingresos" {
-		t.Errorf("Concepts()[0]'s category = %+v, want the new Ingresos category", got)
-	}
 }
 
-func TestEscCancelsNewConceptFormWithoutWriting(t *testing.T) {
-	db := openTestStore(t)
-	m := conceptsModel(t, db, domain.NewPeriod(2026, time.September))
-
-	updated, _ := m.Update(key("n"))
-	m = updated.(Model)
-	updated, cmd := m.Update(keyEsc())
-	m = updated.(Model)
-	if m.conceptForm != nil {
-		t.Error("esc should close the form")
+// A one-off is one bit plus a one-month active range, which month_mask and
+// the range already express — there is no OneOff case to branch on.
+func TestOneOffPresetClosesItsActiveRange(t *testing.T) {
+	db := testDB(t)
+	cat, err := catalog.FindOrCreateCategory(db, "Home")
+	if err != nil {
+		t.Fatalf("FindOrCreateCategory() unexpected error: %v", err)
 	}
-	if cmd != nil {
-		t.Error("esc should not write anything")
+
+	v := &conceptValues{
+		name: "New laptop", categoryID: cat.ID, kind: catalog.Expense,
+		currency: domain.USD, base: "1200", preset: presetOnce,
+		activeFrom: september.String(),
+	}
+	if err := v.save(db, 0); err != nil {
+		t.Fatalf("save() unexpected error: %v", err)
 	}
 
 	concepts, err := catalog.Concepts(db)
 	if err != nil {
-		t.Fatalf("catalog.Concepts() unexpected error: %v", err)
+		t.Fatalf("Concepts() unexpected error: %v", err)
 	}
-	if len(concepts) != 0 {
-		t.Errorf("Concepts() = %+v, want none created", concepts)
+	c := concepts[0]
+	if !c.ActiveFrom.Equal(september) || !c.ActiveUntil.Equal(september) {
+		t.Errorf("active range = %s – %s, want september only", c.ActiveFrom, c.ActiveUntil)
+	}
+	if c.MonthMask != domain.NewCadence(time.September) {
+		t.Errorf("month_mask = %012b, want september only", c.MonthMask)
+	}
+}
+
+// Editing an existing concept opens on the preset that already describes it.
+func TestPresetOfExistingCadence(t *testing.T) {
+	tests := []struct {
+		mask domain.Cadence
+		want monthPreset
+	}{
+		{domain.Monthly, presetMonthly},
+		{domain.Aguinaldo, presetAguinaldo},
+		{domain.NewCadence(time.March, time.July), presetPicked},
+	}
+	for _, tt := range tests {
+		if got := presetOf(tt.mask); got != tt.want {
+			t.Errorf("presetOf(%012b) = %d, want %d", tt.mask, got, tt.want)
+		}
+	}
+}
+
+// A new concept goes active this month, not in whatever period another view
+// was left on.
+func TestNewConceptGoesActiveThisMonth(t *testing.T) {
+	m := conceptsModel(t, testDB(t))
+	m.period = september.AddMonths(4)
+
+	if got := m.newConcept().ActiveFrom; !got.Equal(m.today) {
+		t.Errorf("a new concept goes active in %s, want today's month %s", got, m.today)
 	}
 }

@@ -7,96 +7,70 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// Net is a net amount in one currency at two altitudes: the full household
-// cost or income, and your share of it.
-type Net struct {
-	Household decimal.Decimal
-	Share     decimal.Decimal
-}
-
-// Totals is the month header's summary: net income minus expenses,
-// projected (every resolved line) versus confirmed (only lines backed by an
-// override), grouped by currency since an amount never sums across one.
+// Totals is the Month header's arithmetic, every figure in ARS: what came
+// in minus what went out, what the Saving lines put away, and the
+// remainder. Pocket may be negative — over-saving is legal and shown, not
+// refused.
 type Totals struct {
-	Projected map[domain.Currency]Net
-	Confirmed map[domain.Currency]Net
+	Available domain.Money
+	Saved     domain.Money
+	Pocket    domain.Money
+
+	// Excluded counts confirmed lines left out of the roll-up for want of a
+	// rate to convert them with. Dropping them is honest; counting them as
+	// zero would understate the month.
+	Excluded int
 }
 
-// ResolveTotals folds lines into projected and confirmed net totals per
-// currency. Income adds, expenses subtract; each line's share is computed
-// with its own concept's Share so household and your-share stay separate.
-// A Chore line carries no Money, so it doesn't contribute.
-func ResolveTotals(lines []Line) Totals {
-	totals := Totals{Projected: map[domain.Currency]Net{}, Confirmed: map[domain.Currency]Net{}}
-	for _, l := range lines {
-		if l.Money == nil {
-			continue
-		}
-		signed := l.Money.Amount
-		if l.Concept.Kind != catalog.Income {
-			signed = signed.Neg()
-		}
-		share := domain.NewMoney(signed, l.Concept.Money.Currency).Share(l.Concept.Money.Share).Amount()
-		delta := Net{Household: signed, Share: share}
+// ResolveTotals folds the confirmed lines into one ARS figure each. Only
+// confirmed lines count: a baseline you have not typed over is a guess, and
+// the header states what you actually did.
+func ResolveTotals(lines []Line, rate Rate) Totals {
+	var available, saved decimal.Decimal
 
-		addNet(totals.Projected, l.Concept.Money.Currency, delta)
-		if l.Money.Confirmed {
-			addNet(totals.Confirmed, l.Concept.Money.Currency, delta)
+	excluded := eachConfirmedARS(lines, rate, func(l Line, ars decimal.Decimal) {
+		switch l.Concept.Kind {
+		case catalog.Income:
+			available = available.Add(ars)
+		case catalog.Expense:
+			available = available.Sub(ars)
+		case catalog.Saving:
+			saved = saved.Add(ars)
 		}
+	})
+
+	return Totals{
+		Available: domain.NewMoney(available, domain.ARS),
+		Saved:     domain.NewMoney(saved, domain.ARS),
+		Pocket:    domain.NewMoney(available.Sub(saved), domain.ARS),
+		Excluded:  excluded,
 	}
-	return totals
 }
 
-func addNet(totals map[domain.Currency]Net, cur domain.Currency, delta Net) {
-	n := totals[cur]
-	n.Household = n.Household.Add(delta.Household)
-	n.Share = n.Share.Add(delta.Share)
-	totals[cur] = n
-}
-
-// HeaderNet is the month header's single confirmed figure: every confirmed
-// line folded into one ARS net, plus how many of the month's lines are
-// confirmed at all — what's left to check, not a projected total nobody
-// acts on.
-type HeaderNet struct {
-	Net       Net
-	Confirmed int
-	Lines     int
-}
-
-// ResolveHeaderNet folds every confirmed money line into one ARS net,
-// converting a non-ARS line at rate — the same read-time, never-persisted
-// conversion the allocation panel already does. Lines/Confirmed count money
-// lines only: a Chore has nothing to confirm, and gets its own "X of Y
-// chores done" count instead. A non-ARS line is skipped from Net (not
-// dropped from Lines/Confirmed) when hasRate is false, since there's nothing
-// to convert it with yet.
-func ResolveHeaderNet(lines []Line, rate decimal.Decimal, hasRate bool) HeaderNet {
-	var h HeaderNet
+// eachConfirmedARS is the fold every figure in mess runs on: confirmed
+// lines only, converted at the period's rate, and a line that cannot be
+// converted dropped rather than counted as zero. It returns how many.
+func eachConfirmedARS(lines []Line, rate Rate, fn func(Line, decimal.Decimal)) int {
+	excluded := 0
 	for _, l := range lines {
-		if l.Money == nil {
+		if l.Money == nil || !l.Money.Confirmed {
 			continue
 		}
-		h.Lines++
-		if !l.Money.Confirmed {
+		ars, ok := l.Money.Amount.ToARS(rate.Value, rate.OK())
+		if !ok {
+			excluded++
 			continue
 		}
-		h.Confirmed++
-
-		signed := l.Money.Amount
-		if l.Concept.Kind != catalog.Income {
-			signed = signed.Neg()
-		}
-		ars := signed
-		if l.Concept.Money.Currency != domain.ARS {
-			if !hasRate {
-				continue
-			}
-			ars = signed.Mul(rate)
-		}
-		share := domain.NewMoney(ars, domain.ARS).Share(l.Concept.Money.Share).Amount()
-		h.Net.Household = h.Net.Household.Add(ars)
-		h.Net.Share = h.Net.Share.Add(share)
+		fn(l, ars.Amount())
 	}
-	return h
+	return excluded
+}
+
+// SavedUSD is Saved back in dollars, the figure the header shows beside it.
+// Zero when there is no rate to divide by.
+func (t Totals) SavedUSD(rate Rate) decimal.Decimal {
+	if !rate.OK() || rate.Value.IsZero() {
+		return decimal.Decimal{}
+	}
+	return t.Saved.Amount().Div(rate.Value)
 }

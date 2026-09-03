@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/store"
@@ -21,68 +23,82 @@ func openTestStore(t *testing.T) *sql.DB {
 	return s.DB()
 }
 
-func TestLoadResolvesCatalogAgainstStore(t *testing.T) {
+func seedConcept(t *testing.T, db *sql.DB, category string, c catalog.Concept) catalog.Concept {
+	t.Helper()
+	cat, err := catalog.FindOrCreateCategory(db, category)
+	if err != nil {
+		t.Fatalf("FindOrCreateCategory() unexpected error: %v", err)
+	}
+	c.CategoryID = cat.ID
+	if c.MonthMask == 0 {
+		c.MonthMask = domain.Monthly
+	}
+	if c.ActiveFrom.IsZero() {
+		c.ActiveFrom = domain.NewPeriod(2026, time.January)
+	}
+	created, err := catalog.CreateConcept(db, c)
+	if err != nil {
+		t.Fatalf("CreateConcept(%s) unexpected error: %v", c.Name, err)
+	}
+	return created
+}
+
+func TestLoadResolvesTheCatalogAgainstTheStore(t *testing.T) {
 	db := openTestStore(t)
+	september := domain.NewPeriod(2026, time.September)
 
-	cat, err := catalog.CreateCategory(db, "Hogar", 0)
-	if err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-	rent, err := catalog.CreateConcept(db, catalog.Concept{
-		Name:       "Alquiler",
-		CategoryID: cat.ID,
-		Kind:       catalog.Expense,
-		Money:      &catalog.MoneyDetails{Currency: domain.ARS},
-		MonthMask:  domain.Monthly,
-		ActiveFrom: domain.NewPeriod(2026, time.January),
+	rent := seedConcept(t, db, "Home", catalog.Concept{
+		Name: "Rent", Kind: catalog.Expense,
+		Money: &catalog.MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(785000)},
 	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-	if err := catalog.SetBaseAmount(db, rent.ID, domain.NewPeriod(2026, time.January), amount(785000)); err != nil {
-		t.Fatalf("SetBaseAmount() unexpected error: %v", err)
+	seedConcept(t, db, "Home", catalog.Concept{Name: "Wash the house", Kind: catalog.Chore})
+
+	typed := decimal.NewFromInt(812000)
+	if err := catalog.SetMonthEntryAmount(db, rent.ID, september, &typed); err != nil {
+		t.Fatalf("SetMonthEntryAmount() unexpected error: %v", err)
 	}
 
-	got, err := Load(db, domain.NewPeriod(2026, time.September))
+	loaded, err := Load(db, september)
 	if err != nil {
 		t.Fatalf("Load() unexpected error: %v", err)
 	}
-	if len(got.Lines) != 1 {
-		t.Fatalf("Load().Lines = %d lines, want 1", len(got.Lines))
+	if len(loaded.Lines) != 2 {
+		t.Fatalf("Load() returned %d lines, want 2", len(loaded.Lines))
 	}
-	line := got.Lines[0]
-	if line.Concept.Name != "Alquiler" || line.Money == nil || !line.Money.Amount.Equal(amount(785000)) || line.Money.Confirmed {
-		t.Errorf("Load().Lines[0] = %+v, want Alquiler at 785000, projected", line)
+
+	byName := map[string]Line{}
+	for _, l := range loaded.Lines {
+		byName[l.Concept.Name] = l
+	}
+	if got := byName["Rent"]; !got.Money.Confirmed || !got.Money.Amount.Amount().Equal(typed) {
+		t.Errorf("Rent = %+v, want the confirmed 812000 override", got.Money)
+	}
+	if got := byName["Wash the house"]; got.Money != nil {
+		t.Errorf("chore Money = %+v, want nil", got.Money)
 	}
 }
 
-func TestLoadResolvesChoresAgainstStore(t *testing.T) {
+// A month you never touched stores nothing and still resolves.
+func TestLoadUntouchedPeriodStoresNothing(t *testing.T) {
 	db := openTestStore(t)
-
-	cat, err := catalog.CreateCategory(db, "Hogar", 0)
-	if err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-	trash, err := catalog.CreateConcept(db, catalog.Concept{
-		Name:       "Sacar la basura",
-		CategoryID: cat.ID,
-		Kind:       catalog.Chore,
-		MonthMask:  domain.Monthly,
-		ActiveFrom: domain.NewPeriod(2026, time.January),
+	seedConcept(t, db, "Home", catalog.Concept{
+		Name: "Rent", Kind: catalog.Expense,
+		Money: &catalog.MoneyDetails{Currency: domain.ARS, Base: decimal.NewFromInt(785000)},
 	})
-	if err != nil {
-		t.Fatalf("CreateConcept() unexpected error: %v", err)
-	}
-	sept := domain.NewPeriod(2026, time.September)
-	if err := catalog.SetMonthEntryDone(db, trash.ID, sept, true); err != nil {
-		t.Fatalf("SetMonthEntryDone() unexpected error: %v", err)
-	}
 
-	got, err := Load(db, sept)
+	loaded, err := Load(db, domain.NewPeriod(2026, time.October))
 	if err != nil {
 		t.Fatalf("Load() unexpected error: %v", err)
 	}
-	if len(got.Lines) != 1 || got.Lines[0].Concept.Name != "Sacar la basura" || got.Lines[0].Money != nil || !got.Lines[0].Done {
-		t.Errorf("Load().Lines = %+v, want a single done, money-less Sacar la basura line", got.Lines)
+	if len(loaded.Lines) != 1 || loaded.Lines[0].Money.Confirmed {
+		t.Errorf("Load() = %+v, want one unconfirmed line", loaded.Lines)
+	}
+
+	var entries int
+	if err := db.QueryRow("SELECT count(*) FROM month_entry").Scan(&entries); err != nil {
+		t.Fatalf("count month_entry: %v", err)
+	}
+	if entries != 0 {
+		t.Errorf("month_entry has %d rows, want none for a month nobody touched", entries)
 	}
 }
