@@ -13,6 +13,8 @@ import (
 
 	"github.com/gabokatta/mess/internal/backup"
 	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
+	"github.com/gabokatta/mess/internal/fixture"
 	"github.com/gabokatta/mess/internal/store"
 	"github.com/gabokatta/mess/internal/tui"
 )
@@ -31,6 +33,8 @@ func run(args []string, stdout io.Writer) error {
 			return runExport(args[1:], stdout)
 		case "import":
 			return runImport(args[1:], stdout, confirmReplace)
+		case "seed":
+			return runSeed(args[1:], stdout)
 		}
 	}
 	return runTUI(args)
@@ -150,6 +154,69 @@ func confirmReplace(dbPath string) (bool, error) {
 		Value(&confirmed).
 		Run()
 	return confirmed, err
+}
+
+// runSeed resets path to an empty database and writes a world into it, so
+// that mangling data while clicking around costs nothing: the next seed
+// starts over rather than accumulating on top of what is there.
+func runSeed(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("mess seed", flag.ExitOnError)
+	dbPath := fs.String("db", "", "database path (default: user config dir)")
+	periodFlag := fs.String("period", "", "pin the anchor month, YYYY-MM (default: the current month)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	path, err := resolveDBPath(*dbPath)
+	if err != nil {
+		return err
+	}
+
+	anchor, err := resolveAnchor(*periodFlag)
+	if err != nil {
+		return err
+	}
+
+	if err := removeDatabaseFiles(path); err != nil {
+		return err
+	}
+
+	s, err := store.Open(path)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	loaded, err := fixture.Load(s.DB(), fixture.Demo(anchor))
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(stdout, "seeded %s: anchor %s, %d concepts, %d categories, %d notes\n",
+		path, anchor, len(loaded.Concepts), len(loaded.Categories), len(loaded.Notes))
+	return nil
+}
+
+// resolveAnchor pins Demo to override, or to the real current month so the
+// app opens on populated data wherever you are in the calendar.
+func resolveAnchor(override string) (domain.Period, error) {
+	if override != "" {
+		return domain.ParsePeriod(override)
+	}
+	return domain.PeriodFromTime(time.Now()), nil
+}
+
+// removeDatabaseFiles unlinks path and its sidecars by exact name and lets
+// migrations rebuild the schema from nothing, so a table added later cannot
+// be forgotten by a hand-maintained delete order. Exact names rather than a
+// glob, since path's directory also holds snapshots.
+func removeDatabaseFiles(path string) error {
+	for _, suffix := range []string{"", "-wal", "-shm", ".lock"} {
+		if err := os.Remove(path + suffix); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("seed: remove %s: %w", path+suffix, err)
+		}
+	}
+	return nil
 }
 
 func resolveDBPath(override string) (string, error) {

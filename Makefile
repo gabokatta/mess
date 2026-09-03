@@ -1,9 +1,18 @@
 GOFLAGS := -trimpath
 
-.PHONY: run build build-all test fmt clean
+.PHONY: run build build-all test fmt clean clean-dev seed dev
 
 run:
 	go run ./cmd/mess
+
+seed:
+	go run ./cmd/mess seed --db .data/mess.db
+
+dev:
+	go run ./cmd/mess --db .data/mess.db
+
+clean-dev:
+	rm -rf .data
 
 build:
 	go build $(GOFLAGS) -o bin/mess ./cmd/mess

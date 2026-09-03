@@ -5,9 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/gabokatta/mess/internal/catalog"
+	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
+	"github.com/gabokatta/mess/internal/month"
 	"github.com/gabokatta/mess/internal/store"
 )
 
@@ -100,6 +105,96 @@ func TestImportCancelledLeavesTheDatabaseAlone(t *testing.T) {
 	if len(got) != 1 || got[0].Name != "Rent" {
 		t.Errorf("Concepts() = %+v, want the row a cancelled import never touched", got)
 	}
+}
+
+func TestSeedConvergesOnTheSameRowsEveryRun(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mess.db")
+
+	var out bytes.Buffer
+	if err := run([]string{"seed", "--db", dbPath}, &out); err != nil {
+		t.Fatalf("run(seed) unexpected error: %v", err)
+	}
+	if out.Len() == 0 {
+		t.Error("run(seed) printed no summary")
+	}
+	first := readCatalog(t, dbPath)
+
+	out.Reset()
+	if err := run([]string{"seed", "--db", dbPath}, &out); err != nil {
+		t.Fatalf("run(seed) second run unexpected error: %v", err)
+	}
+	second := readCatalog(t, dbPath)
+
+	if diff := cmp.Diff(first, second); diff != "" {
+		t.Errorf("seed is not idempotent (-first +second):\n%s", diff)
+	}
+}
+
+// TestSeedClearsAStaleLock proves recovery from a crashed TUI is one
+// command: a lock left behind by a process that never released it must not
+// stop the next seed from opening the database.
+func TestSeedClearsAStaleLock(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mess.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("store.Open() unexpected error: %v", err)
+	}
+	// Leaves the lock file behind, as a crash would.
+	s.DB().Close()
+
+	if err := run([]string{"seed", "--db", dbPath}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("run(seed) unexpected error with a stale lock present: %v", err)
+	}
+}
+
+// TestSeedPeriodFlagPinsTheAnchor proves --period reaches Demo rather than
+// real time: a period nowhere near today only resolves ~30 lines if the
+// database was actually built around it.
+func TestSeedPeriodFlagPinsTheAnchor(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mess.db")
+
+	if err := run([]string{"seed", "--db", dbPath, "--period", "2020-01"}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("run(seed) unexpected error: %v", err)
+	}
+
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("store.Open() unexpected error: %v", err)
+	}
+	defer s.Close()
+
+	pinned := domain.NewPeriod(2020, time.January)
+	m, err := month.Load(s.DB(), pinned)
+	if err != nil {
+		t.Fatalf("month.Load() unexpected error: %v", err)
+	}
+	if n := len(m.Lines); n < 20 {
+		t.Errorf("month.Load(%s) returned %d lines, want the anchor month's worth", pinned, n)
+	}
+}
+
+type catalogSnapshot struct {
+	Concepts   []catalog.Concept
+	Categories []catalog.Category
+}
+
+func readCatalog(t *testing.T, dbPath string) catalogSnapshot {
+	t.Helper()
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("store.Open() unexpected error: %v", err)
+	}
+	defer s.Close()
+
+	concepts, err := catalog.Concepts(s.DB())
+	if err != nil {
+		t.Fatalf("Concepts() unexpected error: %v", err)
+	}
+	categories, err := catalog.Categories(s.DB())
+	if err != nil {
+		t.Fatalf("Categories() unexpected error: %v", err)
+	}
+	return catalogSnapshot{Concepts: concepts, Categories: categories}
 }
 
 func replace(string) (bool, error) { return true, nil }
