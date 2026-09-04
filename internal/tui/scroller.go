@@ -1,9 +1,20 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/viewport"
+	"charm.land/lipgloss/v2"
+)
+
+// The app's list typography: "> " is what a cursor paints in the gutter, and
+// one blank column is what separates two columns of a row. Both are facts
+// about the drawing, not design choices a screen makes for itself, so they are
+// shared. Column widths are not: those belong to the screen that draws them.
+const (
+	gutterWidth = 2
+	colGap      = 2
 )
 
 type scroller struct {
@@ -66,6 +77,42 @@ func groupedRows(groups []group) (rows []string, anchors []int) {
 func (s scroller) hidden() (above, below int) {
 	above = s.vp.YOffset()
 	return above, max(s.vp.TotalLineCount()-above-s.vp.Height(), 0)
+}
+
+// scrollHint says how much list is off screen, so a cut-off list reads as
+// scrollable rather than as finished. It is empty when everything fits.
+func (m Model) scrollHint(s scroller, indent int) string {
+	above, below := s.hidden()
+	if above == 0 && below == 0 {
+		return ""
+	}
+
+	var marks []string
+	if above > 0 {
+		marks = append(marks, fmt.Sprintf("↑ %d", above))
+	}
+	if below > 0 {
+		marks = append(marks, fmt.Sprintf("↓ %d", below))
+	}
+	return "\n" + m.theme.Muted.Render(strings.Repeat(" ", indent)+strings.Join(marks, " · ")+" more")
+}
+
+// viewportHeight is a list's viewport height: its own size when the content
+// fits, otherwise the room available less a line kept back for the hint that
+// says the list is cut.
+func viewportHeight(rows, avail int) int {
+	if rows > avail {
+		return max(avail-1, 1)
+	}
+	return max(rows, 1)
+}
+
+// ruleHeader is a section label with a muted rule running out to width. It is
+// structural, not categorical: hue across this app means category, so a group
+// label carries weight and a rule instead of a colour.
+func (m Model) ruleHeader(label string, width int) string {
+	rule := strings.Repeat("─", max(width-lipgloss.Width(label)-1, 0))
+	return m.theme.Title.Render(label) + " " + m.theme.Muted.Render(rule)
 }
 
 func (s scroller) move(delta, count int) scroller {

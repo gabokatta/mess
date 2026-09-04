@@ -252,18 +252,42 @@ func demoRates(anchor, oldest domain.Period) []Rate {
 	return rates
 }
 
-const longDemoNote = `# Goals for the year
+// BigNote is the demo world's long note. It exists so the pane's scroll hint
+// and its cursor have something real to run against: every other demo note
+// fits its window whole.
+const BigNote = "Annual Financial Plan"
 
-- Keep the emergency fund above 6 months of expenses.
-- Cut delivery spending by 20%.
-- Review subscriptions nobody uses.
+const bigDemoNote = `# Goals for the year
+
+The point of writing these down is to have something to argue with in
+December, when the year has an opinion of its own about how it went.
+
+## Spending
+
+- [x] Cut delivery to twice a month.
+- [x] Review every subscription and cancel two.
+- [ ] Move the grocery run to the market on Saturdays.
+- [ ] Renegotiate the internet plan when the contract renews.
 
 ## Savings
 
-1. Dollars: contribute every month, no exceptions.
-2. Fixed-term deposit: renew automatically.
+- [x] Keep the emergency fund above six months of expenses.
+- [ ] Contribute dollars every month, no exceptions.
+- [ ] Renew the fixed-term deposit automatically.
+- [ ] Decide what to do with the bonus before it arrives, not after.
 
-> Consistency matters more than the amount.
+## Housing
+
+The lease renews in November. Either renegotiate the rent against what the
+building has actually been charging in expenses, or start looking early
+enough that moving is a choice rather than an emergency.
+
+- [ ] Ask for the expenses breakdown.
+- [ ] Price three comparable places nearby.
+- [ ] Decide by the end of October.
+
+> Consistency matters more than the amount. A small transfer every month
+> beats a large one that never happens.
 `
 
 func demoNotes(anchor domain.Period) []catalog.Note {
@@ -278,8 +302,8 @@ func demoNotes(anchor domain.Period) []catalog.Note {
 			Period: anchor,
 		},
 		{
-			Title:  "Annual Financial Plan",
-			BodyMD: longDemoNote,
+			Title:  BigNote,
+			BodyMD: bigDemoNote,
 			Period: anchor,
 		},
 		{
@@ -287,6 +311,24 @@ func demoNotes(anchor domain.Period) []catalog.Note {
 			BodyMD: "Due at year end, get quotes ahead of time.",
 			Period: anchor,
 			Done:   true,
+		},
+		// The closed note sits between the two open ones, so a filter that
+		// took a range of periods rather than testing each note would show it.
+		{
+			Title:  "Cancel the gym membership",
+			BodyMD: "- [ ] find the contract\n- [ ] send the cancellation email\n",
+			Period: anchor.AddMonths(-1),
+		},
+		{
+			Title:  "Switch electricity plan",
+			BodyMD: "Done, the new tariff starts next billing cycle.",
+			Period: anchor.AddMonths(-2),
+			Done:   true,
+		},
+		{
+			Title:  "Chase the deposit refund",
+			BodyMD: "The agency has had it since the move.",
+			Period: anchor.AddMonths(-3),
 		},
 	}
 }

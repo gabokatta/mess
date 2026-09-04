@@ -11,7 +11,6 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/month"
-	"github.com/gabokatta/mess/internal/note"
 	"github.com/gabokatta/mess/internal/rates"
 )
 
@@ -58,7 +57,7 @@ type Model struct {
 	notesList    scroller
 	conceptsList scroller
 	detail       scroller
-	openNote     *catalog.Note
+	notesFocus   notesFocusArea
 
 	modal   modal
 	lastErr error
@@ -126,7 +125,6 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case notesMsg:
 		m.notes, m.lastErr = msg.notes, msg.err
-		m.openNote = reopen(m.openNote, msg.notes)
 
 	case catalogMsg:
 		m.concepts, m.categories, m.lastErr = msg.concepts, msg.categories, msg.err
@@ -197,8 +195,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case viewMonth:
 		return m.handleMonthKey(msg)
 	case viewNotes:
-		if m.openNote != nil {
-			return m.handleNoteDetailKey(msg)
+		if m.notesFocus == focusBody {
+			return m.handleNoteBodyKey(msg)
 		}
 		return m.handleNotesKey(msg)
 	case viewConcepts:
@@ -217,23 +215,14 @@ func (m Model) openModal(next modal) (Model, tea.Cmd) {
 func (m Model) switchView(delta int) (Model, tea.Cmd) {
 	n := view(len(viewNames))
 	m.view = (m.view + view(delta) + n) % n
-	m.openNote = nil
+	m.notesFocus = focusList
 	if m.view == viewRates {
 		m.house = houseIndex(m.settings.FxHouse)
 	}
 	return m, nil
 }
 
-func (m Model) showsPeriod() bool {
-	switch m.view {
-	case viewConcepts:
-		return false
-	case viewNotes:
-		return m.openNote == nil
-	default:
-		return true
-	}
-}
+func (m Model) showsPeriod() bool { return m.view != viewConcepts }
 
 func (m Model) shiftPeriod(delta int) (Model, tea.Cmd) {
 	if !m.showsPeriod() {
@@ -251,7 +240,7 @@ func (m Model) goTo(p domain.Period) (Model, tea.Cmd) {
 	m.monthList.cursor = 0
 	m.yearList.cursor = 0
 	m.notesList.cursor = 0
-	m.openNote = nil
+	m.notesFocus = focusList
 
 	cmds := []tea.Cmd{loadMonth(m.db, m.period), loadYear(m.db, m.period.Year(), m.fx())}
 	if m.period.Year() != previousYear {
@@ -271,8 +260,8 @@ func (m Model) moveCursor(delta int) Model {
 	case viewYear:
 		m.yearList = m.yearList.move(delta, len(m.year.Categories))
 	case viewNotes:
-		if m.openNote != nil {
-			m.detail = m.detail.move(delta, len(note.Checkboxes(m.openNote.BodyMD)))
+		if m.notesFocus == focusBody {
+			m.detail = m.detail.move(delta, len(m.noteBodyLines()))
 			break
 		}
 		m.notesList = m.notesList.move(delta, len(m.shownNotes()))
@@ -310,14 +299,18 @@ func (m Model) sync() Model {
 		height := max(min(len(rows), catVisibleRows), 1)
 		m.yearList = m.yearList.show(rows, rowAnchors(len(rows)), m.catRowWidth(barWidth), height)
 	case viewNotes:
-		if m.openNote != nil {
-			rows, anchors := m.noteDetailRows()
-			m.detail = m.detail.show(rows, anchors, m.detailWidth(), m.bodyHeight(2))
-			break
-		}
 		m.notesList.cursor = clamp(m.notesList.cursor, len(m.shownNotes()))
 		rows, anchors := m.noteRows()
-		m.notesList = m.notesList.show(rows, anchors, width, m.bodyHeight(2))
+		m.notesList = m.notesList.show(rows, anchors, m.noteListWidth(),
+			viewportHeight(len(rows), m.listViewHeight(len(rows))))
+
+		// The body is rendered once and then painted: the cursor has to be
+		// clamped before the gutter is drawn, and running the markdown through
+		// glamour twice a frame to get there is not worth it.
+		lines := m.noteBodyLines()
+		m.detail.cursor = clamp(m.detail.cursor, len(lines))
+		body, stops := m.noteBodyRows(lines)
+		m.detail = m.detail.show(body, stops, m.notePaneWidth(), viewportHeight(len(body), m.paneViewHeight()))
 	case viewConcepts:
 		m.conceptsList.cursor = clamp(m.conceptsList.cursor, len(m.concepts))
 		rows, anchors := m.conceptRows()
@@ -464,10 +457,10 @@ func (m Model) viewKeys() []string {
 	case viewYear:
 		return []string{"↑/↓", "←/→ year"}
 	case viewNotes:
-		if m.openNote != nil {
-			return []string{"↑/↓", "space tick", "e edit", "esc back"}
+		if m.notesFocus == focusBody {
+			return []string{"↑/↓", "space tick", "e edit", "esc list"}
 		}
-		return []string{"↑/↓", "enter open", "c done", "p pin", "n new", "←/→ month"}
+		return []string{"↑/↓", "enter read", "space close", "p pin", "n new", "←/→ month"}
 	case viewConcepts:
 		return []string{"↑/↓", "n new", "e edit", "d delete"}
 	default:

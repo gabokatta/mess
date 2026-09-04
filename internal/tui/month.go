@@ -28,10 +28,8 @@ const nameWidth = 26
 // sizes itself to its figures, so the composition's full width is measured
 // at render time rather than fixed here.
 const (
-	gutterWidth    = 2
 	checkWidth     = 4
 	monthNameWidth = 30
-	colGap         = 2
 	categoryWidth  = 13
 	currencyWidth  = 3
 	amountWidth    = 14
@@ -136,42 +134,24 @@ func (e *amountEdit) Help() string  { return "enter confirm · blank clears · e
 
 func (m Model) renderMonth() string {
 	if len(m.lines) == 0 {
-		return m.monthHeader() + "\n\n" +
+		return m.periodHeading() + "\n\n" +
 			m.centerInBox(m.theme.Muted.Render("no concepts yet — add some in Concepts"), 3)
 	}
 
 	rate := m.fx().At(m.period)
 	totals := month.ResolveTotals(m.lines, rate)
-	rows := m.monthList.View() + m.monthScrollHint()
+	rows := m.monthList.View() + m.scrollHint(m.monthList, gutterWidth)
 	sidebar := m.renderRail(totals, rate) + "\n\n" + m.monthMeta(totals)
 	body := joinRowsAndSidebar(rows, sidebar)
 
 	// The whole card travels together: nothing inside it shifts against
 	// anything else, and the slack the month leaves over sits half above it
 	// and half below rather than pooling at the bottom.
-	card := m.monthHeader() + "\n\n" + m.monthColumnHeader() + "\n" + body
+	card := m.periodHeading() + "\n\n" + m.monthColumnHeader() + "\n" + body
 	top := max(0, (m.bodyHeight(0)-lipgloss.Height(card))/2)
 	left := max(0, (m.contentWidth()-lipgloss.Width(body))/2)
 
 	return lipgloss.NewStyle().MarginLeft(left).Render(strings.Repeat("\n", top) + card)
-}
-
-// monthScrollHint says how much list is off screen, so a cut-off month reads
-// as scrollable rather than as finished. It is empty when it all fits.
-func (m Model) monthScrollHint() string {
-	above, below := m.monthList.hidden()
-	if above == 0 && below == 0 {
-		return ""
-	}
-
-	var marks []string
-	if above > 0 {
-		marks = append(marks, fmt.Sprintf("↑ %d", above))
-	}
-	if below > 0 {
-		marks = append(marks, fmt.Sprintf("↓ %d", below))
-	}
-	return "\n" + m.theme.Muted.Render(strings.Repeat(" ", gutterWidth)+strings.Join(marks, " · ")+" more")
 }
 
 // joinRowsAndSidebar places the sidebar beside the rows. The rows stay flush
@@ -183,17 +163,6 @@ func joinRowsAndSidebar(rows, sidebar string) string {
 		sidebar = strings.Repeat("\n", pad) + sidebar
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, rows, strings.Repeat(" ", monthGap), sidebar)
-}
-
-// monthHeader is the month's name and where it sits relative to today. The
-// arithmetic lives in the rail, not here. Underlined, so it reads as the
-// screen's one heading rather than another structural label like the kind
-// headers below it, which share its bold weight but not its hue-free color.
-func (m Model) monthHeader() string {
-	title := m.theme.Title.Underline(true).
-		Render(strings.ToUpper(m.period.Month().String()) + " " + fmt.Sprint(m.period.Year()))
-	status := m.theme.Muted.Render(periodStatus(m.period, m.today))
-	return title + "  " + status
 }
 
 // monthMeta collects the facts that are not money: the checklist count and
@@ -255,8 +224,7 @@ func (m Model) monthRows() ([]string, []int) {
 func (m Model) kindHeader(kind catalog.ConceptKind, subtotal decimal.Decimal) string {
 	label := strings.ToUpper(kind.String())
 	if subtotal.IsZero() {
-		return m.theme.Title.Render(label) + " " +
-			m.theme.Muted.Render(strings.Repeat("─", max(tableWidth-len(label)-1, 0)))
+		return m.ruleHeader(label, tableWidth)
 	}
 
 	// The figure takes the label's weight rather than a hue of its own. It is

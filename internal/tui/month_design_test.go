@@ -31,7 +31,7 @@ func TestMonthColumnHeaderRendersOnceAboveTheList(t *testing.T) {
 }
 
 // Kind headers are structural now: bold foreground and a muted rule, with no
-// palette hue borrowed from groupStyle.
+// palette hue: on this app, colour names a category and nothing else.
 func TestKindHeadersCarryNoPaletteHue(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 
@@ -306,7 +306,7 @@ func TestExcludedCountOnlyShowsWhenNonZero(t *testing.T) {
 // above; a wandered period says so beside it.
 func TestMonthTitleNamesTheMonthInFull(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
-	header := stripANSI(m.monthHeader())
+	header := stripANSI(m.periodHeading())
 	if !strings.Contains(header, "SEPTEMBER 2026") {
 		t.Errorf("header = %q, want the month spelled out", header)
 	}
@@ -320,8 +320,8 @@ func TestMonthTitleNamesTheMonthInFull(t *testing.T) {
 func TestMonthTitleIsUnderlined(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 	want := m.theme.Title.Underline(true).Render("SEPTEMBER 2026")
-	if !strings.Contains(m.monthHeader(), want) {
-		t.Errorf("monthHeader() = %q, want the title underlined", m.monthHeader())
+	if !strings.Contains(m.periodHeading(), want) {
+		t.Errorf("periodHeading() = %q, want the title underlined", m.periodHeading())
 	}
 }
 
@@ -423,7 +423,7 @@ func TestRailBoxesKeepTheirFloorForSmallFigures(t *testing.T) {
 // A list longer than the screen says how much of it is off screen.
 func TestScrollHintCountsWhatIsOffScreen(t *testing.T) {
 	m := modelFor(t, bigFigureWorld(60), minUsableWidth, minUsableHeight)
-	hint := stripANSI(m.monthScrollHint())
+	hint := stripANSI(m.scrollHint(m.monthList, gutterWidth))
 
 	if !strings.Contains(hint, "↓") || !strings.Contains(hint, "more") {
 		t.Errorf("hint = %q, want it to say how many rows are below", hint)
@@ -432,7 +432,7 @@ func TestScrollHintCountsWhatIsOffScreen(t *testing.T) {
 
 func TestNoScrollHintWhenTheMonthFits(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 44)
-	if got := m.monthScrollHint(); got != "" {
+	if got := m.scrollHint(m.monthList, gutterWidth); got != "" {
 		t.Errorf("hint = %q, want none when the whole month is on screen", got)
 	}
 }

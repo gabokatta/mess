@@ -33,7 +33,3 @@ func categoryColor(categories []catalog.Category, categoryID int64) color.Color 
 func categoryStyle(categories []catalog.Category, categoryID int64) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(categoryColor(categories, categoryID))
 }
-
-func groupStyle(index int) lipgloss.Style {
-	return lipgloss.NewStyle().Bold(true).Foreground(palette[index%len(palette)])
-}

@@ -69,7 +69,7 @@ func (m Model) renderRates() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.renderHouses())
 	b.WriteString("\n\n")
-	b.WriteString(groupStyle(1).Render("MONTHLY CLOSE"))
+	b.WriteString(m.theme.Title.Render("MONTHLY CLOSE"))
 	b.WriteString("\n")
 	b.WriteString(m.renderCloseChart())
 	b.WriteString("\n")

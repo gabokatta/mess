@@ -39,7 +39,7 @@ func TestNotesDoneToggle(t *testing.T) {
 	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas"}}}, 90, 30)
 	m.view = viewNotes
 
-	_, cmd := send(t, m, key("c"))
+	_, cmd := send(t, m, key("space"))
 	if err := runWrite(t, cmd); err != nil {
 		t.Fatalf("toggling done reported an error: %v", err)
 	}
@@ -77,31 +77,16 @@ func TestNotesPinAndUnpin(t *testing.T) {
 	}
 }
 
-func TestNoteDetailOpensAndCloses(t *testing.T) {
-	m := modelFor(t, fixture.World{
-		Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] buy a lamp"}},
-	}, 90, 30)
-	m.view = viewNotes
-
-	m, _ = send(t, m, key("enter"))
-	if m.openNote == nil || m.openNote.Title != "Ideas" {
-		t.Fatalf("openNote = %+v, want Ideas", m.openNote)
-	}
-
-	m, _ = send(t, m, key("esc"))
-	if m.openNote != nil {
-		t.Error("esc should return to the list")
-	}
-}
-
-// space rewrites the source line under the cursor, so storage stays one field.
-func TestNoteDetailSpaceTogglesTheCheckboxUnderTheCursor(t *testing.T) {
+// space rewrites the source line the cursor is on, so storage stays one field.
+func TestNoteBodySpaceTogglesTheCheckboxUnderTheCursor(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk\n- [ ] bread"}},
-	}, 90, 30)
+	}, minUsableWidth, 32)
 	m.view = viewNotes
+	m, _ = send(t, m, key("enter"))
 
-	m, _ = send(t, m, key("enter"), key("down"))
+	m.detail.cursor = checkboxLine(t, m, 1)
+
 	_, cmd := send(t, m, key("space"))
 	if err := runWrite(t, cmd); err != nil {
 		t.Fatalf("toggling reported an error: %v", err)
@@ -201,39 +186,40 @@ func TestNewNoteFormCreatesInTheShownPeriod(t *testing.T) {
 	}
 }
 
-// Reading a note, the arrows walk its checkboxes and must not move the month.
-func TestArrowsAreInertWhileReadingANote(t *testing.T) {
-	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk"}}}, 90, 30)
+// The card is one screen, so the month moves from either half of it. Reading a
+// note is a focus, not a place the period navigation cannot reach.
+func TestTheMonthMovesFromEitherFocus(t *testing.T) {
+	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk"}}}, minUsableWidth, 32)
 	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"))
 	before := m.period
 
-	m, _ = send(t, m, key("right"), key("left"))
-	if !m.period.Equal(before) {
-		t.Errorf("period moved to %s while a note was open", m.period)
+	m, _ = send(t, m, key("right"))
+	if m.period.Equal(before) {
+		t.Errorf("period stayed at %s; the arrows should move the month from the body too", m.period)
 	}
-	if m.openNote == nil {
-		t.Error("the note should still be open")
+	if m.notesFocus != focusList {
+		t.Error("changing the month should hand focus back to the list it reloads")
 	}
 }
 
-func TestSwitchingViewsClosesTheOpenNote(t *testing.T) {
-	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas"}}}, 90, 30)
+func TestSwitchingViewsReturnsFocusToTheList(t *testing.T) {
+	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas"}}}, minUsableWidth, 32)
 	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"))
-	if m.openNote == nil {
-		t.Fatal("enter should open the note")
+	if m.notesFocus != focusBody {
+		t.Fatal("enter should move focus into the body")
 	}
 	m, _ = send(t, m, key("tab"))
-	if m.openNote != nil {
-		t.Error("leaving Notes should close the open note")
+	if m.notesFocus != focusList {
+		t.Error("leaving Notes should return focus to the list")
 	}
 }
 
 // Counting a "[ ] " inside prose would shift every toggle onto the wrong line.
-func TestNoteDetailIgnoresCheckboxGlyphsInProse(t *testing.T) {
+func TestTheBodyIgnoresCheckboxGlyphsInProse(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{{
 			Title:  "Ideas",
@@ -241,12 +227,20 @@ func TestNoteDetailIgnoresCheckboxGlyphsInProse(t *testing.T) {
 		}},
 	}, 90, 30)
 	m.view = viewNotes
-	m, _ = send(t, m, key("enter"), key("down"))
+	m, _ = send(t, m, key("enter"))
 
-	_, anchors := m.noteDetailRows()
-	if len(anchors) != 2 {
-		t.Fatalf("anchors = %v, want one per real checkbox", anchors)
+	// Every line is a cursor stop, but only the two real items carry an
+	// ordinal: the prose glyph must not claim one and shift the rest along.
+	ordinals := map[int]bool{}
+	for _, l := range m.noteBodyLines() {
+		if box, ok := l.ticks(); ok {
+			ordinals[box] = true
+		}
 	}
+	if len(ordinals) != 2 || !ordinals[0] || !ordinals[1] {
+		t.Fatalf("checkbox ordinals = %v, want exactly 0 and 1", ordinals)
+	}
+	m.detail.cursor = checkboxLine(t, m, 1)
 
 	_, cmd := send(t, m, key("space"))
 	if err := runWrite(t, cmd); err != nil {
