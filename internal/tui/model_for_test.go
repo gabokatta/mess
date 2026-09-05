@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -30,8 +31,12 @@ func modelFor(t *testing.T, world fixture.World, width, height int) Model {
 	fixture.MustLoad(t, db, world)
 
 	m := New(db)
+	// No test reaches the quote API: a refused connection keeps the backfill
+	// a fetch that found nothing rather than a ten-second wait.
+	m.client = &rates.Client{BaseURL: "http://127.0.0.1:1", HTTP: &http.Client{Timeout: time.Millisecond}}
 	m.today = fixture.Period
 	m.period = fixture.Period
+	m.ratesList.cursor = int(fixture.Period.Month()) - 1
 
 	m, _ = send(t, m, tea.WindowSizeMsg{Width: width, Height: height})
 	m, _ = send(t, m, runCmd(t, loadRates(db)), quotesMsg{quotes: defaultQuotes})

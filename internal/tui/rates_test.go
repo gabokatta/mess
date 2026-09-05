@@ -3,7 +3,6 @@ package tui
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -13,22 +12,25 @@ import (
 	"github.com/gabokatta/mess/internal/month"
 )
 
-func TestRatesEnterAdoptsTheHouseUnderTheCursor(t *testing.T) {
+// Three houses do not need a cursor: h walks them and commits, and the arrows
+// belong to the table.
+func TestRatesHouseKeyCyclesAndCommits(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m.view = viewRates
 
-	m, _ = send(t, m, key("down"), key("down"))
-	_, cmd := send(t, m, key("enter"))
-	if err := runWrite(t, cmd); err != nil {
-		t.Fatalf("adopting a house reported an error: %v", err)
-	}
-
-	got, err := catalog.FxHouse(m.db)
-	if err != nil {
-		t.Fatalf("FxHouse() unexpected error: %v", err)
-	}
-	if got != domain.MEP {
-		t.Errorf("FxHouse() = %v, want MEP", got)
+	for _, want := range []domain.FxHouse{domain.Official, domain.MEP, domain.Blue} {
+		_, cmd := send(t, m, key("h"))
+		if err := runWrite(t, cmd); err != nil {
+			t.Fatalf("cycling the house reported an error: %v", err)
+		}
+		got, err := catalog.FxHouse(m.db)
+		if err != nil {
+			t.Fatalf("FxHouse() unexpected error: %v", err)
+		}
+		if got != want {
+			t.Fatalf("FxHouse() = %v, want %v", got, want)
+		}
+		m, _ = send(t, m, runCmd(t, loadRates(m.db)))
 	}
 }
 
@@ -48,11 +50,13 @@ func TestFxTableFollowsTheAdoptedHouse(t *testing.T) {
 	}
 }
 
-// e prefills the by-hand editor with the rate currently in effect.
-func TestManualRateFormOpensOnTheShownPeriod(t *testing.T) {
+// e prefills the by-hand editor with the rate currently in effect, for the
+// month under the cursor.
+func TestManualRateFormOpensOnTheCursorPeriod(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m.view = viewRates
 	m, _ = send(t, m, ratesMsg{settings: catalog.Settings{FxHouse: domain.Blue}})
+	m = m.sync()
 
 	m, _ = send(t, m, key("e"))
 	if _, ok := m.topModal().(*form); !ok {
@@ -81,30 +85,6 @@ func TestManualRateOverridesTheLiveQuote(t *testing.T) {
 	rate := m.fx().At(september)
 	if rate.Origin != month.RateManual || !rate.Value.Equal(decimal.NewFromInt(1600)) {
 		t.Errorf("rate = %+v, want the manual 1600 over the live 1540", rate)
-	}
-}
-
-// An inherited rate is not a close and gets no bar.
-func TestYearClosesLeavesUnknownMonthsAtZero(t *testing.T) {
-	m := modelFor(t, fixture.World{}, 90, 30)
-	m.view = viewRates
-	m, _ = send(t, m, ratesMsg{
-		settings: catalog.Settings{FxHouse: domain.Blue},
-		stored: []catalog.FxRate{
-			{Period: domain.NewPeriod(fixture.Year, time.January), Value: decimal.NewFromInt(1100), Source: catalog.Close},
-			{Period: domain.NewPeriod(fixture.Year, time.March), Value: decimal.NewFromInt(1200), Source: catalog.Close},
-		},
-	})
-
-	closes := m.yearCloses()
-	if !closes[0].Equal(decimal.NewFromInt(1100)) || !closes[2].Equal(decimal.NewFromInt(1200)) {
-		t.Errorf("stored closes = %v, want january and march", closes)
-	}
-	if !closes[1].IsZero() {
-		t.Errorf("february = %s, want zero rather than an inherited bar", closes[1])
-	}
-	if !closes[8].Equal(decimal.NewFromInt(1540)) {
-		t.Errorf("september = %s, want the live quote", closes[8])
 	}
 }
 

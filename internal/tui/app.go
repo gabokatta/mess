@@ -54,12 +54,12 @@ type Model struct {
 
 	stored []catalog.FxRate
 	quotes []rates.Quote
-	house  int
 
 	monthList    scroller
 	yearList     scroller
 	notesList    scroller
 	conceptsList scroller
+	ratesList    scroller
 	detail       scroller
 	notesFocus   notesFocusArea
 
@@ -108,6 +108,9 @@ func New(db *sql.DB) Model {
 		client: rates.NewClient(),
 		today:  now,
 		period: now,
+		// The rates table is a year of months, so its cursor's home is the
+		// month the rest of the app is showing.
+		ratesList: scroller{cursor: int(now.Month()) - 1},
 	}
 }
 
@@ -289,7 +292,7 @@ func (m Model) switchView(delta int) (Model, tea.Cmd) {
 	m.view = (m.view + view(delta) + n) % n
 	m.notesFocus = focusList
 	if m.view == viewRates {
-		m.house = houseIndex(m.settings.FxHouse)
+		m.ratesList.cursor = int(m.period.Month()) - 1
 	}
 	return m, nil
 }
@@ -300,7 +303,8 @@ func (m Model) shiftPeriod(delta int) (Model, tea.Cmd) {
 	if !m.showsPeriod() {
 		return m, nil
 	}
-	if m.view == viewYear {
+	// Both screens show a year, so both step by one.
+	if m.view == viewYear || m.view == viewRates {
 		delta *= 12
 	}
 	return m.goTo(m.period.AddMonths(delta))
@@ -312,6 +316,7 @@ func (m Model) goTo(p domain.Period) (Model, tea.Cmd) {
 	m.monthList.cursor = 0
 	m.yearList.cursor = 0
 	m.notesList.cursor = 0
+	m.ratesList.cursor = int(p.Month()) - 1
 	m.notesFocus = focusList
 
 	cmds := []tea.Cmd{loadMonth(m.db, m.period), loadYear(m.db, m.period.Year(), m.fx())}
@@ -340,7 +345,7 @@ func (m Model) moveCursor(delta int) Model {
 	case viewConcepts:
 		m.conceptsList = m.conceptsList.move(delta, len(m.concepts))
 	case viewRates:
-		m.house = clamp(m.house+delta, len(rates.Houses))
+		m.ratesList = m.ratesList.move(delta, ratesMonths)
 	}
 	return m
 }
@@ -394,6 +399,11 @@ func (m Model) sync() Model {
 		// Title, its blank line, and the column header sit above the list.
 		m.conceptsList = m.conceptsList.show(rows, anchors, conceptsTableWidth,
 			viewportHeight(len(rows), m.bodyHeight(3)))
+	case viewRates:
+		m.ratesList.cursor = clamp(m.ratesList.cursor, ratesMonths)
+		rows := m.rateTableRows()
+		m.ratesList = m.ratesList.show(rows, rowAnchors(len(rows)), m.ratesTableWidth(),
+			viewportHeight(len(rows), m.ratesListHeight()))
 	}
 	return m
 }
@@ -554,7 +564,7 @@ func (m Model) viewKeys() []string {
 		}
 		return keys
 	default:
-		return []string{"↑/↓", "enter use house", "e set rate", "←/→ month"}
+		return []string{"↑/↓", "e set rate", "d clear", "h house", "←/→ year"}
 	}
 }
 

@@ -8,9 +8,10 @@ DROP TABLE IF EXISTS fx_rate;
 DROP TABLE IF EXISTS settings;
 
 CREATE TABLE category (
-    id         INTEGER PRIMARY KEY,
-    name       TEXT NOT NULL UNIQUE,
-    sort_order INTEGER NOT NULL DEFAULT 0
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    color_index INTEGER NOT NULL DEFAULT 0 CHECK (color_index BETWEEN 0 AND 7)
 );
 
 CREATE TABLE concept (
@@ -46,7 +47,8 @@ CREATE TABLE note (
 CREATE TABLE fx_rate (
     period TEXT PRIMARY KEY,
     value  TEXT NOT NULL,
-    source TEXT NOT NULL CHECK (source IN ('Close', 'Manual'))
+    source TEXT NOT NULL CHECK (source IN ('Close', 'Manual')),
+    house  TEXT CHECK (house IS NULL OR house IN ('Blue', 'Official', 'MEP'))
 );
 
 CREATE TABLE settings (

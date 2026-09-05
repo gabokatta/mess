@@ -126,11 +126,26 @@ func backfillCloses(db *sql.DB, client *rates.Client, year int, today domain.Per
 			if err != nil {
 				continue
 			}
-			if catalog.SaveFxClose(db, p, value) == nil {
+			if catalog.SaveFxClose(db, p, value, house) == nil {
 				saved++
 			}
 		}
 		return backfilledMsg{saved: saved}
+	}
+}
+
+// clearRate deletes one period's rate and then refills the hole in the same
+// command, so a row cleared because it was fetched at the wrong house comes
+// straight back at the right one. The backfill's own message is dropped: the
+// savedMsg that follows reloads everything either way, including the case
+// where the refetch found nothing and the month stays empty.
+func clearRate(db *sql.DB, client *rates.Client, period, today domain.Period) tea.Cmd {
+	return func() tea.Msg {
+		if err := catalog.ClearFxRate(db, period); err != nil {
+			return savedMsg{err: err}
+		}
+		backfillCloses(db, client, period.Year(), today)()
+		return savedMsg{}
 	}
 }
 

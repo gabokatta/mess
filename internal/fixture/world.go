@@ -152,7 +152,7 @@ func Load(db *sql.DB, w World) (Loaded, error) {
 		if r.Source == catalog.Manual {
 			err = catalog.SetManualFxRate(db, r.Period, value)
 		} else {
-			err = catalog.SaveFxClose(db, r.Period, value)
+			err = catalog.SaveFxClose(db, r.Period, value, w.FxHouse)
 		}
 		if err != nil {
 			return Loaded{}, err
