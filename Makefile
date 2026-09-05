@@ -19,6 +19,7 @@ build:
 
 build-all:
 	GOOS=darwin  GOARCH=arm64 go build $(GOFLAGS) -o bin/mess-darwin-arm64 ./cmd/mess
+	GOOS=linux   GOARCH=amd64 go build $(GOFLAGS) -o bin/mess-linux-amd64 ./cmd/mess
 	GOOS=windows GOARCH=amd64 go build $(GOFLAGS) -o bin/mess-windows-amd64.exe ./cmd/mess
 
 test:

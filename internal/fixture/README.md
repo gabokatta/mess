@@ -1,34 +1,31 @@
-# Seeding a dev database
+# Seed a development database
 
-`Demo` (in `demo.go`) covers eighteen months with long names,
-wide amounts, a missing fx rate, a cadence gap, an ended concept, an
-over-saved month, and the rest of the cases that break a layout by accident.
-`mess seed` and the test suite share `World` and `Load`. Test helpers live in
-`internal/testutil`, keeping the testing package out of the application build.
+`Demo` in `demo.go` contains eighteen months of data. It includes long names,
+large amounts, a missing exchange rate, cadence gaps, ended concepts, and
+over-saved months. `mess seed` and the tests use the same `World` and `Load`.
+Test helpers live in `internal/testutil`.
 
 ## Commands
 
-    make seed        # wipes .data/mess.db and refills it with Demo
-    make dev         # opens the app on .data/mess.db as it is, no reseeding
-    make clean-dev   # removes .data entirely
+    make seed        # replaces .data/mess.db with Demo
+    make dev         # opens .data/mess.db without reseeding
+    make clean-dev   # removes .data
 
 `mess seed` requires `--db` and refuses a locked database. It builds the demo
-in a temporary database, then replaces the destination's rows in one transaction.
+in a temporary database, then replaces the destination rows in one transaction.
 
-`.data/` is gitignored, so it can be deleted at any point without touching
-the real database `make run` uses.
+`.data/` is ignored by Git. Deleting it does not affect the default database
+used by `make run`.
 
-The usual loop is `make seed` for a clean, reproducible start, `make dev` to
-try things against it, and `make seed` again once the data is mangled or a
-fresh screenshot is needed.
+Run `make seed` for a clean start, then `make dev`. Run `make seed` again when
+you want a fresh database or screenshot.
 
 ## Anchor and `--period`
 
-`Demo`'s newest month is always the current one, so the app opens on
-populated data instead of an empty month. Pin it with `--period` when two
-runs need to match byte for byte:
+`Demo` ends in the current month, so the app opens with populated data. Pass
+`--period` when two runs need identical data:
 
     mess seed --db .data/mess.db --period 2026-09
 
-Every period `Demo` writes is relative to the anchor, so pinning it
-reproduces the whole eighteen-month window exactly.
+Every `Demo` period is relative to the anchor. Pinning it reproduces the same
+eighteen-month window.
