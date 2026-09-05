@@ -18,13 +18,16 @@ func TestMonthColumnHeaderRendersOnceAboveTheList(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 	content := stripANSI(m.renderMonth())
 
-	if got := strings.Count(content, "CONCEPT"); got != 1 {
-		t.Errorf("CONCEPT appears %d times, want exactly 1", got)
+	if got := strings.Count(content, "CATEGORY"); got != 1 {
+		t.Errorf("CATEGORY appears %d times, want exactly 1", got)
 	}
-	for _, col := range []string{"CATEGORY", "CUR", "AMOUNT"} {
+	for _, col := range []string{"CUR", "AMOUNT"} {
 		if !strings.Contains(content, col) {
 			t.Errorf("column header is missing %q:\n%s", col, content)
 		}
+	}
+	if strings.Contains(content, "CONCEPT") {
+		t.Errorf("the name column speaks for itself and needs no label:\n%s", content)
 	}
 }
 

@@ -11,12 +11,12 @@ type Settings struct {
 	FxHouse domain.FxHouse
 }
 
-// LoadSettings falls back to Blue when unconfigured.
+// LoadSettings falls back to domain.DefaultFxHouse when unconfigured.
 func LoadSettings(db *sql.DB) (Settings, error) {
 	var house string
 	err := db.QueryRow(`SELECT fx_house FROM settings WHERE id = 1`).Scan(&house)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Settings{FxHouse: domain.Blue}, nil
+		return Settings{FxHouse: domain.DefaultFxHouse}, nil
 	}
 	if err != nil {
 		return Settings{}, err

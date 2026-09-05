@@ -16,7 +16,7 @@ func TestRatesHouseKeyCyclesAndCommits(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m.view = viewRates
 
-	for _, want := range []domain.FxHouse{domain.Official, domain.MEP, domain.Blue} {
+	for _, want := range []domain.FxHouse{domain.Blue, domain.Official, domain.MEP} {
 		_, cmd := send(t, m, key("h"))
 		if err := runWrite(t, cmd); err != nil {
 			t.Fatalf("cycling the house reported an error: %v", err)

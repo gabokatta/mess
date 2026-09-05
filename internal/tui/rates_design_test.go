@@ -78,6 +78,26 @@ func TestRateRowsNameWhereEachRateCameFrom(t *testing.T) {
 	}
 }
 
+func TestJanuaryMeasuresAgainstTheDecemberBefore(t *testing.T) {
+	m := modelFor(t, fixture.World{
+		FxHouse: domain.MEP,
+		Rates: []fixture.Rate{
+			{Period: domain.NewPeriod(fixture.Year-1, time.December), Value: "1000"},
+			{Period: period(time.January), Value: "1100"},
+		},
+	}, minUsableWidth, 40)
+	m.view = viewRates
+	m = m.sync()
+
+	january := rowsFor(t, m)[time.January]
+	if !january.hasDelta {
+		t.Fatal("january plots nothing, want a move against last december")
+	}
+	if got := signedPercent(january.delta); got != "+10,0%" {
+		t.Errorf("january plots %s, want +10,0%%", got)
+	}
+}
+
 func TestRateRowsGiveAnUnreachedMonthNoValue(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 32)
 	rows := rowsFor(t, m)

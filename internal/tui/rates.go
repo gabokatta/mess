@@ -74,7 +74,7 @@ func (m Model) rateRows() []rateRow {
 	}
 
 	rows := make([]rateRow, 12)
-	var previous decimal.Decimal
+	previous := lastRateBefore(m.stored, domain.NewPeriod(m.period.Year(), time.January))
 	for i := range rows {
 		p := domain.NewPeriod(m.period.Year(), time.Month(i+1))
 		row := rateRow{period: p, current: p.Equal(m.period)}
@@ -103,6 +103,18 @@ func (m Model) rateRows() []rateRow {
 		rows[i] = row
 	}
 	return rows
+}
+
+// January measures against the December before it, which is not on this table.
+func lastRateBefore(stored []catalog.FxRate, p domain.Period) decimal.Decimal {
+	var last decimal.Decimal
+	for _, r := range stored {
+		if !r.Period.Before(p) {
+			break
+		}
+		last = r.Value
+	}
+	return last
 }
 
 func statusOf(rate month.Rate) rateStatus {

@@ -160,7 +160,7 @@ func (m Model) monthMeta(totals month.Totals) string {
 
 func (m Model) monthColumnHeader() string {
 	row := strings.Repeat(" ", gutterWidth+checkWidth) +
-		leftCol(nameWidth, "CONCEPT") + leftCol(categoryWidth, "CATEGORY") + leftCol(currencyWidth, "CUR") +
+		leftCol(nameWidth, "") + leftCol(categoryWidth, "CATEGORY") + leftCol(currencyWidth, "CUR") +
 		lipgloss.NewStyle().Width(amountWidth).Align(lipgloss.Right).Render("AMOUNT")
 	return m.theme.Muted.Render(row)
 }

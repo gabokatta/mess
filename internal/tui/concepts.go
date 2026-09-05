@@ -447,7 +447,7 @@ func (m Model) monthStrip(mask domain.Cadence) string {
 
 func (m Model) conceptColumnHeader() string {
 	row := strings.Repeat(" ", gutterWidth) +
-		leftCol(nameWidth, "CONCEPT") + leftCol(categoryWidth, "CATEGORY") + leftCol(currencyWidth, "CUR") +
+		leftCol(nameWidth, "") + leftCol(categoryWidth, "CATEGORY") + leftCol(currencyWidth, "CUR") +
 		lipgloss.NewStyle().Width(amountWidth).Align(lipgloss.Right).Render("BASE") +
 		strings.Repeat(" ", colGap) + leftCol(cadenceWidth, "CADENCE") +
 		lipgloss.NewStyle().Width(statusWidth).Render("STATUS")

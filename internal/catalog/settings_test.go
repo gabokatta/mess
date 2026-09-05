@@ -15,8 +15,8 @@ func TestLoadSettingsDefaultsWhenUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadSettings() unexpected error: %v", err)
 	}
-	if got.FxHouse != domain.Blue {
-		t.Errorf("LoadSettings().FxHouse = %v, want Blue", got.FxHouse)
+	if got.FxHouse != domain.MEP {
+		t.Errorf("LoadSettings().FxHouse = %v, want MEP", got.FxHouse)
 	}
 }
 

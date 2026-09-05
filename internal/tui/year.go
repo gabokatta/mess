@@ -206,11 +206,11 @@ func (m Model) plotCell(b yearBar, row, up, down int, high, low float64, width i
 			return style.Render(strings.Repeat("█", width))
 		}
 		if filled > 0 {
-			return style.Render(strings.Repeat(eighths[int(filled*8)], width))
+			return style.Render(strings.Repeat(eighths[max(int(filled*8), 1)], width))
 		}
 	case row >= up && v < 0 && low < 0:
 		// Whole cells only: Unicode has no run of upper eighths to taper with.
-		if v/low*float64(down) >= float64(row-up+1) {
+		if row == up || v/low*float64(down) >= float64(row-up+1) {
 			return m.theme.Alert.Render(strings.Repeat("█", width))
 		}
 	}
@@ -227,7 +227,7 @@ func (m Model) renderAxis(bars []yearBar, barWidth, width int) string {
 		case b.pending:
 			style = m.theme.Muted.Faint(true)
 		}
-		labels[i] = style.Width(barWidth).Render(b.label)
+		labels[i] = style.Width(barWidth).Align(lipgloss.Center).Render(b.label)
 	}
 	return m.theme.Muted.Render(strings.Repeat("─", width)) + "\n" + strings.Join(labels, " ")
 }

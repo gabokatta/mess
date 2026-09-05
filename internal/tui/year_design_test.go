@@ -78,6 +78,41 @@ func TestNegativeMonthsHangBelowTheBaseline(t *testing.T) {
 	}
 }
 
+func TestSmallMovesStillDrawACell(t *testing.T) {
+	m := modelFor(t, richWorld(), minUsableWidth, 32)
+
+	bars := []yearBar{
+		{label: "jan", value: decimal.NewFromInt(100)},
+		{label: "feb", value: decimal.NewFromInt(-50)},
+		{label: "mar", value: decimal.NewFromInt(1)},
+		{label: "apr", value: decimal.NewFromInt(-1)},
+	}
+	lines := strings.Split(stripANSI(m.renderPlot(bars, 1, 6)), "\n")
+
+	plotted := func(col int) bool {
+		for _, line := range lines {
+			if []rune(line)[col] != ' ' {
+				return true
+			}
+		}
+		return false
+	}
+	for _, col := range []int{4, 6} {
+		if !plotted(col) {
+			t.Errorf("a move too small for a whole cell was dropped:\n%s", strings.Join(lines, "\n"))
+		}
+	}
+}
+
+func TestAxisLabelsSitUnderTheirBars(t *testing.T) {
+	m := modelFor(t, richWorld(), minUsableWidth, 32)
+
+	bars := []yearBar{{label: "jan", value: decimal.NewFromInt(100)}}
+	if got := stripANSI(m.renderAxis(bars, yearBarMax, yearBarMax)); !strings.HasSuffix(got, " jan  ") {
+		t.Errorf("renderAxis() = %q, want the label centred in its column", got)
+	}
+}
+
 func TestPendingMonthsAreLabelledButNotDrawn(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 

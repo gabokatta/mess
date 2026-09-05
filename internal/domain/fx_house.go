@@ -5,10 +5,12 @@ import "fmt"
 type FxHouse int
 
 const (
-	Blue FxHouse = iota
+	MEP FxHouse = iota
+	Blue
 	Official
-	MEP
 )
+
+const DefaultFxHouse = MEP
 
 func (h FxHouse) String() string {
 	switch h {

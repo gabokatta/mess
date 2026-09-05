@@ -87,13 +87,16 @@ func TestConceptColumnHeaderNamesTheColumns(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 
 	header := stripANSI(m.conceptColumnHeader())
-	for _, want := range []string{"CONCEPT", "CATEGORY", "CUR", "BASE", "CADENCE"} {
+	for _, want := range []string{"CATEGORY", "CUR", "BASE", "CADENCE"} {
 		if !strings.Contains(header, want) {
 			t.Errorf("column header is missing %q:\n%q", want, header)
 		}
 	}
 	if strings.Contains(header, "AMOUNT") {
 		t.Errorf("column header says AMOUNT, which is Month's column:\n%q", header)
+	}
+	if strings.Contains(header, "CONCEPT") {
+		t.Errorf("the name column speaks for itself and needs no label:\n%q", header)
 	}
 }
 
@@ -512,7 +515,7 @@ func TestEmptyCatalogRendersNoPane(t *testing.T) {
 	if !strings.Contains(content, "press n to add one") {
 		t.Errorf("an empty catalog should say what to press:\n%s", content)
 	}
-	if strings.Contains(content, "Window") || strings.Contains(content, "CONCEPT ") {
+	if strings.Contains(content, "Window") || strings.Contains(content, "CATEGORY") {
 		t.Errorf("an empty catalog should render neither the table nor the pane:\n%s", content)
 	}
 }

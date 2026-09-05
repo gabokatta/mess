@@ -40,7 +40,7 @@ func Demo(anchor domain.Period) World {
 		Entries:  demoEntries(anchor, oldest, lines),
 		Notes:    demoNotes(anchor),
 		Rates:    demoRates(anchor, oldest),
-		FxHouse:  domain.Blue,
+		FxHouse:  domain.DefaultFxHouse,
 	}
 }
 
