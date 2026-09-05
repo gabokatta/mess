@@ -2,7 +2,7 @@
 
 <img src="docs/assets/logo.png" alt="mess" width="134">
 
-**A monthly ARS/USD finance tracker for the terminal.**
+_cool little tui project to keep track of my budgets, focused on ARS/USD values (inflation sucks..)_
 
 [Build](#build) · [Use](#use) · [Keep-your-data-portable](#keep-your-data-portable)
 
