@@ -7,17 +7,13 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// LineMoney's Overridden is the presence of a month_entry amount and nothing
-// else: it says the figure was typed rather than carried over from the
-// concept's base. It does not decide whether the line counts. Line.Done does.
+// Overridden records a typed amount; Line.Done determines whether it counts.
 type LineMoney struct {
 	Amount     domain.Money
 	Overridden bool
 }
 
-// Line is one concept resolved for a period. Money is nil on a Chore; Done
-// applies to every kind, and on a money line it is the confirmation: ticking
-// accepts the amount shown, typed or not, into the month's arithmetic.
+// Money is nil for chores. Done confirms either the base or the override.
 type Line struct {
 	Concept catalog.Concept
 	Money   *LineMoney
@@ -28,8 +24,6 @@ type Month struct {
 	Lines []Line
 }
 
-// Resolve runs one pipeline for every kind: month_mask and the active range
-// decide whether a concept generates a line, the override decides its amount.
 func Resolve(period domain.Period, concepts []catalog.Concept, entries map[int64]catalog.MonthEntry) []Line {
 	var lines []Line
 	for _, c := range concepts {
@@ -63,7 +57,6 @@ func occursIn(c catalog.Concept, p domain.Period) bool {
 	return c.ActiveUntil.IsZero() || !p.After(c.ActiveUntil)
 }
 
-// DoneCount counts every kind alike.
 func DoneCount(lines []Line) (done, total int) {
 	for _, l := range lines {
 		total++

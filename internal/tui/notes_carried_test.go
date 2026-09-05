@@ -20,8 +20,6 @@ func carriedWorld() fixture.World {
 	}
 }
 
-// The group is a query: open, and older than the month on screen. A note that
-// was finished in June is not debt, it is history.
 func TestCarriedOverHoldsOpenNotesFromEarlierPeriods(t *testing.T) {
 	m := modelFor(t, carriedWorld(), minUsableWidth, 32)
 
@@ -73,8 +71,6 @@ func TestAQuietMonthCarriesNoGroupAndNoCount(t *testing.T) {
 	}
 }
 
-// Closing is what makes a carried note stop being carried. The row leaves the
-// list, and the count below it is the receipt.
 func TestClosingACarriedNoteRemovesIt(t *testing.T) {
 	m := modelFor(t, carriedWorld(), minUsableWidth, 32)
 	m.view = viewNotes
@@ -115,7 +111,6 @@ func TestClosingACarriedNoteRemovesIt(t *testing.T) {
 	}
 }
 
-// A carried row says which month it came from; nothing else needs the column.
 func TestOnlyCarriedRowsCarryTheirPeriod(t *testing.T) {
 	m := modelFor(t, carriedWorld(), minUsableWidth, 32)
 	m.view = viewNotes
@@ -135,7 +130,6 @@ func TestOnlyCarriedRowsCarryTheirPeriod(t *testing.T) {
 	}
 }
 
-// The demo world has to show the group, or no screenshot of it ever will.
 func TestTheDemoWorldCarriesSomething(t *testing.T) {
 	m := modelFor(t, fixture.Demo(fixture.Period), minUsableWidth, 32)
 	m.view = viewNotes

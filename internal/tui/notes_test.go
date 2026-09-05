@@ -10,7 +10,6 @@ import (
 	"github.com/gabokatta/mess/internal/fixture"
 )
 
-// Pinned notes lead, then the shown period's, under one cursor.
 func TestNotesListPinnedFirst(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{
@@ -77,7 +76,6 @@ func TestNotesPinAndUnpin(t *testing.T) {
 	}
 }
 
-// space rewrites the source line the cursor is on, so storage stays one field.
 func TestNoteBodySpaceTogglesTheCheckboxUnderTheCursor(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk\n- [ ] bread"}},
@@ -186,8 +184,6 @@ func TestNewNoteFormCreatesInTheShownPeriod(t *testing.T) {
 	}
 }
 
-// The card is one screen, so the month moves from either half of it. Reading a
-// note is a focus, not a place the period navigation cannot reach.
 func TestTheMonthMovesFromEitherFocus(t *testing.T) {
 	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk"}}}, minUsableWidth, 32)
 	m.view = viewNotes
@@ -218,7 +214,6 @@ func TestSwitchingViewsReturnsFocusToTheList(t *testing.T) {
 	}
 }
 
-// Counting a "[ ] " inside prose would shift every toggle onto the wrong line.
 func TestTheBodyIgnoresCheckboxGlyphsInProse(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{{
@@ -252,7 +247,6 @@ func TestTheBodyIgnoresCheckboxGlyphsInProse(t *testing.T) {
 	}
 }
 
-// A form on screen must follow the terminal, not keep its built size.
 func TestOpenModalFollowsAResize(t *testing.T) {
 	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas", BodyMD: "- [ ] milk"}}}, 90, 30)
 	m.view = viewNotes

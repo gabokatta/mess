@@ -83,26 +83,6 @@ func TestFxTableAt(t *testing.T) {
 	}
 }
 
-func TestRateLabel(t *testing.T) {
-	tests := []struct {
-		rate Rate
-		want string
-	}{
-		{Rate{Origin: RateLive}, "live"},
-		{Rate{Origin: RateClose}, "close"},
-		{Rate{Origin: RateManual}, "manual"},
-		{Rate{Origin: RateInherited, From: period(time.August)}, "inherited from 2026-08"},
-		{Rate{}, "no rate"},
-	}
-	for _, tt := range tests {
-		if got := tt.rate.Label(); got != tt.want {
-			t.Errorf("Label() = %q, want %q", got, tt.want)
-		}
-	}
-}
-
-// Backfill is bounded to the shown year, skips the running month, and never
-// refetches a stored close.
 func TestMissingCloses(t *testing.T) {
 	today := period(time.September)
 	stored := []catalog.FxRate{closeAt(time.January, 1100), closeAt(time.March, 1200)}

@@ -131,8 +131,6 @@ func TestTabCyclesViews(t *testing.T) {
 	}
 }
 
-// The cursor runs over the rendered order, not the catalog's, so index and
-// row always mean the same line.
 func TestMonthCursorFollowsTheGroupedOrder(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
@@ -163,7 +161,6 @@ func TestMonthCursorFollowsTheGroupedOrder(t *testing.T) {
 	}
 }
 
-// Every anchor is a line the cursor can actually land on.
 func TestMonthAnchorsPointAtSelectableRowsOnly(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
@@ -229,7 +226,6 @@ func TestEditOpensTheInlineAmountEditAndEscCloses(t *testing.T) {
 	}
 }
 
-// A chore has no amount behind it, so e is a no-op there.
 func TestEditIsANoOpOnAChore(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Wash the house", Category: "Home", Kind: catalog.Chore}},
@@ -289,7 +285,6 @@ func TestShiftPeriodResetsTheCursor(t *testing.T) {
 	}
 }
 
-// The Year view moves a year at a time, the unit on that screen.
 func TestShiftPeriodMovesAYearInTheYearView(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m, _ = send(t, m, key("tab"), key("right"))
@@ -324,7 +319,6 @@ func TestFormatAmount(t *testing.T) {
 	}
 }
 
-// The cursor pushes the viewport at the edges rather than walking off it.
 func TestMonthListScrollsWithTheCursor(t *testing.T) {
 	concepts := make([]fixture.Concept, 0, 30)
 	for i := 1; i <= 30; i++ {
@@ -360,7 +354,6 @@ func TestMonthListScrollsWithTheCursor(t *testing.T) {
 	}
 }
 
-// An open form owns the keyboard, so left/right must not move the period.
 func TestOpenModalKeepsTheArrows(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
@@ -380,7 +373,6 @@ func TestOpenModalKeepsTheArrows(t *testing.T) {
 	}
 }
 
-// The arrows move the period only on screens that show one.
 func TestArrowsMoveThePeriodOnlyWhereOneIsShown(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 
@@ -408,8 +400,6 @@ func TestArrowsMoveThePeriodOnlyWhereOneIsShown(t *testing.T) {
 	}
 }
 
-// The catalog is period-free: month_mask and the active range say when a
-// concept fires.
 func TestConceptsHasNoPeriod(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m, _ = send(t, m, key("tab"), key("tab"), key("tab"))
@@ -424,7 +414,6 @@ func TestConceptsHasNoPeriod(t *testing.T) {
 	}
 }
 
-// t goes back to the month still running, from wherever you wandered to.
 func TestTodayReturnsToTheRunningMonth(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 
@@ -439,7 +428,6 @@ func TestTodayReturnsToTheRunningMonth(t *testing.T) {
 	}
 }
 
-// The hint costs help-line width, so it appears only when t would act.
 func TestTodayHintAppearsOnlyWhenOffTheRunningMonth(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 
@@ -458,7 +446,6 @@ func TestTodayHintAppearsOnlyWhenOffTheRunningMonth(t *testing.T) {
 	}
 }
 
-// Concepts is period-free, so t has nothing to return to there.
 func TestTodayIsInertWhereNoPeriodIsShown(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m, _ = send(t, m, key("right"))
@@ -478,7 +465,6 @@ func TestTodayIsInertWhereNoPeriodIsShown(t *testing.T) {
 	}
 }
 
-// Every screen says what tab and q do.
 func TestEveryHelpLineNamesTabAndQuit(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	for range viewNames {

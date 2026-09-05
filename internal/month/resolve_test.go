@@ -52,7 +52,6 @@ func TestResolveUsesTheOverrideWhenPresent(t *testing.T) {
 	}
 }
 
-// The presence of an override is what "confirmed" means.
 func TestResolveFallsBackToTheBaseAmount(t *testing.T) {
 	period := domain.NewPeriod(2026, time.September)
 
@@ -75,7 +74,6 @@ func TestResolveGivesAChoreNoMoney(t *testing.T) {
 	}
 }
 
-// Done travels with a chore exactly as it does with a bill.
 func TestResolveMarksAChoreDone(t *testing.T) {
 	period := domain.NewPeriod(2026, time.September)
 

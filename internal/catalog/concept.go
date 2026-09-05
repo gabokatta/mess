@@ -48,24 +48,23 @@ func ParseConceptKind(s string) (ConceptKind, error) {
 	}
 }
 
-// MoneyDetails hangs off a pointer so nil, not a zero amount, represents a
-// Chore's absence of money.
+// A nil MoneyDetails distinguishes a chore from a monetary concept with a zero base.
 type MoneyDetails struct {
 	Currency domain.Currency
 	Base     decimal.Decimal
 }
 
-// Concept is what a line is, not what it cost: Base only prefills the edit
-// box; the typed amount lives in month_entry.
+// The base amount applies until a month_entry overrides it. ActiveUntil is
+// inclusive; its zero value means the concept remains active indefinitely.
 type Concept struct {
 	ID          int64
 	Name        string
 	CategoryID  int64
 	Kind        ConceptKind
-	Money       *MoneyDetails // nil for Kind: Chore
+	Money       *MoneyDetails
 	MonthMask   domain.Cadence
 	ActiveFrom  domain.Period
-	ActiveUntil domain.Period // zero value means still active
+	ActiveUntil domain.Period
 }
 
 func CreateConcept(db *sql.DB, c Concept) (Concept, error) {

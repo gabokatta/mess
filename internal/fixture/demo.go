@@ -35,19 +35,13 @@ func Demo(anchor domain.Period) World {
 		concepts[i] = l.concept
 	}
 
-	lastExport := demoLastExport(anchor)
 	return World{
-		Concepts:   concepts,
-		Entries:    demoEntries(anchor, oldest, lines),
-		Notes:      demoNotes(anchor),
-		Rates:      demoRates(anchor, oldest),
-		FxHouse:    domain.Blue,
-		LastExport: &lastExport,
+		Concepts: concepts,
+		Entries:  demoEntries(anchor, oldest, lines),
+		Notes:    demoNotes(anchor),
+		Rates:    demoRates(anchor, oldest),
+		FxHouse:  domain.Blue,
 	}
-}
-
-func demoLastExport(anchor domain.Period) time.Time {
-	return time.Date(anchor.Year(), anchor.Month(), 1, 9, 0, 0, 0, time.UTC).AddDate(0, 0, -3)
 }
 
 func demoLines(anchor, oldest domain.Period) []demoLine {

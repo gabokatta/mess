@@ -27,8 +27,6 @@ func catalogWorld() fixture.World {
 	}
 }
 
-// conceptGroups is the one place the list's shape is decided: which concepts
-// show, under which label, in which order.
 func TestConceptGroupsAreKindsInMonthsOrder(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 
@@ -44,7 +42,6 @@ func TestConceptGroupsAreKindsInMonthsOrder(t *testing.T) {
 	}
 }
 
-// A kind nobody has used is not an empty block on the screen.
 func TestConceptGroupsSkipKindsWithNoConcepts(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "1"}},
@@ -56,8 +53,6 @@ func TestConceptGroupsSkipKindsWithNoConcepts(t *testing.T) {
 	}
 }
 
-// Rows sort by category inside a kind block, so the category column reads as
-// bands rather than as scattered words.
 func TestConceptRowsSortByCategoryInsideAKind(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 
@@ -75,8 +70,6 @@ func TestConceptRowsSortByCategoryInsideAKind(t *testing.T) {
 	}
 }
 
-// The cursor is a flat index over the grouped order, not over the order the
-// catalog returned.
 func TestConceptCursorWalksTheGroupedOrder(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	m.view = viewConcepts
@@ -90,8 +83,6 @@ func TestConceptCursorWalksTheGroupedOrder(t *testing.T) {
 	}
 }
 
-// BASE, not AMOUNT: this figure is what the edit box opens with, and Month's
-// AMOUNT column two tabs away is the month's real money.
 func TestConceptColumnHeaderNamesTheColumns(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 
@@ -106,8 +97,6 @@ func TestConceptColumnHeaderNamesTheColumns(t *testing.T) {
 	}
 }
 
-// Kind headers are structural: bold foreground and a muted rule, no hue. This
-// screen was the last caller of coloured group labels.
 func TestConceptKindHeadersCarryNoPaletteHue(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	m.view = viewConcepts
@@ -126,8 +115,6 @@ func TestConceptKindHeadersCarryNoPaletteHue(t *testing.T) {
 	}
 }
 
-// Truncated before Style.Width sees it: Width wraps, and a wrapped row carries
-// one anchor across two display lines, which desyncs the cursor.
 func TestLongConceptNameTruncatesOnTheCatalogScreen(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
@@ -155,7 +142,6 @@ func TestLongConceptNameTruncatesOnTheCatalogScreen(t *testing.T) {
 	}
 }
 
-// A chore has no money at all, so its cells are blank rather than zeroed.
 func TestChoreLeavesCurrencyAndBaseBlank(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Take out the trash", Category: "Home", Kind: catalog.Chore}},
@@ -171,8 +157,6 @@ func TestChoreLeavesCurrencyAndBaseBlank(t *testing.T) {
 	}
 }
 
-// The demo world is the one `make seed` writes and every screen test builds
-// on, so the layout stress cases have to live in it.
 func TestDemoWorldCarriesANameLongerThanTheColumn(t *testing.T) {
 	longest := 0
 	for _, c := range fixture.Demo(fixture.Period).Concepts {
@@ -185,8 +169,6 @@ func TestDemoWorldCarriesANameLongerThanTheColumn(t *testing.T) {
 	}
 }
 
-// The cell names what it can and counts what it cannot. Two months is what
-// fits in nine columns; a third name would cost six more.
 func TestCadenceLabelNamesFewMonthsAndCountsMany(t *testing.T) {
 	tests := []struct {
 		mask domain.Cadence
@@ -208,8 +190,6 @@ func TestCadenceLabelNamesFewMonthsAndCountsMany(t *testing.T) {
 	}
 }
 
-// Deleting the June and December preset costs a stored concept nothing: the
-// mask is an int, and the picker opens on the months it already holds.
 func TestAStoredSparseCadenceOpensThePicker(t *testing.T) {
 	mask := domain.NewCadence(time.June, time.December)
 	if got := presetOf(mask); got != presetPicked {
@@ -222,8 +202,6 @@ func TestAStoredSparseCadenceOpensThePicker(t *testing.T) {
 	}
 }
 
-// The seeded world shows both sides of the cadence cell's cutoff, so the
-// label is visible in the app and not only in this file.
 func TestDemoWorldCarriesBothSidesOfTheCadenceCutoff(t *testing.T) {
 	var named, counted bool
 	for _, c := range fixture.Demo(fixture.Period).Concepts {
@@ -280,8 +258,6 @@ func TestConceptStatusReadsTheWindowAgainstToday(t *testing.T) {
 	}
 }
 
-// Retired concepts leave their kind block for one of their own, most recently
-// ended first, once the block is asked for.
 func TestRetiredConceptsCollectInTheirOwnBlock(t *testing.T) {
 	m := modelFor(t, lifecycleWorld(), minUsableWidth, 32)
 	m.showRetired = true
@@ -308,8 +284,6 @@ func TestRetiredConceptsCollectInTheirOwnBlock(t *testing.T) {
 	}
 }
 
-// A concept whose window has not opened stays where it belongs, so something
-// scheduled is visible before it starts.
 func TestFutureConceptStaysInItsKindBlock(t *testing.T) {
 	m := modelFor(t, lifecycleWorld(), minUsableWidth, 32)
 	m.view = viewConcepts
@@ -335,8 +309,6 @@ func TestFutureConceptStaysInItsKindBlock(t *testing.T) {
 	}
 }
 
-// A catalog where nothing has been retired carries no block for it, asked for
-// or not.
 func TestRetiredBlockIsAbsentWhenNothingIsRetired(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	m.showRetired = true
@@ -347,8 +319,6 @@ func TestRetiredBlockIsAbsentWhenNothingIsRetired(t *testing.T) {
 	}
 }
 
-// Dead rows are not worth the space they take between the live ones, so they
-// wait behind a key. The count stays visible, so hidden is not forgotten.
 func TestRetiredConceptsAreHiddenUntilAskedFor(t *testing.T) {
 	m := modelFor(t, lifecycleWorld(), minUsableWidth, 32)
 	m.view = viewConcepts
@@ -379,8 +349,6 @@ func TestRetiredConceptsAreHiddenUntilAskedFor(t *testing.T) {
 	}
 }
 
-// Hiding the block under the cursor cannot leave the cursor past the end of
-// the list.
 func TestHidingRetiredMovesTheCursorBackIntoTheList(t *testing.T) {
 	m := modelFor(t, lifecycleWorld(), minUsableWidth, 32)
 	m.view = viewConcepts
@@ -404,7 +372,6 @@ func TestHidingRetiredMovesTheCursorBackIntoTheList(t *testing.T) {
 	}
 }
 
-// A catalog whose every concept is retired is not an empty one.
 func TestAnAllRetiredCatalogSaysSoRatherThanLookingEmpty(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{
@@ -424,8 +391,6 @@ func TestAnAllRetiredCatalogSaysSoRatherThanLookingEmpty(t *testing.T) {
 	}
 }
 
-// The status cell changes weight as well as word, so a dead row reads as dead
-// from across the card.
 func TestRetiredRowsAreMutedAndActiveRowsAreNot(t *testing.T) {
 	m := modelFor(t, lifecycleWorld(), minUsableWidth, 32)
 
@@ -446,8 +411,6 @@ func TestRetiredRowsAreMutedAndActiveRowsAreNot(t *testing.T) {
 	}
 }
 
-// The seeded world shows the block and all three status words, so they are
-// visible in the app and not only in this file.
 func TestDemoWorldCarriesEveryLifecycleState(t *testing.T) {
 	world := fixture.Demo(fixture.Period)
 	seen := map[lifecycle]int{}
@@ -462,7 +425,6 @@ func TestDemoWorldCarriesEveryLifecycleState(t *testing.T) {
 	}
 }
 
-// The pane carries the fields the row had no room for.
 func TestConceptPaneCarriesTheDefinition(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	m.view = viewConcepts
@@ -482,8 +444,6 @@ func TestConceptPaneCarriesTheDefinition(t *testing.T) {
 	}
 }
 
-// The mask in full, under twelve initials, which is why the cadence cell is
-// allowed to be lossy.
 func TestConceptPaneDrawsTheMonthStrip(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{
@@ -503,8 +463,6 @@ func TestConceptPaneDrawsTheMonthStrip(t *testing.T) {
 	}
 }
 
-// A chore has no money, and its base reads as absent rather than as zero. The
-// pane keeps its height so the card does not resize under the cursor.
 func TestConceptPaneHeightDoesNotMoveWithTheCursor(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	m.view = viewConcepts
@@ -524,8 +482,6 @@ func TestConceptPaneHeightDoesNotMoveWithTheCursor(t *testing.T) {
 	}
 }
 
-// One card, centred, at every terminal size the app runs at. The card has to
-// fit contentWidth at the floor, which is what fixes its width at 129.
 func TestConceptCardIsCentredAndFitsTheFloor(t *testing.T) {
 	if conceptsCardWidth > minUsableWidth-6 {
 		t.Fatalf("card is %d columns, wider than contentWidth at the %d floor",
@@ -547,7 +503,6 @@ func TestConceptCardIsCentredAndFitsTheFloor(t *testing.T) {
 	}
 }
 
-// An empty catalog is an invitation, not an empty card beside an empty pane.
 func TestEmptyCatalogRendersNoPane(t *testing.T) {
 	m := modelFor(t, fixture.World{}, minUsableWidth, 32)
 	m.view = viewConcepts
@@ -562,7 +517,6 @@ func TestEmptyCatalogRendersNoPane(t *testing.T) {
 	}
 }
 
-// The largest subject on the screen should not be its smallest text.
 func TestConceptsTitleIsBoldUppercase(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	m.view = viewConcepts
@@ -573,8 +527,6 @@ func TestConceptsTitleIsBoldUppercase(t *testing.T) {
 	}
 }
 
-// The cluster hangs off the pane, not off the bottom of the list, where it
-// reads as a row that lost its columns.
 func TestConceptMetaSitsUnderThePane(t *testing.T) {
 	m := modelFor(t, lifecycleWorld(), minUsableWidth, 32)
 	m.view = viewConcepts
@@ -598,8 +550,6 @@ func TestConceptMetaSitsUnderThePane(t *testing.T) {
 	}
 }
 
-// The cluster counts by the same word each row carries, so a concept that has
-// not started is not quietly counted as a running one.
 func TestConceptMetaCountsByTheSameWordTheRowsUse(t *testing.T) {
 	m := modelFor(t, lifecycleWorld(), minUsableWidth, 32)
 
@@ -619,8 +569,6 @@ func TestConceptMetaCountsByTheSameWordTheRowsUse(t *testing.T) {
 	}
 }
 
-// The column is seven wide because "retired" is. A fourth state longer than
-// that would silently clip, so the constraint is a test rather than a comment.
 func TestEveryLifecycleWordFitsTheStatusColumn(t *testing.T) {
 	for _, status := range []lifecycle{statusActive, statusFuture, statusRetired} {
 		if got := len(status); got > statusWidth {
@@ -629,7 +577,6 @@ func TestEveryLifecycleWordFitsTheStatusColumn(t *testing.T) {
 	}
 }
 
-// A cut list has to say it is cut, or it reads as a finished one.
 func TestConceptScrollHintAppearsWhenTheListIsCut(t *testing.T) {
 	world := fixture.World{}
 	for i := range 40 {
@@ -646,8 +593,6 @@ func TestConceptScrollHintAppearsWhenTheListIsCut(t *testing.T) {
 	}
 }
 
-// enter means "change focus" on Notes and "use this house" on Rates. A third
-// meaning here would buy nothing: the pane has nothing to walk.
 func TestEnterIsUnboundOnTheCatalogScreen(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	m.view = viewConcepts

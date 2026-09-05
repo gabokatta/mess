@@ -60,7 +60,6 @@ func TestToggleUnticks(t *testing.T) {
 	}
 }
 
-// A cursor that outran the list must never corrupt the body.
 func TestToggleOutOfRangeIsANoOp(t *testing.T) {
 	if got := Toggle(body, 9); got != body {
 		t.Errorf("Toggle(9) changed the body:\n%s", got)

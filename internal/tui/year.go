@@ -13,30 +13,19 @@ import (
 	"github.com/gabokatta/mess/internal/month"
 )
 
-// The Year card is two blocks stacked: a pair of twelve-month charts, and a
-// row that puts the category ranking beside a 2x2 grid of totals boxes. Both
-// blocks hang off the same left edge, and the card centres as a whole.
 const (
 	yearGap = 4
 
-	// The charts stop saying anything new past ten plot rows, so the slack on
-	// a tall terminal goes to the category list instead. On a short one the
-	// charts give way first, down to yearPlotMin.
 	yearPlotHeight = 10
 	yearPlotMin    = 4
 
-	// Chrome is every line of the card that is not a plot row or a category
-	// row: title, the two blank separators, the chart header, its marker line
-	// and the blank under that, axis, labels, the section title and its
-	// column header.
+	// Title, separators, chart headers, captions, axes, and category headers.
 	yearChrome = 10
 
 	// The box grid is two rows of two, four lines each with a blank between.
 	yearGridHeight = 9
 
-	// Five categories is where the ranking stops telling you anything: the
-	// sixth is already a sliver against the leader. Past it the list pans,
-	// rather than growing the block and leaving the card ragged.
+	// Scroll longer rankings to keep them aligned with the totals grid.
 	catVisibleRows = 5
 
 	yearBarMin, yearBarMax = 3, 6
@@ -79,17 +68,12 @@ func (m Model) renderYear() string {
 		m.renderCategoryBlock(m.catBarWidth(interior)), strings.Repeat(" ", yearGap), grid)
 	card := lipgloss.Width(lower)
 
-	// The card travels as one piece, the way Month's does: the slack a quiet
-	// year leaves over sits half above it and half below rather than pooling
-	// at the bottom.
 	body := header + "\n\n" + m.renderCharts(card, m.yearPlot()) + "\n\n" + lower
 	top := max(0, (m.bodyHeight(0)-lipgloss.Height(body))/2)
 	left := max(0, (m.contentWidth()-card)/2)
 	return lipgloss.NewStyle().MarginLeft(left).Render(strings.Repeat("\n", top) + body)
 }
 
-// yearHeader is the year and how much of it has happened. A year that lost
-// lines for want of a rate says so here rather than quietly under-reporting.
 func (m Model) yearHeader() string {
 	head := m.theme.Title.Underline(true).Render(strconv.Itoa(m.period.Year()))
 	meta := fmt.Sprintf("%d of 12 months confirmed", m.year.Confirmed())
@@ -100,10 +84,6 @@ func (m Model) yearHeader() string {
 	return head + "  " + m.theme.Muted.Render(meta)
 }
 
-// yearPlot is how many rows the charts get. The category list does not take
-// the slack on a tall terminal: it stays the height of the boxes beside it, so
-// the card centres with the two lower blocks level. The plot gives way first
-// on a short one.
 func (m Model) yearPlot() int {
 	avail := m.bodyHeight(0)
 	return min(yearPlotHeight, max(avail-yearChrome-yearGridHeight, yearPlotMin))
@@ -111,10 +91,6 @@ func (m Model) yearPlot() int {
 
 // ── charts ──────────────────────────────────────────────────────────────────
 
-// renderCharts puts pocket beside spend. Pocket leads because it is the only
-// one of the four figures with any shape to it: earned, spent and saved all
-// drift up a few percent a month, so from a zero baseline every bar of theirs
-// is within a fifth of the tallest.
 func (m Model) renderCharts(card, plot int) string {
 	half := (card - yearGap) / 2
 	barWidth := min(max((half-11)/12, yearBarMin), yearBarMax)
@@ -144,18 +120,11 @@ func (m Model) renderChart(title string, value func(month.MonthTotals) decimal.D
 		}
 	}
 
-	// The marker gets its own line rather than sharing the header's. Beside a
-	// sixteen-column title it had forty columns, which a year running to
-	// eight figures spends on the peso alone, and the dollar half it dropped
-	// was the half worth having. On its own line it has the whole chart.
-	// Both charts always spend the line, so their plots stay level.
+	// Reserve a caption line on both charts so their plots stay aligned.
 	head := m.theme.Title.Render(title) + "\n" + m.chartNote(value, low, width)
 	return head + "\n\n" + m.renderPlot(bars, barWidth, plot) + "\n" + m.renderAxis(bars, barWidth, width)
 }
 
-// chartNote names the month a series turns at, in both currencies, so a bar's
-// height carries a number. It drops the dollar half, then itself, rather than
-// running past the chart it labels.
 func (m Model) chartNote(value func(month.MonthTotals) decimal.Decimal, low bool, room int) string {
 	t, ok := turningPoint(m.year.Months, value, low)
 	if !ok {
@@ -179,9 +148,7 @@ func (m Model) chartNote(value func(month.MonthTotals) decimal.Decimal, low bool
 	return m.theme.Muted.Render(short)
 }
 
-// turningPoint is the confirmed month where value is highest, or lowest when
-// low is set. Pending months are not candidates: a year that has not reached
-// December has no low there.
+// Only confirmed months are candidates for the minimum or maximum.
 func turningPoint(months []month.MonthTotals, value func(month.MonthTotals) decimal.Decimal,
 	low bool) (month.MonthTotals, bool) {
 
@@ -197,9 +164,7 @@ func turningPoint(months []month.MonthTotals, value func(month.MonthTotals) deci
 	return best, found
 }
 
-// renderPlot draws the bars from a shared zero baseline that floats to make
-// room for negative months. Those hang below it in the alert colour: a month
-// that over-saved must not round away into an empty column.
+// Negative values draw below zero; each half uses its own scale when negatives exceed half the plot.
 func (m Model) renderPlot(bars []yearBar, barWidth, height int) string {
 	high, low := 0.0, 0.0
 	for _, b := range bars {
@@ -210,11 +175,6 @@ func (m Model) renderPlot(bars []yearBar, barWidth, height int) string {
 	up := height
 	if low < 0 {
 		up = min(max(int(math.Round(float64(height)*high/(high-low))), 1), height-1)
-		// The negative half is capped at half the plot. One month deep enough
-		// to crush the other eleven into a row each says nothing the low
-		// marker in the header has not already said, and costs every good
-		// month its shape. Past the cap the two halves are on their own
-		// scales, each filling its side.
 		up = max(up, (height+1)/2)
 	}
 
@@ -280,9 +240,6 @@ func (m Model) catBarWidth(interior int) int {
 	return min(max(room, catBarMin), catBarMax)
 }
 
-// catAmountWidth measures the amount column against the figures the year
-// actually produced. A total that outgrows the column widens it rather than
-// overflowing the row, which the viewport would clip a character off.
 func (m Model) catAmountWidth() int {
 	width := catAmountMin
 	for _, c := range m.year.Categories {
@@ -291,8 +248,6 @@ func (m Model) catAmountWidth() int {
 	return width
 }
 
-// catChrome is every column of a category row except the bar, which takes
-// whatever the boxes and the figures leave behind.
 func (m Model) catChrome() int {
 	return catGutterWidth + catNameWidth + 2 + m.catAmountWidth() + 2 + catShareWidth
 }
@@ -307,13 +262,7 @@ func (m Model) renderCategoryBlock(barWidth int) string {
 
 	block := title + "\n" + m.categoryColumnHeader(barWidth) + "\n" + m.yearList.View()
 
-	// The hint sits under the last row it is talking about. The list is
-	// capped short of the box grid beside it, so the extra line costs the
-	// card no height.
-	if hint := m.categoryHint(); hint != "" {
-		block += "\n" + strings.Repeat(" ", catGutterWidth) + hint
-	}
-	return block
+	return block + m.scrollHint(m.yearList, catGutterWidth)
 }
 
 func (m Model) categoryColumnHeader(barWidth int) string {
@@ -323,29 +272,6 @@ func (m Model) categoryColumnHeader(barWidth int) string {
 	return m.theme.Muted.Render(strings.Repeat(" ", catGutterWidth+catNameWidth+barWidth+2) + right)
 }
 
-func (m Model) categoryHint() string {
-	above, below := m.yearList.hidden()
-	if above == 0 && below == 0 {
-		return ""
-	}
-	var marks []string
-	if above > 0 {
-		marks = append(marks, fmt.Sprintf("↑ %d", above))
-	}
-	if below > 0 {
-		marks = append(marks, fmt.Sprintf("↓ %d", below))
-	}
-	return m.theme.Muted.Render(strings.Join(marks, " · ") + " more")
-}
-
-// categoryRows ranks the year's spend. The bar scales against the largest
-// category rather than the year's total, so the smallest slice is still
-// visible; the share column is what says how much of the year it was.
-//
-// The cursor is drawn even though no row opens. With the list capped at five,
-// panning a longer ranking moves nothing on screen until the cursor reaches
-// the window's edge, and four dead keystrokes read as a broken key rather
-// than as a list that has not scrolled yet.
 func (m Model) categoryRows(barWidth, cursor int) []string {
 	if len(m.year.Categories) == 0 {
 		return nil
@@ -375,8 +301,7 @@ func sharePercent(part, whole decimal.Decimal) string {
 	return part.Div(whole).Mul(decimal.NewFromInt(100)).StringFixed(0) + "%"
 }
 
-// hbar is one horizontal bar padded out to width, tapering with an eighth
-// block so two close categories do not land on the same length.
+// Fractional blocks preserve differences smaller than a full cell.
 func hbar(value, largest decimal.Decimal, width int) string {
 	if largest.IsZero() || !value.IsPositive() {
 		return strings.Repeat(" ", width)
@@ -393,17 +318,13 @@ func hbar(value, largest decimal.Decimal, width int) string {
 	return bar + strings.Repeat(" ", width-full)
 }
 
-// padLeft right-aligns s by hand rather than through Style.Width, so a figure
-// wider than its column overflows on one line instead of wrapping onto two.
+// Pad without wrapping values wider than their column.
 func padLeft(s string, width int) string {
 	return strings.Repeat(" ", max(width-len([]rune(s)), 0)) + s
 }
 
 // ── totals boxes ────────────────────────────────────────────────────────────
 
-// yearInterior is the content width the four boxes share: as wide as the
-// year's widest figure needs, growing toward yearBoxInterior only while the
-// category block beside it keeps a usable bar.
 func (m Model) yearInterior() int {
 	required := railMinInterior
 	for _, b := range m.yearBoxes() {

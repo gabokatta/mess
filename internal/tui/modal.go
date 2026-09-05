@@ -13,11 +13,7 @@ type modal interface {
 	Help() string
 }
 
-// formCardWidth is what a form's fields are given. Forms here ask for a name,
-// a period, an amount, or a choice from a short list, and none of those read
-// better across half a terminal. It is not narrower than this because huh
-// positions a confirm's buttons against the width of its title, and a title
-// that wraps in a narrower card pushes them off the edge.
+// Keep enough width for huh's confirmation buttons below wrapped titles.
 const formCardWidth = 56
 
 type form struct {
@@ -63,9 +59,6 @@ func (f *form) Update(msg tea.Msg) (modal, tea.Cmd) {
 	return f, cmd
 }
 
-// huh sizes a form to its fields unless it is given a height, and it is given
-// one only when those fields are taller than the screen. The alternative there
-// is a card with fields the terminal cannot reach.
 func (f *form) Init() tea.Cmd {
 	cmd := f.huh.Init()
 	if lipgloss.Height(f.huh.View()) > f.maxHeight {

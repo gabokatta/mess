@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
@@ -33,7 +34,6 @@ func richWorld() fixture.World {
 	}
 }
 
-// Every view renders at a real terminal size without panicking or spilling.
 func TestEveryViewRenders(t *testing.T) {
 	const width, height = minUsableWidth, 32
 	m := modelFor(t, richWorld(), width, height)
@@ -51,8 +51,6 @@ func TestEveryViewRenders(t *testing.T) {
 	}
 }
 
-// Wiring, not arithmetic: the screen must show whatever ResolveTotals and
-// DoneCount say. totals_test.go is the only place the arithmetic is asserted.
 func TestMonthHeaderShowsTheArithmetic(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 	content := stripANSI(m.renderMonth())
@@ -78,7 +76,6 @@ func TestMonthHeaderShowsTheArithmetic(t *testing.T) {
 	}
 }
 
-// A terminal too small for the layout says so, and says by how much.
 func TestTooSmallTerminal(t *testing.T) {
 	m := modelFor(t, richWorld(), 30, 8)
 	content := stripANSI(m.View().Content)
@@ -95,7 +92,6 @@ func TestTooSmallTerminal(t *testing.T) {
 	}
 }
 
-// The message says which way to drag, so only the short side is coloured.
 func TestTooSmallFlagsOnlyTheShortSide(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, minUsableHeight-1)
 	content := m.View().Content
@@ -109,25 +105,13 @@ func TestTooSmallFlagsOnlyTheShortSide(t *testing.T) {
 }
 
 func lineWidth(line string) int {
-	return len([]rune(stripANSI(line)))
+	return ansi.StringWidth(line)
 }
 
 func stripANSI(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] != 0x1b {
-			b.WriteByte(s[i])
-			continue
-		}
-		for i < len(s) && s[i] != 'm' {
-			i++
-		}
-	}
-	return b.String()
+	return ansi.Strip(s)
 }
 
-// The box is the terminal minus the tab strip at any width: an overflowing
-// help line would push the layout off the bottom.
 func TestBoxFitsTheTerminal(t *testing.T) {
 	for _, size := range []struct{ width, height int }{{minUsableWidth, minUsableHeight}, {120, 40}, {177, 51}} {
 		m := modelFor(t, richWorld(), size.width, size.height)

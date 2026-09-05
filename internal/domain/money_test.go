@@ -27,7 +27,6 @@ func TestMoneyToARS(t *testing.T) {
 	}
 }
 
-// Counting an unconvertible line as zero would silently understate the month.
 func TestMoneyToARSWithoutRateIsDropped(t *testing.T) {
 	if _, ok := NewMoney(decimal.NewFromInt(400), USD).ToARS(decimal.Decimal{}, false); ok {
 		t.Error("USD ToARS() without a rate should report false")

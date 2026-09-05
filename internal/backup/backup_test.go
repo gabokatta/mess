@@ -1,8 +1,10 @@
 package backup
 
 import (
+	"bytes"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -11,11 +13,12 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
 	"github.com/gabokatta/mess/internal/store"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 func TestExportDumpsEveryRowAsReadableJSON(t *testing.T) {
-	db := fixture.DB(t)
-	fixture.MustLoad(t, db, fixture.World{
+	db := testutil.DB(t)
+	testutil.MustLoad(t, db, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
 	})
 
@@ -36,14 +39,14 @@ func TestExportDumpsEveryRowAsReadableJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal() unexpected error: %v", err)
 	}
-	if !jsonContains(raw, "Home") {
+	if !bytes.Contains(raw, []byte("Home")) {
 		t.Errorf("marshaled export = %s, want the plain text \"Home\", not a base64 blob", raw)
 	}
 }
 
 func TestImportWipesAndReloadsFromData(t *testing.T) {
-	src := fixture.DB(t)
-	fixture.MustLoad(t, src, fixture.World{
+	src := testutil.DB(t)
+	testutil.MustLoad(t, src, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
 	})
 	data, err := Export(src)
@@ -51,8 +54,8 @@ func TestImportWipesAndReloadsFromData(t *testing.T) {
 		t.Fatalf("Export() unexpected error: %v", err)
 	}
 
-	dst := fixture.DB(t)
-	fixture.MustLoad(t, dst, fixture.World{
+	dst := testutil.DB(t)
+	testutil.MustLoad(t, dst, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Stale concept that import must remove", Category: "Junk", Kind: catalog.Expense, Base: "1"}},
 	})
 
@@ -70,8 +73,8 @@ func TestImportWipesAndReloadsFromData(t *testing.T) {
 }
 
 func TestExportImportRoundTripsEveryTable(t *testing.T) {
-	src := fixture.DB(t)
-	fixture.MustLoad(t, src, fixture.World{
+	src := testutil.DB(t)
+	testutil.MustLoad(t, src, fixture.World{
 		Concepts: []fixture.Concept{
 			{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"},
 			{Name: "Wash the house", Category: "Home", Kind: catalog.Chore},
@@ -90,7 +93,7 @@ func TestExportImportRoundTripsEveryTable(t *testing.T) {
 		t.Fatalf("Export() unexpected error: %v", err)
 	}
 
-	dst := fixture.DB(t)
+	dst := testutil.DB(t)
 	if err := Import(dst, data); err != nil {
 		t.Fatalf("Import() unexpected error: %v", err)
 	}
@@ -225,11 +228,81 @@ func TestSnapshotPathsNeverCollide(t *testing.T) {
 	}
 }
 
-func jsonContains(raw []byte, s string) bool {
-	for i := 0; i+len(s) <= len(raw); i++ {
-		if string(raw[i:i+len(s)]) == s {
-			return true
+func TestImportRejectsInvalidBackupsWithoutChangingData(t *testing.T) {
+	for _, invalid := range []string{"missing tables", "unknown table", "unknown column", "SQL column", "foreign key"} {
+		t.Run(invalid, func(t *testing.T) {
+			db := testutil.DB(t)
+			testutil.MustLoad(t, db, fixture.World{
+				Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense}},
+			})
+			before, err := Export(db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := Export(db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch invalid {
+			case "missing tables":
+				delete(data.Tables, "note")
+			case "unknown table":
+				data.Tables["unexpected"] = nil
+			case "unknown column":
+				data.Tables["category"][0]["unexpected"] = "value"
+			case "SQL column":
+				data.Tables["category"][0][`name) VALUES ('changed'); DROP TABLE note; --`] = "value"
+			case "foreign key":
+				data.Tables["concept"][0]["category_id"] = int64(999)
+			}
+			if err := Import(db, data); err == nil {
+				t.Fatal("invalid backup was accepted")
+			}
+			after, err := Export(db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(before, after); diff != "" {
+				t.Fatalf("failed import changed data (-before +after):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestJSONRoundTripPreservesLargeIDs(t *testing.T) {
+	db := testutil.DB(t)
+	const id int64 = 9007199254740993
+	if _, err := db.Exec(`INSERT INTO category (id, name) VALUES (?, 'Home')`, id); err != nil {
+		t.Fatal(err)
+	}
+	data, err := Export(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Import(db, decoded); err != nil {
+		t.Fatal(err)
+	}
+	categories, err := catalog.Categories(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(categories) != 1 || categories[0].ID != id {
+		t.Fatalf("categories = %+v, want exact ID %d", categories, id)
+	}
+}
+
+func TestDecodeRejectsTrailingJSON(t *testing.T) {
+	for _, raw := range []string{`{"tables": {}} {}`, `{"tables": {}} garbage`, `{"tables": {}, "typo": true}`} {
+		if _, err := Decode(strings.NewReader(raw)); err == nil {
+			t.Errorf("Decode(%q) accepted invalid backup JSON", raw)
 		}
 	}
-	return false
 }

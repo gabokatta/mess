@@ -10,10 +10,11 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 func TestCreateAndListConcepts(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	cat, err := catalog.CreateCategory(db, "Home", 0, 0)
 	if err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
@@ -46,7 +47,7 @@ func TestCreateAndListConcepts(t *testing.T) {
 }
 
 func TestConceptsOrderByCategoryThenName(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	home, err := catalog.CreateCategory(db, "Home", 0, 0)
 	if err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
@@ -80,7 +81,7 @@ func TestConceptsOrderByCategoryThenName(t *testing.T) {
 }
 
 func TestCreateConceptRequiresExistingCategory(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 
 	c := catalog.Concept{
 		Name:       "Rent",
@@ -96,8 +97,8 @@ func TestCreateConceptRequiresExistingCategory(t *testing.T) {
 }
 
 func TestUpdateConceptRetiresViaActiveUntil(t *testing.T) {
-	db := fixture.DB(t)
-	loaded := fixture.MustLoad(t, db, fixture.World{
+	db := testutil.DB(t)
+	loaded := testutil.MustLoad(t, db, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Netflix", Category: "Home", Kind: catalog.Expense}},
 	})
 	concept := loaded.Concepts["Netflix"]
@@ -116,10 +117,9 @@ func TestUpdateConceptRetiresViaActiveUntil(t *testing.T) {
 	}
 }
 
-// Past Concepts(), a chore carrying money is a state that cannot exist.
 func TestChoreRoundTripsWithoutMoney(t *testing.T) {
-	db := fixture.DB(t)
-	loaded := fixture.MustLoad(t, db, fixture.World{
+	db := testutil.DB(t)
+	loaded := testutil.MustLoad(t, db, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Wash the house", Category: "Home", Kind: catalog.Chore}},
 	})
 	if got := loaded.Concepts["Wash the house"].Money; got != nil {
@@ -136,8 +136,8 @@ func TestChoreRoundTripsWithoutMoney(t *testing.T) {
 }
 
 func TestDeleteConceptTakesItsEntriesWithIt(t *testing.T) {
-	db := fixture.DB(t)
-	loaded := fixture.MustLoad(t, db, fixture.World{
+	db := testutil.DB(t)
+	loaded := testutil.MustLoad(t, db, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense}},
 		Entries:  []fixture.Entry{{Concept: "Rent", Period: fixture.Period, Done: true}},
 	})

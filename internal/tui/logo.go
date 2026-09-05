@@ -22,13 +22,10 @@ var (
 	logoSegment = 2*logoGap + logoWidth
 )
 
-// The row is sliced by rune count, so canvas's bottom border must stay ANSI-free.
+// The bottom border must be ANSI-free because it is sliced by rune count.
 func overlayLogo(canvas string, style lipgloss.Style) string {
 	lines := strings.Split(canvas, "\n")
 	last := len(lines) - 1
-	if last < 0 {
-		return canvas
-	}
 	row := []rune(lines[last])
 	cut := len(row) - logoTail - logoSegment
 	if cut < 0 {

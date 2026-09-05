@@ -4,11 +4,11 @@ import (
 	"testing"
 
 	"github.com/gabokatta/mess/internal/catalog"
-	"github.com/gabokatta/mess/internal/fixture"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 func TestCreateAndListCategories(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 
 	if _, err := catalog.CreateCategory(db, "Utilities", 1, 1); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
@@ -37,7 +37,7 @@ func TestCreateAndListCategories(t *testing.T) {
 }
 
 func TestCreateCategoryDuplicateNameFails(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 
 	if _, err := catalog.CreateCategory(db, "Home", 0, 0); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
@@ -47,10 +47,8 @@ func TestCreateCategoryDuplicateNameFails(t *testing.T) {
 	}
 }
 
-// Appending puts a category at the end of the list with a colour nobody is
-// using, which is everything the create form has to know.
 func TestAppendCategoryGoesLastWithAFreeColour(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	if _, err := catalog.CreateCategory(db, "Home", 0, 0); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
@@ -74,7 +72,7 @@ func TestAppendCategoryGoesLastWithAFreeColour(t *testing.T) {
 }
 
 func TestEnsureDefaultCategoriesSeedsAnEmptyTable(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 
 	if err := catalog.EnsureDefaultCategories(db); err != nil {
 		t.Fatalf("EnsureDefaultCategories() unexpected error: %v", err)
@@ -84,10 +82,11 @@ func TestEnsureDefaultCategoriesSeedsAnEmptyTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Categories() unexpected error: %v", err)
 	}
-	if len(got) != len(catalog.DefaultCategoryNames) {
-		t.Fatalf("Categories() returned %d rows, want %d", len(got), len(catalog.DefaultCategoryNames))
+	want := []string{"Earnings", "Home", "Utilities", "Cards", "Other"}
+	if len(got) != len(want) {
+		t.Fatalf("Categories() returned %d rows, want %d", len(got), len(want))
 	}
-	for i, name := range catalog.DefaultCategoryNames {
+	for i, name := range want {
 		if got[i].Name != name {
 			t.Errorf("Categories()[%d].Name = %q, want %q", i, got[i].Name, name)
 		}
@@ -95,7 +94,7 @@ func TestEnsureDefaultCategoriesSeedsAnEmptyTable(t *testing.T) {
 }
 
 func TestEnsureDefaultCategoriesLeavesAnExistingTableAlone(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	if _, err := catalog.CreateCategory(db, "Custom", 0, 0); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
@@ -113,11 +112,33 @@ func TestEnsureDefaultCategoriesLeavesAnExistingTableAlone(t *testing.T) {
 	}
 }
 
-// The palette has eight slots and the schema says so, which is why paletteAt
-// indexes rather than wrapping defensively.
 func TestColorIndexIsPinnedToThePalette(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	if _, err := db.Exec(`INSERT INTO category (name, sort_order, color_index) VALUES ('Bad', 0, 99)`); err == nil {
 		t.Error("a colour index outside the palette should be refused by the schema")
+	}
+}
+
+func TestAppendCategoryGoesLastAfterDeletion(t *testing.T) {
+	db := testutil.DB(t)
+	first, err := catalog.AppendCategory(db, "First")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := catalog.AppendCategory(db, "Remaining"); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.DeleteCategory(db, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := catalog.AppendCategory(db, "Appended"); err != nil {
+		t.Fatal(err)
+	}
+	categories, err := catalog.Categories(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(categories) != 2 || categories[1].Name != "Appended" {
+		t.Fatalf("category order = %+v, want Remaining then Appended", categories)
 	}
 }

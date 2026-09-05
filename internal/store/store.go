@@ -44,11 +44,8 @@ func Open(path string) (*Store, error) {
 	return &Store{db: db, lock: l}, nil
 }
 
-// dsn carries the pragmas in the connection string rather than running them
-// once after opening. foreign_keys is per connection, and database/sql keeps a
-// pool: a single Exec sets it on whichever connection happened to serve that
-// call and leaves every later one without it, which quietly turns every
-// foreign key in the schema off.
+// Connection-string pragmas apply to every pooled connection; foreign_keys
+// would affect only one connection if set with db.Exec.
 func dsn(path string) string {
 	u := url.URL{Scheme: "file", Opaque: path, RawQuery: url.Values{
 		"_pragma": {"foreign_keys(1)", "journal_mode(WAL)"},

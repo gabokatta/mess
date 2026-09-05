@@ -1,8 +1,5 @@
-// Package rates fetches Argentine dollar quotes from api.argentinadatos.com,
-// which answers for any date the market traded on, back to 2011. It has no
-// route for the latest quote and 404s on a day nobody traded, so a date the
-// caller asks for is the newest date it will accept, not the one it answers
-// with.
+// Package rates fetches daily dollar quotes, falling back to an earlier
+// trading day when the requested date has no quotes.
 package rates
 
 import (
@@ -58,9 +55,7 @@ type quoteRow struct {
 // reported as it happened.
 var errClosed = errors.New("rates: no quotes for that day")
 
-// lookback is how far On walks back for a day the market was open. Argentina
-// can put a holiday beside a weekend and close for four days, and a week is
-// enough to clear the longest of those without papering over a real outage.
+// Allow a week of closed days before reporting unavailable quotes.
 const lookback = 7
 
 // On returns the houses in Houses order for date, or for the most recent
@@ -134,9 +129,7 @@ func Sell(quotes []Quote, house domain.FxHouse) (decimal.Decimal, bool) {
 	return decimal.Decimal{}, false
 }
 
-// MonthClose reads the last day of period, or the last day it traded on: a
-// month ending on a weekend has no quote on its final date, and roughly two
-// months in seven end that way.
+// MonthClose uses the last available trading day on or before month end.
 func (c *Client) MonthClose(ctx context.Context, period domain.Period, house domain.FxHouse) (decimal.Decimal, error) {
 	lastDay := time.Date(period.Year(), period.Month()+1, 0, 0, 0, 0, 0, time.UTC)
 	quotes, err := c.On(ctx, lastDay)

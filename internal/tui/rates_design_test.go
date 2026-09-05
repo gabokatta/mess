@@ -56,8 +56,6 @@ func TestRateRowsCoverEveryMonthOfTheYear(t *testing.T) {
 	}
 }
 
-// The word in the SOURCE column is the whole point of the table: it says
-// whether a number was measured, inherited, typed, or has not landed.
 func TestRateRowsNameWhereEachRateCameFrom(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 32)
 	rows := rowsFor(t, m)
@@ -80,8 +78,6 @@ func TestRateRowsNameWhereEachRateCameFrom(t *testing.T) {
 	}
 }
 
-// FxTable inherits forward without end, so a month nobody has reached would
-// otherwise resolve to August's close and read as a fact about December.
 func TestRateRowsGiveAnUnreachedMonthNoValue(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 32)
 	rows := rowsFor(t, m)
@@ -93,8 +89,6 @@ func TestRateRowsGiveAnUnreachedMonthNoValue(t *testing.T) {
 	}
 }
 
-// A close is only as good as the house it was drawn from, and the setting can
-// move after it was stored.
 func TestRateRowsFlagACloseFetchedAtAnotherHouse(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 32)
 	rows := rowsFor(t, m)
@@ -145,8 +139,6 @@ func TestRatesTableRendersItsColumnsAndRows(t *testing.T) {
 	}
 }
 
-// Twelve rows for a year mean the arrows walk months and the year keys step a
-// year, the way the Year screen already does.
 func TestRatesCursorWalksTheTableAndTheYearKeysStepAYear(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 32)
 	m.view = viewRates
@@ -164,7 +156,6 @@ func TestRatesCursorWalksTheTableAndTheYearKeysStepAYear(t *testing.T) {
 	}
 }
 
-// The cursor lands on the month the rest of the app is showing.
 func TestRatesCursorOpensOnTheAppPeriod(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 32)
 	m, _ = send(t, m, key("tab"), key("tab"), key("tab"), key("tab"))
@@ -178,8 +169,6 @@ func TestRatesCursorOpensOnTheAppPeriod(t *testing.T) {
 	}
 }
 
-// A year where nothing has landed is twelve waiting months, not an empty
-// screen claiming there is nothing here.
 func TestRatesYearWithNothingStoredIsTwelvePendingRows(t *testing.T) {
 	m := modelFor(t, fixture.World{}, minUsableWidth, 32)
 	m.view = viewRates
@@ -212,8 +201,6 @@ func TestRatePaneNamesTheProvenanceOfTheCursorMonth(t *testing.T) {
 	}
 }
 
-// An inherited month says which month it borrowed from, and has no quote date
-// of its own to print.
 func TestRatePaneNamesWhereAnInheritedRateCameFrom(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 34)
 	m.view = viewRates
@@ -229,8 +216,6 @@ func TestRatePaneNamesWhereAnInheritedRateCameFrom(t *testing.T) {
 	}
 }
 
-// A rate typed by hand was quoted by nobody on no day, so neither label is
-// filled in with a blank.
 func TestRatePaneLeavesOutWhatAManualRateDoesNotHave(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 34)
 	m.view = viewRates
@@ -246,8 +231,6 @@ func TestRatePaneLeavesOutWhatAManualRateDoesNotHave(t *testing.T) {
 	}
 }
 
-// The pane is a fixed block of labels, so the card does not jump as the cursor
-// walks rows with different amounts to say.
 func TestRatePaneHeightDoesNotMoveWithTheCursor(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 34)
 	m.view = viewRates
@@ -266,8 +249,6 @@ func TestRatePaneHeightDoesNotMoveWithTheCursor(t *testing.T) {
 	}
 }
 
-// The picker is a setting, not a view of today's fetch: it lists every house
-// whether or not any quote landed, so the house stays changeable offline.
 func TestHousesBlockSurvivesAFailedFetch(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 34)
 	m.view = viewRates
@@ -297,8 +278,6 @@ func TestHousesBlockMarksTheOneInUseAndCarriesItsSpread(t *testing.T) {
 	}
 }
 
-// Levels run as a near-flat ramp from a zero baseline, so the chart plots the
-// move instead: the one month the peso ran has shape, and the rest do not.
 func TestMonthOnMonthChartPlotsTheDeltas(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 40)
 	m.view = viewRates
@@ -321,8 +300,6 @@ func TestMonthOnMonthChartPlotsTheDeltas(t *testing.T) {
 	}
 }
 
-// A month the peso strengthened in is a real move, and barchart.Push clamped
-// it to an empty column. Year's plot hangs it below the baseline instead.
 func TestMonthOnMonthChartKeepsANegativeMonth(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		FxHouse: domain.Blue,
@@ -368,7 +345,6 @@ func TestRatesTitleBreaksDownWhereTheYearsRatesCameFrom(t *testing.T) {
 	}
 }
 
-// A clean year says so in one count, not in five zeroes.
 func TestRatesTitleNamesOnlyTheStatesThatOccur(t *testing.T) {
 	m := modelFor(t, fixture.World{}, minUsableWidth, 40)
 	m.view = viewRates
@@ -395,8 +371,6 @@ func TestRatesTitleCountsTheRowsFetchedAtAnotherHouse(t *testing.T) {
 	}
 }
 
-// e edits the row the gutter is on, so fixing March does not mean navigating
-// to March first.
 func TestSetRateEditsTheCursorRowNotTheAppPeriod(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 40)
 	m.view = viewRates
@@ -412,8 +386,6 @@ func TestSetRateEditsTheCursorRowNotTheAppPeriod(t *testing.T) {
 	}
 }
 
-// A manual rate in December would become the value every month after it
-// inherits, which is a projection rather than a rate.
 func TestSetRateRefusesAMonthNobodyHasReached(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 40)
 	m.view = viewRates
@@ -426,8 +398,6 @@ func TestSetRateRefusesAMonthNobodyHasReached(t *testing.T) {
 	}
 }
 
-// Clearing is the undo the screen never had: it takes a mistyped manual rate
-// and a close fetched at the wrong house back to a hole backfill can fill.
 func TestClearRateRemovesTheStoredRow(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 40)
 	m.view = viewRates
@@ -450,7 +420,6 @@ func TestClearRateRemovesTheStoredRow(t *testing.T) {
 	}
 }
 
-// There is nothing to clear on a month that stores nothing of its own.
 func TestClearRateDoesNothingOnAnInheritedRow(t *testing.T) {
 	m := modelFor(t, ratesWorld(), minUsableWidth, 40)
 	m.view = viewRates

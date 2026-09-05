@@ -44,8 +44,6 @@ func openForms(t *testing.T) map[string]Model {
 	return opened
 }
 
-// Every modal is a card: drawn at its own size and placed, not stretched over
-// the screen with its fields in one corner.
 func TestEveryModalIsACentredCard(t *testing.T) {
 	for name, m := range openForms(t) {
 		t.Run(name, func(t *testing.T) {
@@ -77,8 +75,6 @@ func TestEveryModalIsACentredCard(t *testing.T) {
 	}
 }
 
-// huh positions a confirm's buttons against the width of its title, so a title
-// that wraps inside the card pushes Delete and Keep off its right edge.
 func TestConfirmKeepsItsButtons(t *testing.T) {
 	forms := openForms(t)
 	for _, name := range []string{"concept delete", "category delete"} {
@@ -100,8 +96,6 @@ func TestConfirmKeepsItsButtons(t *testing.T) {
 	}
 }
 
-// The keys live in the app's help row, the same as on every screen, so the
-// card is fields and nothing else.
 func TestModalCardsDoNotDrawTheirOwnHelp(t *testing.T) {
 	for name, m := range openForms(t) {
 		t.Run(name, func(t *testing.T) {
@@ -118,7 +112,6 @@ func TestModalCardsDoNotDrawTheirOwnHelp(t *testing.T) {
 	}
 }
 
-// A long concept name cannot make the card outgrow the terminal it is on.
 func TestFormCardFitsTheNarrowestTerminal(t *testing.T) {
 	m := modelFor(t, fixture.Demo(fixture.Period), minUsableWidth, minUsableHeight)
 	m.view = viewConcepts
@@ -135,9 +128,6 @@ func TestFormCardFitsTheNarrowestTerminal(t *testing.T) {
 	}
 }
 
-// huh's Charm theme paints an unselected option in ANSI 235, which is
-// near-black and vanishes against anything but a near-white background. Every
-// choice on a card has to be readable, not just the one under the cursor.
 func TestUnselectedOptionsCarryTheAppsForeground(t *testing.T) {
 	m := modelFor(t, fixture.Demo(fixture.Period), 150, 40)
 	m.view = viewConcepts
@@ -157,8 +147,6 @@ func TestUnselectedOptionsCarryTheAppsForeground(t *testing.T) {
 	}
 }
 
-// huh keeps a style's glyph and padding inside the style, so replacing one
-// wholesale loses the "> " on a selector and the space around a button.
 func TestFormStylesKeepTheirGlyphsAndPadding(t *testing.T) {
 	forms := openForms(t)
 

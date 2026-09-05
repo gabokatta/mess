@@ -5,15 +5,10 @@ import (
 	"fmt"
 )
 
-// PaletteSize is how many colours a category can be given. It lives here
-// rather than in the TUI because the catalog assigns an index on create and
-// has to know what it is allowed to assign.
+// PaletteSize matches the color_index constraint in the schema.
 const PaletteSize = 8
 
-// Category's ColorIndex is a field rather than the row's position, so the
-// order categories are listed in and the colour they render in are two
-// separate facts. Two categories may share an index: the catalog can be
-// larger than the palette, and every screen prints the name beside the hue.
+// ColorIndex is independent of sort order and may be shared by categories.
 type Category struct {
 	ID         int64
 	Name       string
@@ -34,16 +29,8 @@ func CreateCategory(db *sql.DB, name string, sortOrder, colorIndex int) (Categor
 	return Category{ID: id, Name: name, SortOrder: sortOrder, ColorIndex: colorIndex}, nil
 }
 
-// DeleteCategory refuses two things, and only one of them belongs to the
-// schema. A category holding concepts is refused by the foreign key, which is
-// referential integrity and always true, so this runs the delete and
-// translates the refusal.
-//
-// The last category is different. An empty catalog is consistent data that the
-// app cannot use, not corrupt data, and a restore legitimately passes through
-// it: backup.Import empties every table and refills it in one transaction. A
-// trigger would refuse that, so this rule is checked here, on the one path a
-// person deletes a category by hand.
+// Preserve the last category here, not in a trigger: backup imports temporarily
+// empty the table. Foreign keys prevent deleting categories that hold concepts.
 func DeleteCategory(db *sql.DB, id int64) error {
 	categories, err := Categories(db)
 	if err != nil {
@@ -69,18 +56,12 @@ func categoryHolding(db *sql.DB, id int64) (name string, concepts int, err error
 	return name, concepts, err
 }
 
-// RenameCategory translates the UNIQUE constraint rather than guarding ahead
-// of it: the database owns the rule, and a check here would be a second copy
-// of it, free to drift.
 func RenameCategory(db *sql.DB, id int64, name string) error {
 	_, err := db.Exec(`UPDATE category SET name = ? WHERE id = ?`, name, id)
 	return explainNameClash(db, err, name, id)
 }
 
-// explainNameClash turns the UNIQUE constraint's refusal into a sentence. It
-// runs only after the database has already said no, so it reports the rule
-// rather than duplicating it. An error it cannot explain is passed through
-// unchanged.
+// Translate duplicate-name failures while preserving unrelated database errors.
 func explainNameClash(db *sql.DB, err error, name string, excluding int64) error {
 	if err == nil {
 		return nil
@@ -98,8 +79,6 @@ func explainNameClash(db *sql.DB, err error, name string, excluding int64) error
 	return err
 }
 
-// SetCategoryColor is idempotent: writing the index a category already has
-// changes nothing, which is what cycling through the palette needs.
 func SetCategoryColor(db *sql.DB, id int64, colorIndex int) error {
 	_, err := db.Exec(`UPDATE category SET color_index = ? WHERE id = ?`, colorIndex, id)
 	return err
@@ -123,9 +102,7 @@ func Categories(db *sql.DB) ([]Category, error) {
 	return categories, rows.Err()
 }
 
-// NextColorIndex is the lowest palette slot no category holds, and the least
-// used one once every slot is taken. A collision has to land somewhere, and
-// spreading them beats always colliding with the first category.
+// Pick the least-used color, breaking ties by palette order.
 func NextColorIndex(categories []Category) int {
 	used := make([]int, PaletteSize)
 	for _, c := range categories {
@@ -140,14 +117,16 @@ func NextColorIndex(categories []Category) int {
 	return lowest
 }
 
-// AppendCategory adds a category at the end of the list with the next free
-// colour. A duplicate name is refused by UNIQUE, and translated here.
 func AppendCategory(db *sql.DB, name string) (Category, error) {
 	categories, err := Categories(db)
 	if err != nil {
 		return Category{}, err
 	}
-	c, err := CreateCategory(db, name, len(categories), NextColorIndex(categories))
+	sortOrder := 0
+	if len(categories) > 0 {
+		sortOrder = categories[len(categories)-1].SortOrder + 1
+	}
+	c, err := CreateCategory(db, name, sortOrder, NextColorIndex(categories))
 	if err != nil {
 		// No row to exclude: nothing has this id, so every match is a clash.
 		return Category{}, explainNameClash(db, err, name, 0)
@@ -155,11 +134,7 @@ func AppendCategory(db *sql.DB, name string) (Category, error) {
 	return c, nil
 }
 
-// DefaultCategoryNames seeds a new database's category picker.
-var DefaultCategoryNames = []string{"Earnings", "Home", "Utilities", "Cards", "Other"}
-
-// EnsureDefaultCategories creates DefaultCategoryNames only when the table
-// is empty, so it is safe on every app start.
+// Seed only an empty catalog, preserving existing categories on restart.
 func EnsureDefaultCategories(db *sql.DB) error {
 	categories, err := Categories(db)
 	if err != nil {
@@ -168,7 +143,7 @@ func EnsureDefaultCategories(db *sql.DB) error {
 	if len(categories) > 0 {
 		return nil
 	}
-	for i, name := range DefaultCategoryNames {
+	for i, name := range []string{"Earnings", "Home", "Utilities", "Cards", "Other"} {
 		if _, err := CreateCategory(db, name, i, i%PaletteSize); err != nil {
 			return err
 		}

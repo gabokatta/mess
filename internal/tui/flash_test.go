@@ -9,9 +9,6 @@ import (
 	"github.com/gabokatta/mess/internal/fixture"
 )
 
-// The reload that follows a write reports success on five messages, and every
-// one of them used to overwrite the refusal that started it, so a refused
-// action looked exactly like an ignored one.
 func TestARefusalSurvivesTheReloadThatFollowsIt(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	m.view = viewConcepts
@@ -22,19 +19,20 @@ func TestARefusalSurvivesTheReloadThatFollowsIt(t *testing.T) {
 		t.Fatal("a refused write left nothing on screen")
 	}
 
+	monthLoad := m.loadMonth()
 	m, _ = send(t, m,
-		runCmd(t, loadMonth(m.db, m.period)),
+		runCmd(t, monthLoad),
 		runCmd(t, loadCatalog(m.db)),
 		runCmd(t, loadNotes(m.db)),
 		runCmd(t, loadRates(m.db)),
-		runCmd(t, loadYear(m.db, m.period.Year(), m.fx())),
 	)
+	yearLoad := m.loadYear()
+	m, _ = send(t, m, runCmd(t, yearLoad))
 	if m.flash != "Home holds 2 concepts" {
 		t.Errorf("flash = %q after the reload, want the refusal still there", m.flash)
 	}
 }
 
-// Alert, and in the status line the app already keeps for it.
 func TestARefusalRendersInAlert(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	m.view = viewConcepts
@@ -56,7 +54,6 @@ func TestAFlashClearsWhenItsTimerFires(t *testing.T) {
 	}
 }
 
-// An older message's timer must not take a newer one off the screen.
 func TestAnOldTimerDoesNotClearANewerFlash(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 
@@ -70,7 +67,6 @@ func TestAnOldTimerDoesNotClearANewerFlash(t *testing.T) {
 	}
 }
 
-// A refusal you have since worked around should not still be on screen.
 func TestASuccessfulWriteTakesTheRefusalOffTheScreen(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 
@@ -81,8 +77,6 @@ func TestASuccessfulWriteTakesTheRefusalOffTheScreen(t *testing.T) {
 	}
 }
 
-// End to end, through the key that was doing nothing visible: the confirm is
-// answered, the delete is refused, and the screen says why.
 func TestDeletingACategoryHoldingConceptsSaysWhy(t *testing.T) {
 	m, list := openCategories(t, catalogWorld())
 	var home catalog.Category
@@ -103,8 +97,6 @@ func TestDeletingACategoryHoldingConceptsSaysWhy(t *testing.T) {
 	}
 }
 
-// A load that fails is worth the same line, so an unreadable catalog is not a
-// silently empty one.
 func TestALoadFailureFlashesToo(t *testing.T) {
 	m := modelFor(t, fixture.World{}, minUsableWidth, 32)
 

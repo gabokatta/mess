@@ -1,6 +1,6 @@
 GOFLAGS := -trimpath
 
-.PHONY: run build build-all test fmt clean clean-dev seed dev
+.PHONY: run build build-all test fmt format-check vet check clean clean-dev seed dev
 
 run:
 	go run ./cmd/mess
@@ -25,8 +25,15 @@ test:
 	go test ./...
 
 fmt:
-	gofmt -w .
+	gofmt -w cmd internal
+
+format-check:
+	@files="$$(gofmt -l cmd internal)"; if [ -n "$$files" ]; then printf '%s\n' "$$files"; exit 1; fi
+
+vet:
 	go vet ./...
+
+check: format-check vet test build
 
 clean:
 	rm -rf bin

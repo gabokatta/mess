@@ -1,12 +1,3 @@
-DROP TABLE IF EXISTS base_amount;
-DROP TABLE IF EXISTS month_entry;
-DROP TABLE IF EXISTS saving_allocation;
-DROP TABLE IF EXISTS list;
-DROP TABLE IF EXISTS concept;
-DROP TABLE IF EXISTS category;
-DROP TABLE IF EXISTS fx_rate;
-DROP TABLE IF EXISTS settings;
-
 CREATE TABLE category (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE,
@@ -52,7 +43,6 @@ CREATE TABLE fx_rate (
 );
 
 CREATE TABLE settings (
-    id          INTEGER PRIMARY KEY CHECK (id = 1),
-    fx_house    TEXT NOT NULL CHECK (fx_house IN ('Blue', 'Official', 'MEP')),
-    last_export TEXT
+    id       INTEGER PRIMARY KEY CHECK (id = 1),
+    fx_house TEXT NOT NULL CHECK (fx_house IN ('Blue', 'Official', 'MEP'))
 );

@@ -17,10 +17,8 @@ type CategoryTotal struct {
 	Total    decimal.Decimal
 }
 
-// Figure is one year-level total in both currencies. USD accumulates a month
-// at a time at that month's own rate; it is never the ARS total divided by a
-// single rate. Under a drifting peso those answer different questions, and
-// only the first one agrees with what each Month screen showed at the time.
+// USD sums monthly conversions at each month's rate, not one conversion of
+// the annual ARS total.
 type Figure struct {
 	ARS decimal.Decimal
 	USD decimal.Decimal
@@ -45,8 +43,6 @@ type MonthTotals struct {
 	Confirmed bool
 }
 
-// Pocket is what the month kept: earnings less what left and what was put
-// away. Negative means the month over-saved, which is legal and shown.
 func (t MonthTotals) Pocket() decimal.Decimal {
 	return t.Earned.Sub(t.Spent).Sub(t.Saved)
 }
@@ -91,6 +87,22 @@ func LoadYear(db *sql.DB, year int, fx FxTable) (Year, error) {
 	if err != nil {
 		return Year{}, err
 	}
+	concepts, err := catalog.Concepts(db)
+	if err != nil {
+		return Year{}, err
+	}
+	entries, err := catalog.MonthEntriesBetween(db,
+		domain.NewPeriod(year, time.January), domain.NewPeriod(year, time.December))
+	if err != nil {
+		return Year{}, err
+	}
+	byPeriod := make(map[domain.Period]map[int64]catalog.MonthEntry, 12)
+	for _, entry := range entries {
+		if byPeriod[entry.Period] == nil {
+			byPeriod[entry.Period] = make(map[int64]catalog.MonthEntry)
+		}
+		byPeriod[entry.Period][entry.ConceptID] = entry
+	}
 
 	y := Year{Year: year, Months: make([]MonthTotals, 12)}
 	spendByCategory := make(map[int64]decimal.Decimal)
@@ -99,13 +111,8 @@ func LoadYear(db *sql.DB, year int, fx FxTable) (Year, error) {
 		p := domain.NewPeriod(year, time.Month(i+1))
 		rate := fx.At(p)
 
-		loaded, err := Load(db, p)
-		if err != nil {
-			return Year{}, err
-		}
-
 		t := MonthTotals{Period: p}
-		y.Excluded += eachConfirmedARS(loaded.Lines, rate, func(l Line, ars decimal.Decimal) {
+		y.Excluded += eachConfirmedARS(Resolve(p, concepts, byPeriod[p]), rate, func(l Line, ars decimal.Decimal) {
 			t.Confirmed = true
 			switch l.Concept.Kind {
 			case catalog.Income:

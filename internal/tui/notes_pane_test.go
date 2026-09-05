@@ -41,8 +41,6 @@ func checkboxLine(t *testing.T, m Model, n int) int {
 	return -1
 }
 
-// The bug this pass exists to fix: a cursor that stops only on checkboxes
-// leaves the prose around them on screen and unreachable.
 func TestBodyCursorReachesTheLastLine(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{{Title: "Plan", BodyMD: mixedNote}},
@@ -63,7 +61,6 @@ func TestBodyCursorReachesTheLastLine(t *testing.T) {
 	}
 }
 
-// A note with no task list at all still scrolls.
 func TestABodyWithNoCheckboxesStillMoves(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{{Title: "Prose", BodyMD: "Line one.\n\nLine two.\n\nLine three.\n"}},
@@ -76,7 +73,6 @@ func TestABodyWithNoCheckboxesStillMoves(t *testing.T) {
 	}
 }
 
-// space acts where the gutter says it acts, and nowhere else.
 func TestSpaceOnlyTicksCheckboxLines(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{{Title: "Plan", BodyMD: mixedNote}},
@@ -131,7 +127,6 @@ func TestEnterAndEscMoveFocusWithoutLeavingTheScreen(t *testing.T) {
 	}
 }
 
-// The pane follows the cursor: no opening, no second screen.
 func TestThePaneShowsWhateverTheCursorIsOn(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{
@@ -161,8 +156,6 @@ func TestAnEmptyBodyPointsAtTheEditor(t *testing.T) {
 	}
 }
 
-// The card is a fixed list beside an elastic pane, assembled from constants
-// that interact. One size proves nothing.
 func TestNotesFitsEveryTerminalSize(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{135, 30}, {150, 40}, {160, 46}, {220, 60}} {
 		m := modelFor(t, fixture.Demo(fixture.Period), size.w, size.h)
@@ -178,8 +171,6 @@ func TestNotesFitsEveryTerminalSize(t *testing.T) {
 	}
 }
 
-// One cursor is live at a time: the focused block accents its gutter, the
-// other keeps a muted marker so you can still see where you are.
 func TestOnlyTheFocusedBlockAccentsItsCursor(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{{Title: "Plan", BodyMD: mixedNote}},
@@ -225,8 +216,6 @@ func headingRow(t *testing.T, rendered string) int {
 	return -1
 }
 
-// A quiet month should sit in the middle of the terminal, not pinned to the
-// ceiling with the rest of the screen empty under it.
 func TestTheCardCentersVertically(t *testing.T) {
 	m := modelFor(t, fixture.Demo(fixture.Period), 160, 46)
 	m.view = viewNotes
@@ -243,8 +232,6 @@ func TestTheCardCentersVertically(t *testing.T) {
 	}
 }
 
-// The card's height must not depend on which note the cursor is on, or it
-// jumps under the reader on every arrow key.
 func TestTheCardDoesNotMoveAsTheCursorDoes(t *testing.T) {
 	m := modelFor(t, fixture.Demo(fixture.Period), 160, 46)
 	m.view = viewNotes
@@ -259,7 +246,6 @@ func TestTheCardDoesNotMoveAsTheCursorDoes(t *testing.T) {
 	}
 }
 
-// A note taller than its window says so, and its cursor still reaches the end.
 func TestABigNoteScrollsInThePane(t *testing.T) {
 	// At the floor the demo's long note outruns even a full-height pane.
 	m := modelFor(t, fixture.Demo(fixture.Period), minUsableWidth, minUsableHeight)
@@ -286,7 +272,6 @@ func TestABigNoteScrollsInThePane(t *testing.T) {
 	}
 }
 
-// The list hint has never fired: five demo notes never overflow anything.
 func TestTheListSaysWhenItIsCut(t *testing.T) {
 	// More notes than the shortest usable terminal can show at once.
 	var notes []catalog.Note
@@ -306,8 +291,6 @@ func TestTheListSaysWhenItIsCut(t *testing.T) {
 	}
 }
 
-// The pane reaches down to the floor for a note that needs it, and the list
-// does not move to let it: the card is anchored on the list alone.
 func TestALongNoteUsesTheScreenTheListDoesNot(t *testing.T) {
 	m := modelFor(t, fixture.Demo(fixture.Period), 160, 46)
 	m.view = viewNotes

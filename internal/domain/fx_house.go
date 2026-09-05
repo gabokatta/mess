@@ -2,8 +2,6 @@ package domain
 
 import "fmt"
 
-// FxHouse is which dollar quote a period's rate is drawn from; the
-// Argentine parallel markets track several, at different spreads.
 type FxHouse int
 
 const (

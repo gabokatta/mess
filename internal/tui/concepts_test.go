@@ -8,6 +8,7 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 func TestConceptEditFormOpensOnTheCursorConcept(t *testing.T) {
@@ -25,7 +26,6 @@ func TestConceptEditFormOpensOnTheCursorConcept(t *testing.T) {
 	}
 }
 
-// Deleting is gated behind a confirm, and Keep leaves the catalog alone.
 func TestConceptDeleteIsGatedAndKeepIsANoOp(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "1000"}},
@@ -56,7 +56,6 @@ func TestConceptDeleteIsGatedAndKeepIsANoOp(t *testing.T) {
 	}
 }
 
-// A chore has no money fields to fill in; the form hides them outright.
 func TestConceptFormHidesMoneyForAChore(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Wash the house", Category: "Home", Kind: catalog.Chore}},
@@ -89,10 +88,8 @@ func TestMonthPresetResolvesToACadence(t *testing.T) {
 	}
 }
 
-// A cadence is which months, and the window is how long. Picking one month
-// leaves the window alone; closing it is the window's own field.
 func TestPickingOneMonthLeavesTheWindowOpen(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	cat, err := catalog.AppendCategory(db, "Home")
 	if err != nil {
 		t.Fatalf("AppendCategory() unexpected error: %v", err)
@@ -120,7 +117,6 @@ func TestPickingOneMonthLeavesTheWindowOpen(t *testing.T) {
 	}
 }
 
-// Editing opens on the preset that already describes the concept.
 func TestPresetOfExistingCadence(t *testing.T) {
 	tests := []struct {
 		mask domain.Cadence
@@ -137,7 +133,6 @@ func TestPresetOfExistingCadence(t *testing.T) {
 	}
 }
 
-// A new concept goes active this month, not the period another view was on.
 func TestNewConceptGoesActiveThisMonth(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 100, 30)
 	m.view = viewConcepts

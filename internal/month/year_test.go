@@ -9,6 +9,7 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 func yearWorld() fixture.World {
@@ -32,8 +33,8 @@ func yearWorld() fixture.World {
 
 func loadYearWorld(t *testing.T) Year {
 	t.Helper()
-	db := fixture.DB(t)
-	fixture.MustLoad(t, db, yearWorld())
+	db := testutil.DB(t)
+	testutil.MustLoad(t, db, yearWorld())
 
 	fx := NewFxTable([]catalog.FxRate{closeAt(time.January, 1000), closeAt(time.February, 1200)},
 		decimal.Decimal{}, false, domain.NewPeriod(fixture.Year, time.December))
@@ -68,10 +69,6 @@ func TestLoadYearFoldsEachMonthAtItsOwnRate(t *testing.T) {
 	}
 }
 
-// The year's USD is each month converted at its own rate and summed, not the ARS
-// total divided once. January's 730.000 was 730 dollars at 1000; February's
-// 750.000 was 625 at 1200. Dividing the 1.480.000 total by either rate gives
-// neither answer.
 func TestYearUSDConvertsMonthByMonth(t *testing.T) {
 	y := loadYearWorld(t)
 
@@ -96,8 +93,6 @@ func TestYearUSDConvertsMonthByMonth(t *testing.T) {
 	}
 }
 
-// Only the months that hold something count as confirmed, so ten untouched
-// months do not read as ten zeroed ones.
 func TestYearConfirmedCountsOnlyMonthsWithLines(t *testing.T) {
 	y := loadYearWorld(t)
 
@@ -136,11 +131,9 @@ func TestYearCategoriesRankHighToLow(t *testing.T) {
 	}
 }
 
-// Every figure resolves from the periods on screen; nothing accumulates from
-// an opening anchor.
 func TestLoadYearWithNothingConfirmed(t *testing.T) {
-	db := fixture.DB(t)
-	fixture.MustLoad(t, db, fixture.World{
+	db := testutil.DB(t)
+	testutil.MustLoad(t, db, fixture.World{
 		Concepts: []fixture.Concept{
 			{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"},
 		},
@@ -161,5 +154,27 @@ func TestLoadYearWithNothingConfirmed(t *testing.T) {
 	}
 	if len(y.Categories) != 0 {
 		t.Errorf("Categories = %+v, want none", y.Categories)
+	}
+}
+
+func TestLoadYearKeepsEntriesInTheirCalendarYear(t *testing.T) {
+	db := testutil.DB(t)
+	jan := domain.NewPeriod(fixture.Year, time.January)
+	dec := domain.NewPeriod(fixture.Year, time.December)
+	testutil.MustLoad(t, db, fixture.World{
+		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, From: jan.AddMonths(-1)}},
+		Entries: []fixture.Entry{
+			{Concept: "Rent", Period: jan.AddMonths(-1), Amount: "9000"},
+			{Concept: "Rent", Period: jan, Amount: "100"},
+			{Concept: "Rent", Period: dec, Amount: "200"},
+			{Concept: "Rent", Period: dec.AddMonths(1), Amount: "9000"},
+		},
+	})
+	y, err := LoadYear(db, fixture.Year, FxTable{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !y.Spent.ARS.Equal(decimal.NewFromInt(300)) || y.Confirmed() != 2 {
+		t.Fatalf("year spent = %s across %d confirmed months, want 300 across 2", y.Spent.ARS, y.Confirmed())
 	}
 }

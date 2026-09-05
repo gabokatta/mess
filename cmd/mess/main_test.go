@@ -14,6 +14,7 @@ import (
 	"github.com/gabokatta/mess/internal/fixture"
 	"github.com/gabokatta/mess/internal/month"
 	"github.com/gabokatta/mess/internal/store"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 func TestExportImportRoundTripsThroughTheCLI(t *testing.T) {
@@ -25,7 +26,7 @@ func TestExportImportRoundTripsThroughTheCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.Open() unexpected error: %v", err)
 	}
-	fixture.MustLoad(t, src.DB(), fixture.World{
+	testutil.MustLoad(t, src.DB(), fixture.World{
 		Concepts: []fixture.Concept{{Name: "Rent", Category: "Utilities", Kind: catalog.Expense, Base: "1"}},
 	})
 	if err := src.Close(); err != nil {
@@ -69,14 +70,19 @@ func TestImportRequiresExactlyOneFileArgument(t *testing.T) {
 	}
 }
 
-// Cancelling the gate leaves the database exactly as it was.
+func TestInvalidFlagsReturnAnError(t *testing.T) {
+	if err := run([]string{"export", "--unknown"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("run(export) accepted an unknown flag")
+	}
+}
+
 func TestImportCancelledLeavesTheDatabaseAlone(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "mess.db")
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("store.Open() unexpected error: %v", err)
 	}
-	fixture.MustLoad(t, db.DB(), fixture.World{
+	testutil.MustLoad(t, db.DB(), fixture.World{
 		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
 	})
 	if err := db.Close(); err != nil {
@@ -130,23 +136,35 @@ func TestSeedConvergesOnTheSameRowsEveryRun(t *testing.T) {
 	}
 }
 
-// A lock left behind by a crashed process must not stop the next seed.
-func TestSeedClearsAStaleLock(t *testing.T) {
+func TestSeedRespectsTheDatabaseLock(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "mess.db")
 	s, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("store.Open() unexpected error: %v", err)
 	}
-	// Leaves the lock file behind, as a crash would.
-	s.DB().Close()
+	defer s.Close()
+	if _, err := catalog.CreateCategory(s.DB(), "Keep", 0, 0); err != nil {
+		t.Fatal(err)
+	}
 
-	if err := run([]string{"seed", "--db", dbPath}, &bytes.Buffer{}); err != nil {
-		t.Fatalf("run(seed) unexpected error with a stale lock present: %v", err)
+	if err := run([]string{"seed", "--db", dbPath}, &bytes.Buffer{}); err == nil {
+		t.Fatal("seed accepted an open database")
+	}
+	categories, err := catalog.Categories(s.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(categories) != 1 || categories[0].Name != "Keep" {
+		t.Fatalf("seed changed the open database: %+v", categories)
 	}
 }
 
-// --period must reach Demo rather than real time: a period nowhere near today
-// only resolves lines if the database was built around it.
+func TestSeedRequiresAnExplicitDatabase(t *testing.T) {
+	if err := run([]string{"seed"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("seed accepted the default database")
+	}
+}
+
 func TestSeedPeriodFlagPinsTheAnchor(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "mess.db")
 

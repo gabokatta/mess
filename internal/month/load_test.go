@@ -10,11 +10,12 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 func TestLoadResolvesTheCatalogAgainstTheStore(t *testing.T) {
-	db := fixture.DB(t)
-	fixture.MustLoad(t, db, fixture.World{
+	db := testutil.DB(t)
+	testutil.MustLoad(t, db, fixture.World{
 		Concepts: []fixture.Concept{
 			{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"},
 			{Name: "Wash the house", Category: "Home", Kind: catalog.Chore},
@@ -45,10 +46,9 @@ func TestLoadResolvesTheCatalogAgainstTheStore(t *testing.T) {
 	}
 }
 
-// A month you never touched stores nothing and still resolves.
 func TestLoadUntouchedPeriodStoresNothing(t *testing.T) {
-	db := fixture.DB(t)
-	fixture.MustLoad(t, db, fixture.World{
+	db := testutil.DB(t)
+	testutil.MustLoad(t, db, fixture.World{
 		Concepts: []fixture.Concept{
 			{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"},
 		},

@@ -108,11 +108,6 @@ func TestOpenAfterCloseReleasesLock(t *testing.T) {
 	s2.Close()
 }
 
-// SQLite's foreign_keys pragma is per connection and database/sql keeps a
-// pool, so a pragma run once after opening reaches one connection and leaves
-// every later one without it. That silently turns off every foreign key in the
-// schema: a category holding concepts could be deleted, and the concepts it
-// held vanished from the app, since every read joins them to their category.
 func TestForeignKeysAreOnForEveryConnection(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "mess.db"))
 	if err != nil {
@@ -140,7 +135,6 @@ func TestForeignKeysAreOnForEveryConnection(t *testing.T) {
 	}
 }
 
-// A path the pragmas are appended to still has to open.
 func TestOpenHandlesAPathWithSpaces(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "my notes & data")
 	s, err := Open(filepath.Join(dir, "mess.db"))

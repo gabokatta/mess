@@ -50,7 +50,6 @@ func TestResolveTotals(t *testing.T) {
 	}
 }
 
-// An unticked line is not part of the month, whatever its amount says.
 func TestResolveTotalsCountsTickedLinesOnly(t *testing.T) {
 	totals := ResolveTotals([]Line{
 		line(catalog.Income, domain.ARS, 2400000, true),
@@ -62,8 +61,6 @@ func TestResolveTotalsCountsTickedLinesOnly(t *testing.T) {
 	}
 }
 
-// Ticking is how a base amount gets accepted. A concept whose base is already
-// right needs no retyping to count, which is the whole point of the tick.
 func TestTickedLineCountsAtItsBaseWithNoOverride(t *testing.T) {
 	base := Line{
 		Concept: catalog.Concept{
@@ -88,7 +85,6 @@ func TestTickedLineCountsAtItsBaseWithNoOverride(t *testing.T) {
 	}
 }
 
-// A chore has no money and never reaches the arithmetic.
 func TestResolveTotalsIgnoresChores(t *testing.T) {
 	totals := ResolveTotals([]Line{
 		{Concept: catalog.Concept{Kind: catalog.Chore}, Done: true},
@@ -117,7 +113,6 @@ func TestResolveTotalsFoldsUSDAtThePeriodRate(t *testing.T) {
 	}
 }
 
-// The header drops what it cannot convert and says how many.
 func TestResolveTotalsExcludesUnconvertibleLines(t *testing.T) {
 	totals := ResolveTotals([]Line{
 		line(catalog.Income, domain.ARS, 2400000, true),
@@ -132,7 +127,6 @@ func TestResolveTotalsExcludesUnconvertibleLines(t *testing.T) {
 	}
 }
 
-// Over-saving is legal: Pocket goes negative rather than refusing the input.
 func TestPocketGoesNegativeWhenOverSaved(t *testing.T) {
 	totals := ResolveTotals([]Line{
 		line(catalog.Income, domain.ARS, 100000, true),
@@ -170,7 +164,6 @@ func TestAvailableUSD(t *testing.T) {
 	}
 }
 
-// PocketUSD keeps Pocket's sign, so an over-saved month divides negative too.
 func TestPocketUSD(t *testing.T) {
 	totals := ResolveTotals([]Line{
 		line(catalog.Income, domain.ARS, 100000, true),

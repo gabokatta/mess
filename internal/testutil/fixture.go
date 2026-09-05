@@ -1,10 +1,11 @@
-package fixture
+package testutil
 
 import (
 	"database/sql"
 	"path/filepath"
 	"testing"
 
+	"github.com/gabokatta/mess/internal/fixture"
 	"github.com/gabokatta/mess/internal/store"
 )
 
@@ -21,9 +22,9 @@ func DB(t *testing.T) *sql.DB {
 }
 
 // MustLoad is Load for a test: any error fails it immediately.
-func MustLoad(t *testing.T, db *sql.DB, w World) Loaded {
+func MustLoad(t *testing.T, db *sql.DB, w fixture.World) fixture.Loaded {
 	t.Helper()
-	loaded, err := Load(db, w)
+	loaded, err := fixture.Load(db, w)
 	if err != nil {
 		t.Fatalf("fixture.Load() unexpected error: %v", err)
 	}

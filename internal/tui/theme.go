@@ -19,9 +19,6 @@ type Theme struct {
 	Logo   lipgloss.Style
 }
 
-// buttonText is the ink on a focused confirm button. The accent behind it is
-// the same saturated purple on either ground, so the text does not follow the
-// theme the way the rest of the card does.
 var buttonText = lipgloss.Color("#fafaf9")
 
 func NewTheme(dark bool) Theme {
@@ -46,24 +43,11 @@ func NewTheme(dark bool) Theme {
 	}
 }
 
-// card is the frame every modal that sizes itself to its own content draws
-// inside, so a form and the category list read as the same kind of object.
 func (t Theme) card(content string) string {
 	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(content)
 }
 
-// themeFor maps the app's four colours onto huh, so a form obeys the same
-// rules as every screen: Accent is the cursor and the choice it sits on,
-// foreground is content, Muted is the text about the content, and Alert is the
-// thing worth acting on.
-//
-// It starts from ThemeBase rather than ThemeCharm because Charm paints an
-// unselected option in ANSI 235, which is near-black and vanishes against any
-// background that is not close to white.
-//
-// Every field is recoloured rather than replaced: huh carries a style's glyph
-// inside it, so "> " on a selector and the padding around a button are lost
-// with the style they came in.
+// Preserve huh's glyphs and padding while recoloring its base theme.
 func themeFor(t Theme) huh.Theme {
 	return huh.ThemeFunc(func(bool) *huh.Styles {
 		s := huh.ThemeBase(t.Dark)

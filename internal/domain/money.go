@@ -35,8 +35,7 @@ func ParseCurrency(s string) (Currency, error) {
 	}
 }
 
-// Money is an amount that always carries its currency, so nothing sums two
-// of them without deciding what to do about the pair.
+// Money keeps currency attached to amounts until conversion.
 type Money struct {
 	amount   decimal.Decimal
 	currency Currency

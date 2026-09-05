@@ -40,13 +40,8 @@ func ParseFxSource(s string) (FxSource, error) {
 	}
 }
 
-// FxRate is a completed month; the current month is never stored, so a row
-// here never needs refetching.
-//
-// House is the quote a Close was drawn from, so a rate stored under one house
-// stays legible after the setting moves to another. It is nil on a Manual row,
-// which was quoted by nobody: domain.Blue is the zero FxHouse, so an absent
-// house has to be absent rather than zero.
+// FxRate stores a completed month's close or a manual override. House records
+// a close's source even after the setting changes; manual rates have no house.
 type FxRate struct {
 	Period domain.Period
 	Value  decimal.Decimal

@@ -14,8 +14,6 @@ import (
 	"github.com/gabokatta/mess/internal/month"
 )
 
-// The column header names every column once, above the scroller, and does
-// not repeat inside it.
 func TestMonthColumnHeaderRendersOnceAboveTheList(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 	content := stripANSI(m.renderMonth())
@@ -30,8 +28,6 @@ func TestMonthColumnHeaderRendersOnceAboveTheList(t *testing.T) {
 	}
 }
 
-// Kind headers are structural now: bold foreground and a muted rule, with no
-// palette hue: on this app, colour names a category and nothing else.
 func TestKindHeadersCarryNoPaletteHue(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 
@@ -58,8 +54,6 @@ func TestKindHeadersCarryNoPaletteHue(t *testing.T) {
 	}
 }
 
-// Two categories that land on the same palette slot still read apart by
-// name: color collision costs nothing.
 func TestCategoryColorCollisionStillReadsByName(t *testing.T) {
 	// Nine distinct categories so the ninth wraps onto the first's palette slot.
 	concepts := make([]fixture.Concept, 9)
@@ -82,8 +76,6 @@ func TestCategoryColorCollisionStillReadsByName(t *testing.T) {
 	}
 }
 
-// A name longer than the column truncates to one line ending in an
-// ellipsis, instead of wrapping and dragging the amount out of its column.
 func TestLongConceptNameTruncatesInsteadOfWrapping(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
@@ -108,7 +100,6 @@ func TestLongConceptNameTruncatesInsteadOfWrapping(t *testing.T) {
 	}
 }
 
-// Rows within a kind block sort by category, so the column reads as bands.
 func TestRowsSortByCategoryWithinKind(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
@@ -127,7 +118,6 @@ func TestRowsSortByCategoryWithinKind(t *testing.T) {
 	}
 }
 
-// A Chore has no money: its currency and amount cells are blank, not zero.
 func TestChoreRowLeavesCurrencyAndAmountBlank(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Wash the house", Category: "Home", Kind: catalog.Chore}},
@@ -143,8 +133,6 @@ func TestChoreRowLeavesCurrencyAndAmountBlank(t *testing.T) {
 	}
 }
 
-// The inline amount edit lands inside the amount column; the category and
-// currency cells it passes do not move.
 func TestAmountEditStaysInsideTheAmountColumn(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
@@ -165,7 +153,6 @@ func TestAmountEditStaysInsideTheAmountColumn(t *testing.T) {
 	}
 }
 
-// Each rail box carries its ARS figure and the same fact converted to USD.
 func TestRailShowsARSAndItsUSDConversion(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 	rate := m.fx().At(m.period)
@@ -183,8 +170,6 @@ func TestRailShowsARSAndItsUSDConversion(t *testing.T) {
 	}
 }
 
-// A period with no rate renders an em dash instead of a USD figure, at the
-// same box height as a period that has one.
 func TestRailWithNoRateRendersAnEmDash(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Salary", Category: "Earnings", Kind: catalog.Income, Base: "100000"}},
@@ -207,8 +192,6 @@ func TestRailWithNoRateRendersAnEmDash(t *testing.T) {
 	}
 }
 
-// A month that spent past what came in is not a month that saved too much.
-// Both drive pocket below zero and the box must not call them the same thing.
 func TestOverspentPocketReadsAsAShortfall(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
@@ -232,8 +215,6 @@ func TestOverspentPocketReadsAsAShortfall(t *testing.T) {
 	}
 }
 
-// Over-saving is named, not alarmed about: the box says "over by" and stays
-// bright. Alert belongs to overspending alone.
 func TestPocketOverSavedIsNamedWithoutAlert(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
@@ -275,8 +256,6 @@ func TestPocketOverSavedIsNamedWithoutAlert(t *testing.T) {
 	}
 }
 
-// The meta cluster carries the done count and the export date, and states a
-// month that has never been exported rather than leaving it blank.
 func TestMonthMetaShowsTheDoneCount(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 	totals := month.ResolveTotals(m.lines, m.fx().At(m.period))
@@ -288,7 +267,6 @@ func TestMonthMetaShowsTheDoneCount(t *testing.T) {
 	}
 }
 
-// The excluded count appears in the meta cluster only when it is not zero.
 func TestExcludedCountOnlyShowsWhenNonZero(t *testing.T) {
 	clean := month.Totals{}
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
@@ -302,8 +280,6 @@ func TestExcludedCountOnlyShowsWhenNonZero(t *testing.T) {
 	}
 }
 
-// The title names the month in full and travels with the block it sits
-// above; a wandered period says so beside it.
 func TestMonthTitleNamesTheMonthInFull(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 	header := stripANSI(m.periodHeading())
@@ -315,8 +291,6 @@ func TestMonthTitleNamesTheMonthInFull(t *testing.T) {
 	}
 }
 
-// The title is underlined so it reads apart from the kind headers and rail
-// labels, which share its bold weight but not its hue.
 func TestMonthTitleIsUnderlined(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 	want := m.theme.Title.Underline(true).Render("SEPTEMBER 2026")
@@ -325,8 +299,6 @@ func TestMonthTitleIsUnderlined(t *testing.T) {
 	}
 }
 
-// A short month's rows stay flush under the column header; the taller
-// sidebar is not what pushes them down.
 func TestSidebarDoesNotPushShortRowsAwayFromTheHeader(t *testing.T) {
 	rows := "A\nB"
 	sidebar := "W\nX\nY\nZ\nV"
@@ -341,8 +313,6 @@ func TestSidebarDoesNotPushShortRowsAwayFromTheHeader(t *testing.T) {
 	}
 }
 
-// A tall month's rows dominate; the shorter sidebar centers against them
-// instead of hugging the top.
 func TestSidebarCentersAgainstTallerRows(t *testing.T) {
 	rows := "1\n2\n3\n4\n5"
 	sidebar := "X\nY\nZ"
@@ -381,8 +351,6 @@ func bigFigureWorld(filler int) fixture.World {
 	return w
 }
 
-// A figure too wide for the default box widens every box to match, rather
-// than spilling past the border. The three stay one column so they stack.
 func TestRailBoxesGrowToHoldBigFigures(t *testing.T) {
 	m := modelFor(t, bigFigureWorld(0), 120, 40)
 	rate := m.fx().At(m.period)
@@ -409,7 +377,6 @@ func TestRailBoxesGrowToHoldBigFigures(t *testing.T) {
 	}
 }
 
-// A quiet month keeps the shape the design asked for.
 func TestRailBoxesKeepTheirFloorForSmallFigures(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 	rate := m.fx().At(m.period)
@@ -420,7 +387,6 @@ func TestRailBoxesKeepTheirFloorForSmallFigures(t *testing.T) {
 	}
 }
 
-// A list longer than the screen says how much of it is off screen.
 func TestScrollHintCountsWhatIsOffScreen(t *testing.T) {
 	m := modelFor(t, bigFigureWorld(60), minUsableWidth, minUsableHeight)
 	hint := stripANSI(m.scrollHint(m.monthList, gutterWidth))
@@ -437,8 +403,6 @@ func TestNoScrollHintWhenTheMonthFits(t *testing.T) {
 	}
 }
 
-// The slack a short month leaves over sits half above the card and half
-// below it, rather than pooling under the last row.
 func TestShortMonthCentersItsCard(t *testing.T) {
 	roomy := modelFor(t, richWorld(), minUsableWidth, 44)
 	if blankLinesAbove(roomy.renderMonth()) == 0 {

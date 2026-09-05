@@ -14,8 +14,6 @@ import (
 	"github.com/gabokatta/mess/internal/fixture"
 )
 
-// The card is built from the terminal's width at render time, so the sizes
-// it has never been looked at are the ones that break. Nothing may spill.
 func TestYearFitsEveryTerminalSize(t *testing.T) {
 	for _, size := range [][2]int{{minUsableWidth, minUsableHeight}, {150, 40}, {160, 46}, {220, 60}} {
 		width, height := size[0], size[1]
@@ -33,8 +31,6 @@ func TestYearFitsEveryTerminalSize(t *testing.T) {
 	}
 }
 
-// Wiring, not arithmetic: the four boxes must show whatever LoadYear says,
-// in both currencies. year_test.go is where the arithmetic is asserted.
 func TestYearBoxesShowEveryFigureInBothCurrencies(t *testing.T) {
 	m := modelFor(t, fixture.Demo(fixture.Period), 160, 46)
 	m.view = viewYear
@@ -57,8 +53,6 @@ func TestYearBoxesShowEveryFigureInBothCurrencies(t *testing.T) {
 	}
 }
 
-// A month that over-saved is the whole reason the pocket chart exists, and a
-// zero-clamped bar would hide it. Negatives hang below a floating baseline.
 func TestNegativeMonthsHangBelowTheBaseline(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 
@@ -84,8 +78,6 @@ func TestNegativeMonthsHangBelowTheBaseline(t *testing.T) {
 	}
 }
 
-// A month nobody has reached is not a month that spent nothing: its label is
-// dimmed rather than sitting at the same weight as a real zero.
 func TestPendingMonthsAreLabelledButNotDrawn(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 
@@ -103,8 +95,6 @@ func TestPendingMonthsAreLabelledButNotDrawn(t *testing.T) {
 	}
 }
 
-// Every category carries its own figure and its share of the year, so the
-// ranking can be read without measuring bars against each other.
 func TestCategoryRowsCarryAmountAndShare(t *testing.T) {
 	m := modelFor(t, fixture.Demo(fixture.Period), 160, 46)
 
@@ -127,8 +117,6 @@ func TestCategoryRowsCarryAmountAndShare(t *testing.T) {
 	}
 }
 
-// A category list longer than the viewport says so on the section title, so
-// a cut list never reads as a finished one.
 func TestLongCategoryListAnnouncesWhatIsHidden(t *testing.T) {
 	concepts := make([]fixture.Concept, 20)
 	entries := make([]fixture.Entry, 20)
@@ -149,17 +137,11 @@ func TestLongCategoryListAnnouncesWhatIsHidden(t *testing.T) {
 	m.view = viewYear
 	m = m.sync()
 
-	if got := m.categoryHint(); !strings.Contains(stripANSI(got), "more") {
-		t.Fatalf("categoryHint() = %q, want it to report the hidden rows", got)
-	}
 	if !strings.Contains(stripANSI(m.renderYear()), "more") {
-		t.Error("the hidden rows are not announced on the section title")
+		t.Error("the category list does not announce hidden rows")
 	}
 }
 
-// With the list capped at five, the first presses move a cursor that is still
-// inside the window. Every one of them has to change something on screen, or
-// the key reads as dead.
 func TestEveryArrowPressMovesTheCursorOnScreen(t *testing.T) {
 	m := modelFor(t, fixture.Demo(fixture.Period), 160, 46)
 	m.view = viewYear
@@ -186,8 +168,6 @@ func TestEveryArrowPressMovesTheCursorOnScreen(t *testing.T) {
 	}
 }
 
-// A year with nothing ticked says so rather than drawing four zeroed boxes
-// and two empty charts.
 func TestEmptyYearSaysSo(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Concepts: []fixture.Concept{
@@ -205,8 +185,6 @@ func TestEmptyYearSaysSo(t *testing.T) {
 	}
 }
 
-// The peak and low markers name a month and both currencies, and give up the
-// dollar half rather than running past the chart they label.
 func TestChartNoteFitsTheChartItLabels(t *testing.T) {
 	m := modelFor(t, fixture.Demo(fixture.Period), 160, 46)
 
@@ -231,8 +209,6 @@ func TestChartNoteFitsTheChartItLabels(t *testing.T) {
 	}
 }
 
-// The turning point is picked from the months that happened; ten pending
-// months do not make december the year's low.
 func TestTurningPointIgnoresPendingMonths(t *testing.T) {
 	m := modelFor(t, fixture.Demo(fixture.Period), 160, 46)
 

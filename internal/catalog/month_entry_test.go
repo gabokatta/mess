@@ -8,11 +8,12 @@ import (
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/fixture"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 func TestMonthEntriesFiltersByPeriod(t *testing.T) {
-	db := fixture.DB(t)
-	loaded := fixture.MustLoad(t, db, fixture.World{
+	db := testutil.DB(t)
+	loaded := testutil.MustLoad(t, db, fixture.World{
 		Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
 	})
 	concept := loaded.Concepts["Rent"]
@@ -58,10 +59,6 @@ type step struct {
 
 func done(b bool) *bool { return &b }
 
-// Done is the tick and the tick is what makes a line count, so typing a
-// figure ticks with it: a correction that did not count would be the same
-// trap as a base that could not be accepted. Everything else about the two
-// columns stays independent, and unticking stays an explicit act.
 func TestMonthEntryAmountAndDone(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -111,8 +108,8 @@ func TestMonthEntryAmountAndDone(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db := fixture.DB(t)
-			loaded := fixture.MustLoad(t, db, fixture.World{
+			db := testutil.DB(t)
+			loaded := testutil.MustLoad(t, db, fixture.World{
 				Concepts: []fixture.Concept{{Name: "Rent", Category: "Home", Kind: catalog.Expense, Base: "785000"}},
 			})
 			concept := loaded.Concepts["Rent"]

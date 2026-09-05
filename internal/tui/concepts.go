@@ -17,14 +17,7 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// Column budget, left to right: cursor gutter, name, gap, category, gap,
-// currency, gap, base, gap, cadence, gap, status. Name, category, currency,
-// and base are Month's columns at Month's widths: the two screens list the
-// same concepts, and a column that moved between them would cost a reader the
-// place they had already found.
-//
-// BASE is not Month's AMOUNT. It is the figure the edit box opens with, not
-// the month's money, and the header says so.
+// Use Month's widths for the shared concept fields.
 const (
 	cadenceWidth = 9
 	statusWidth  = 7
@@ -33,10 +26,7 @@ const (
 		currencyWidth + colGap + amountWidth + colGap + cadenceWidth + colGap + statusWidth
 )
 
-// The pane is fixed, not measured. Notes settled that rule sizing its own
-// body: fixed for a block of labels and short figures, measured for one
-// holding someone's prose. This one holds labels and short figures, and 35 is
-// what the twelve-month strip needs.
+// The twelve-month strip needs 35 columns.
 const (
 	conceptPaneWidth  = 35
 	conceptPaneLabel  = 10
@@ -44,10 +34,6 @@ const (
 	conceptsCardWidth = conceptsTableWidth + conceptsGap + conceptPaneWidth
 )
 
-// lifecycle is where a concept sits against today. The status column holds
-// these words and not periods: "retired" is seven columns and "from 2027-01"
-// is twelve, and twelve would set the width of the whole card by itself. The
-// periods live on the pane's window line, which has room for them.
 type lifecycle string
 
 const (
@@ -56,8 +42,7 @@ const (
 	statusRetired lifecycle = "retired"
 )
 
-// conceptStatus is derived from the window and today, never stored. A live end
-// date does not change it: a concept ending in December is active today.
+// An active-until month is inclusive.
 func conceptStatus(c catalog.Concept, today domain.Period) lifecycle {
 	switch {
 	case !c.ActiveUntil.IsZero() && c.ActiveUntil.Before(today):
@@ -77,18 +62,11 @@ func (m Model) cursorConcept() (catalog.Concept, bool) {
 	return ordered[m.conceptsList.cursor], true
 }
 
-// conceptGroup is one labelled block of the list. conceptGroups is the single
-// place the list's shape is decided: which concepts show, under which label,
-// in which order.
 type conceptGroup struct {
 	label    string
 	concepts []catalog.Concept
 }
 
-// Retired concepts leave their kind block for one of their own, and that block
-// is hidden until `r` asks for it. A dead concept is only worth looking at when
-// you mean to bring it back, and until then it is a row between the ones read
-// every day. The meta cluster keeps the count so hidden never means forgotten.
 func (m Model) conceptGroups() []conceptGroup {
 	var groups []conceptGroup
 	for _, kind := range monthGroups {
@@ -96,16 +74,25 @@ func (m Model) conceptGroups() []conceptGroup {
 			groups = append(groups, conceptGroup{label: strings.ToUpper(kind.String()), concepts: concepts})
 		}
 	}
-	if retired := m.retiredConcepts(); m.showRetired && len(retired) > 0 {
-		groups = append(groups, conceptGroup{label: "RETIRED", concepts: retired})
+	if m.showRetired {
+		if retired := m.retiredConcepts(); len(retired) > 0 {
+			groups = append(groups, conceptGroup{label: "RETIRED", concepts: retired})
+		}
 	}
 	return groups
 }
 
-func (m Model) retiredCount() int { return len(m.retiredConcepts()) }
+func (m Model) retiredCount() int {
+	count := 0
+	for _, c := range m.concepts {
+		if conceptStatus(c, m.today) == statusRetired {
+			count++
+		}
+	}
+	return count
+}
 
-// retiredConcepts orders by when each one ended, most recent first: this block
-// is membership by state, so it reads by when the state changed.
+// Retired concepts are ordered by end month, newest first.
 func (m Model) retiredConcepts() []catalog.Concept {
 	var out []catalog.Concept
 	for _, c := range m.concepts {
@@ -117,9 +104,7 @@ func (m Model) retiredConcepts() []catalog.Concept {
 	return out
 }
 
-// conceptsOfKind sorts by category name so the category column reads as bands
-// within a kind block. m.concepts already arrives ordered by concept name
-// inside a category, and the sort is stable, so that order survives.
+// Stable sorting preserves concept-name order within each category.
 func (m Model) conceptsOfKind(kind catalog.ConceptKind) []catalog.Concept {
 	var out []catalog.Concept
 	for _, c := range m.concepts {
@@ -133,7 +118,7 @@ func (m Model) conceptsOfKind(kind catalog.ConceptKind) []catalog.Concept {
 	return out
 }
 
-// orderedConcepts is the list the cursor walks: the groups flattened.
+// Flatten the displayed groups in cursor order.
 func (m Model) orderedConcepts() []catalog.Concept {
 	var out []catalog.Concept
 	for _, g := range m.conceptGroups() {
@@ -291,14 +276,9 @@ func (m Model) deleteConceptForm(c catalog.Concept) *form {
 	return f
 }
 
-// namedMonths is how many months a cadence cell spells out before it gives
-// up and counts instead. Two is what fits: "Jun · Dec" is exactly the nine
-// columns the cadence column has, and a third name would cost six more.
 const namedMonths = 2
 
-// cadenceLabel names a mask in the room a row has. The pane draws the mask in
-// full beside the list, so the cell is allowed to be lossy about the rare case
-// and readable about the common one.
+// The table abbreviates cadences; the detail pane shows all twelve months.
 func cadenceLabel(mask domain.Cadence) string {
 	months := mask.Months()
 	if mask == domain.Monthly {
@@ -349,8 +329,6 @@ var kindOptions = []huh.Option[catalog.ConceptKind]{
 	huh.NewOption("Chore", catalog.Chore),
 }
 
-// The picker is a plain list. Categories are made in the category modal, so
-// the form never asks a second question in the middle of the first.
 func categoryOptions(categories []catalog.Category) []huh.Option[int64] {
 	options := make([]huh.Option[int64], len(categories))
 	for i, c := range categories {
@@ -359,8 +337,6 @@ func categoryOptions(categories []catalog.Category) []huh.Option[int64] {
 	return options
 }
 
-// A concept that fires in no month is one that never happens, so the picker
-// refuses to produce one rather than the cadence cell having to name it.
 func atLeastOneMonth(months []time.Month) error {
 	if len(months) == 0 {
 		return fmt.Errorf("pick at least one month")
@@ -384,9 +360,6 @@ func (m Model) renderConcepts() string {
 		return title + "\n\n" + m.centerInBox(m.theme.Muted.Render(m.emptyCatalogLine()), 2)
 	}
 
-	// The pane's title sits on the column header's line and its subtitle on
-	// the first rule, so the card reads as two blocks with two headings
-	// rather than as a list with something beside it.
 	table := m.conceptColumnHeader() + "\n" +
 		m.conceptsList.View() + m.scrollHint(m.conceptsList, gutterWidth)
 	sidebar := m.conceptPane(c) + "\n\n" + m.conceptMeta()
@@ -399,8 +372,6 @@ func (m Model) renderConcepts() string {
 	return lipgloss.NewStyle().MarginLeft(left).Render(strings.Repeat("\n", top) + card)
 }
 
-// A catalog whose every concept is retired is not an empty one, and telling
-// someone to add their first concept when they have thirty would be a lie.
 func (m Model) emptyCatalogLine() string {
 	if m.retiredCount() > 0 {
 		return "everything here is retired — press r to see it"
@@ -408,13 +379,6 @@ func (m Model) emptyCatalogLine() string {
 	return "no concepts yet — press n to add one"
 }
 
-// conceptMeta counts the catalog by the same word each row carries. Future and
-// retired are suppressed at zero, so a catalog with nothing scheduled and
-// nothing retired says only how big it is.
-//
-// It sits under the pane rather than under the list, where Month keeps its own
-// meta: a cluster hanging off the bottom of a long list reads as a row that
-// lost its columns.
 func (m Model) conceptMeta() string {
 	counts := make(map[lifecycle]int, 3)
 	for _, c := range m.concepts {
@@ -430,8 +394,6 @@ func (m Model) conceptMeta() string {
 	return m.theme.Muted.Render(strings.Join(lines, "\n"))
 }
 
-// conceptPane is what a concept is: the fields the row had no room for, at a
-// height that does not change as the cursor walks.
 func (m Model) conceptPane(c catalog.Concept) string {
 	base := "—"
 	if c.Money != nil {
@@ -466,8 +428,6 @@ func (m Model) monthStripHeader() string {
 	return m.theme.Muted.Render(strings.Join(initials, "  "))
 }
 
-// monthStrip is the mask in full, which the cadence cell is allowed to be
-// lossy about precisely because this is always beside it.
 func (m Model) monthStrip(mask domain.Cadence) string {
 	lit := make(map[time.Month]bool, 12)
 	for _, month := range mask.Months() {
@@ -485,8 +445,6 @@ func (m Model) monthStrip(mask domain.Cadence) string {
 	return strings.Join(cells, "  ")
 }
 
-// conceptColumnHeader names the columns once, above the viewport, so it stays
-// put while the list scrolls under it.
 func (m Model) conceptColumnHeader() string {
 	row := strings.Repeat(" ", gutterWidth) +
 		leftCol(nameWidth, "CONCEPT") + leftCol(categoryWidth, "CATEGORY") + leftCol(currencyWidth, "CUR") +
@@ -531,9 +489,6 @@ func (m Model) renderConceptRow(c catalog.Concept, selected bool) string {
 			m.theme.Bright.Width(amountWidth).Align(lipgloss.Right).Render(formatAmount(c.Money.Base))
 	}
 
-	// Cadence describes a concept rather than reporting its state, so it stays
-	// muted. Status reports one, so it carries weight: plain foreground while
-	// a concept is live, muted once it is not.
 	cadence := m.theme.Muted.Width(cadenceWidth).Render(cadenceLabel(c.MonthMask))
 
 	status := conceptStatus(c, m.today)
@@ -545,8 +500,6 @@ func (m Model) renderConceptRow(c catalog.Concept, selected bool) string {
 		style.Width(statusWidth).Render(string(status))
 }
 
-// activeWindow reads the two periods a concept lives between, with a blank
-// end meaning it is still running.
 func activeWindow(c catalog.Concept) string {
 	if c.ActiveUntil.IsZero() {
 		return c.ActiveFrom.String() + " → open-ended"

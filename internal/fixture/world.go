@@ -18,12 +18,11 @@ var Period = domain.NewPeriod(Year, time.September)
 // World is a database, described rather than built. Concepts are referenced
 // by name, since their IDs do not exist until Load inserts them.
 type World struct {
-	Concepts   []Concept
-	Entries    []Entry
-	Notes      []catalog.Note
-	Rates      []Rate
-	FxHouse    domain.FxHouse
-	LastExport *time.Time // nil means Load marks no export
+	Concepts []Concept
+	Entries  []Entry
+	Notes    []catalog.Note
+	Rates    []Rate
+	FxHouse  domain.FxHouse
 }
 
 // Concept defaults to monthly and to an active range starting in January of
@@ -161,12 +160,6 @@ func Load(db *sql.DB, w World) (Loaded, error) {
 
 	if err := catalog.SetFxHouse(db, w.FxHouse); err != nil {
 		return Loaded{}, err
-	}
-
-	if w.LastExport != nil {
-		if err := catalog.MarkExported(db, *w.LastExport); err != nil {
-			return Loaded{}, err
-		}
 	}
 
 	return loaded, nil

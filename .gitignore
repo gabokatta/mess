@@ -3,6 +3,8 @@
 *.db
 *.db-shm
 *.db-wal
+*.db.lock
+*.bak
 
 # Build output
 /bin/

@@ -24,12 +24,6 @@ const (
 		categoryColorWidth + colGap + categoryCountWidth
 )
 
-// categoryList is the catalog's other half: the one place a category is
-// created, renamed, recoloured, or deleted.
-//
-// It holds its own copy of the catalog because a modal's View takes no
-// arguments. sync refreshes that copy after every write, so the list is never
-// reading state the database has moved past.
 type categoryList struct {
 	theme      Theme
 	db         *sql.DB
@@ -46,8 +40,6 @@ func (m Model) categoryList() *categoryList {
 	return list
 }
 
-// conceptCounts says what each category is holding, which is what makes a
-// delete refusal actionable and an empty category obvious.
 func (m Model) conceptCounts() map[int64]int {
 	counts := make(map[int64]int, len(m.categories))
 	for _, c := range m.concepts {
@@ -56,17 +48,13 @@ func (m Model) conceptCounts() map[int64]int {
 	return counts
 }
 
-// The list keeps its own copy rather than the Model's slice: it paints a
-// colour locally as the key is pressed, and that write has no business
-// reaching into state the Model owns.
+// Copy before painting optimistic color changes so the modal does not mutate Model state.
 func (l *categoryList) refresh(categories []catalog.Category, counts map[int64]int) {
 	l.categories = append(l.categories[:0:0], categories...)
 	l.counts = counts
 	l.show()
 }
 
-// show hands the rows to the scroller, so a catalog longer than the terminal
-// pans instead of spilling out of the box.
 func (l *categoryList) show() {
 	rows := make([]string, len(l.categories))
 	for i, c := range l.categories {
@@ -76,8 +64,6 @@ func (l *categoryList) show() {
 		viewportHeight(len(rows), l.visibleRows()))
 }
 
-// visibleRows is what the box can hold: the terminal less the app's frame, the
-// modal's title, its border and padding, and the column header.
 func (l *categoryList) visibleRows() int {
 	const chrome = 12
 	return max(l.height-chrome, 3)
@@ -122,8 +108,6 @@ func (l *categoryList) Update(msg tea.Msg) (modal, tea.Cmd) {
 	return l, nil
 }
 
-// createForm is the only way a category is born. The concept form picks from
-// a list and never makes one, so categories exist before concepts use them.
 func (l *categoryList) createForm() *form {
 	var name string
 	return newForm(l.theme, l.width, l.height, []*huh.Group{
@@ -138,9 +122,6 @@ func (l *categoryList) createForm() *form {
 	})
 }
 
-// renameForm opens over the list and returns to it, which is what the modal
-// stack is for. Every concept keeps its category_id, so a rename is one
-// UPDATE and not a migration.
 func (l *categoryList) renameForm(c catalog.Category) *form {
 	name := c.Name
 	return newForm(l.theme, l.width, l.height, []*huh.Group{
@@ -152,9 +133,7 @@ func (l *categoryList) renameForm(c catalog.Category) *form {
 	})
 }
 
-// shiftColor writes on every press. The index is a small integer on a tiny
-// table, so cycling is cheap, and a write per press means there is no unsaved
-// state to lose to an esc.
+// Persist each press; the category modal has no separate save action.
 func (l *categoryList) shiftColor(delta int) tea.Cmd {
 	c, ok := l.cursorCategory()
 	if !ok {
@@ -169,9 +148,6 @@ func (l *categoryList) shiftColor(delta int) tea.Cmd {
 	return write(func() error { return catalog.SetCategoryColor(l.db, c.ID, next) })
 }
 
-// deleteForm is deleteConceptForm's shape, so the same gesture reads the same
-// way whichever half of the catalog it is aimed at. Whether the delete is
-// allowed is the schema's question, asked by running it.
 func (l *categoryList) deleteForm(c catalog.Category) *form {
 	var confirmed bool
 	f := newForm(l.theme, l.width, l.height, []*huh.Group{
@@ -196,8 +172,6 @@ func (l *categoryList) Help() string {
 	return "↑/↓ · ←/→ colour · n new · r rename · d delete · esc close"
 }
 
-// The card takes its width from the rows, which are already fixed at
-// categoriesWidth by their cells.
 func (l *categoryList) View() string {
 	return l.theme.card(l.header() + "\n" + l.list.View() + l.theme.scrollHint(l.list, gutterWidth))
 }
@@ -208,9 +182,6 @@ func (l *categoryList) header() string {
 		lipgloss.NewStyle().Width(categoryCountWidth).Align(lipgloss.Right).Render("CONCEPTS"))
 }
 
-// The index beside the swatch is not decoration. The palette is Okabe-Ito
-// because it survives colour blindness, and the one thing a swatch cannot say
-// to a deuteranope is that two categories now share a colour.
 func (l *categoryList) row(c catalog.Category, selected bool) string {
 	cursor := strings.Repeat(" ", gutterWidth)
 	if selected {

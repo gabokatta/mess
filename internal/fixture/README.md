@@ -1,16 +1,19 @@
 # Seeding a dev database
 
-`Demo` (in `demo.go`) is a hand-designed eighteen-month world: long names,
+`Demo` (in `demo.go`) covers eighteen months with long names,
 wide amounts, a missing fx rate, a cadence gap, an ended concept, an
 over-saved month, and the rest of the cases that break a layout by accident.
-It is built by `mess seed` for local development, and shares `World`'s
-`Load` function with the test suite (`internal/fixture/world.go`).
+`mess seed` and the test suite share `World` and `Load`. Test helpers live in
+`internal/testutil`, keeping the testing package out of the application build.
 
 ## Commands
 
     make seed        # wipes .data/mess.db and refills it with Demo
     make dev         # opens the app on .data/mess.db as it is, no reseeding
     make clean-dev   # removes .data entirely
+
+`mess seed` requires `--db` and refuses a locked database. It builds the demo
+in a temporary database, then replaces the destination's rows in one transaction.
 
 `.data/` is gitignored, so it can be deleted at any point without touching
 the real database `make run` uses.

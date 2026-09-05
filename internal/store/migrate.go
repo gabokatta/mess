@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -29,18 +28,13 @@ func migrate(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	names := make([]string, len(entries))
-	for i, e := range entries {
-		names[i] = e.Name()
-	}
-	sort.Strings(names)
-
 	var current int
 	if err := db.QueryRow("PRAGMA user_version").Scan(&current); err != nil {
 		return fmt.Errorf("store: read schema version: %w", err)
 	}
 
-	for _, name := range names {
+	for _, entry := range entries {
+		name := entry.Name()
 		version, err := migrationVersion(name)
 		if err != nil {
 			return err

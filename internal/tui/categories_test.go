@@ -9,6 +9,7 @@ import (
 
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/fixture"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 func openCategories(t *testing.T, world fixture.World) (Model, *categoryList) {
@@ -41,8 +42,6 @@ func TestCategoryListOpensFromTheCatalogScreen(t *testing.T) {
 	}
 }
 
-// A category's count is what it is holding, which is what makes a delete
-// refusal actionable and an empty category obvious.
 func TestCategoryListCountsConcepts(t *testing.T) {
 	_, list := openCategories(t, catalogWorld())
 
@@ -58,8 +57,6 @@ func TestCategoryListCountsConcepts(t *testing.T) {
 	}
 }
 
-// Colour is a field now: cycling it writes, and nothing about the list's order
-// changes.
 func TestArrowsCycleTheColourAndWriteIt(t *testing.T) {
 	m, list := openCategories(t, catalogWorld())
 
@@ -93,7 +90,6 @@ func TestArrowsCycleTheColourAndWriteIt(t *testing.T) {
 	}
 }
 
-// Eight slots, and the wrap goes both ways.
 func TestColourCyclingWrapsAtBothEnds(t *testing.T) {
 	tests := []struct {
 		from int
@@ -126,8 +122,6 @@ func TestColourCyclingWrapsAtBothEnds(t *testing.T) {
 	}
 }
 
-// Two categories are allowed the same colour: the catalog can be larger than
-// the palette, and every screen prints the name beside the hue.
 func TestTwoCategoriesMayShareAColour(t *testing.T) {
 	world := fixture.World{}
 	for _, name := range []string{"A", "B", "C", "D", "E", "F", "G", "H", "I"} {
@@ -147,8 +141,6 @@ func TestTwoCategoriesMayShareAColour(t *testing.T) {
 	}
 }
 
-// The index is what a deuteranope reads to see the collision the swatch cannot
-// tell them about.
 func TestCategoryRowShowsTheColourIndex(t *testing.T) {
 	_, list := openCategories(t, catalogWorld())
 
@@ -162,7 +154,6 @@ func TestCategoryRowShowsTheColourIndex(t *testing.T) {
 	}
 }
 
-// The stack is what lets a form open over the list and come back to it.
 func TestRenameFormOpensOverTheListAndReturnsToIt(t *testing.T) {
 	m, list := openCategories(t, catalogWorld())
 	before := list.categories[list.list.cursor]
@@ -188,7 +179,6 @@ func TestRenameFormOpensOverTheListAndReturnsToIt(t *testing.T) {
 	}
 }
 
-// A rename is one UPDATE: the concepts do not move.
 func TestRenameKeepsConceptsAttached(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	var home catalog.Category
@@ -217,8 +207,6 @@ func TestRenameKeepsConceptsAttached(t *testing.T) {
 	}
 }
 
-// The database owns the uniqueness rule; the catalog turns its refusal into a
-// sentence someone can act on.
 func TestRenameToATakenNameIsRefusedWithASentence(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	var home catalog.Category
@@ -244,7 +232,6 @@ func TestRenameToATakenNameIsRefusedWithASentence(t *testing.T) {
 	}
 }
 
-// Renaming to itself is not a clash, and neither is a name nobody holds.
 func TestRenameSucceedsForAFreeName(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	first := m.categories[0]
@@ -256,8 +243,6 @@ func TestRenameSucceedsForAFreeName(t *testing.T) {
 	}
 }
 
-// The list reads the catalog back after a write, so it never shows state the
-// database has moved past.
 func TestCategoryListRefreshesAfterAWrite(t *testing.T) {
 	m, list := openCategories(t, catalogWorld())
 	target := list.categories[list.list.cursor]
@@ -282,8 +267,6 @@ func TestCategoryListRefreshesAfterAWrite(t *testing.T) {
 	}
 }
 
-// Typed into the form and submitted, not written behind it: this is the only
-// path a category is born through.
 func TestCreatingACategoryThroughTheForm(t *testing.T) {
 	m, list := openCategories(t, catalogWorld())
 	before := len(list.categories)
@@ -336,7 +319,6 @@ func typeInto(t *testing.T, m Model, text string) (Model, tea.Cmd) {
 	return m, cmd
 }
 
-// Renaming is the same path, and the concepts stay put across it.
 func TestRenamingThroughTheForm(t *testing.T) {
 	m, list := openCategories(t, catalogWorld())
 	target := list.categories[list.list.cursor]
@@ -359,8 +341,6 @@ func TestRenamingThroughTheForm(t *testing.T) {
 	}
 }
 
-// The lowest free slot, and the least used one once every slot is taken, so a
-// collision does not always land on the first category.
 func TestNextColorIndexFillsGapsThenSpreads(t *testing.T) {
 	tests := []struct {
 		name string
@@ -384,7 +364,6 @@ func TestNextColorIndexFillsGapsThenSpreads(t *testing.T) {
 	}
 }
 
-// The database owns uniqueness; the catalog turns its refusal into a sentence.
 func TestCreatingADuplicateNameIsRefusedWithASentence(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 
@@ -397,8 +376,6 @@ func TestCreatingADuplicateNameIsRefusedWithASentence(t *testing.T) {
 	}
 }
 
-// The concept form picks from a list. It does not make categories any more, so
-// it never asks a second question in the middle of the first.
 func TestConceptFormPickerHasNoCreateOption(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 
@@ -421,8 +398,6 @@ func TestConceptFormPickerHasNoCreateOption(t *testing.T) {
 	}
 }
 
-// The confirm is deleteConceptForm's shape, so the gesture reads the same way
-// on both halves of the catalog.
 func TestDeleteAsksBeforeItActs(t *testing.T) {
 	m, list := openCategories(t, catalogWorld())
 	target := list.categories[list.list.cursor]
@@ -448,7 +423,6 @@ func TestDeleteAsksBeforeItActs(t *testing.T) {
 	}
 }
 
-// The foreign key owns this rule; the catalog turns its refusal into a count.
 func TestDeletingACategoryHoldingConceptsIsRefused(t *testing.T) {
 	m := modelFor(t, catalogWorld(), minUsableWidth, 32)
 	var home catalog.Category
@@ -490,10 +464,8 @@ func TestDeletingAnEmptyCategorySucceeds(t *testing.T) {
 	}
 }
 
-// A concept requires a category, so a catalog with none is a state the app can
-// enter but cannot use.
 func TestTheLastCategoryCannotBeDeleted(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	only, err := catalog.AppendCategory(db, "Home")
 	if err != nil {
 		t.Fatalf("AppendCategory() unexpected error: %v", err)
@@ -513,10 +485,8 @@ func TestTheLastCategoryCannotBeDeleted(t *testing.T) {
 	}
 }
 
-// A restore empties every table and refills it in one transaction, which is
-// why the last-category rule is not a trigger.
 func TestARestoreMayPassThroughAnEmptyCatalog(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	if _, err := catalog.AppendCategory(db, "Home"); err != nil {
 		t.Fatalf("AppendCategory() unexpected error: %v", err)
 	}
@@ -541,9 +511,6 @@ func TestARestoreMayPassThroughAnEmptyCatalog(t *testing.T) {
 	}
 }
 
-// lipgloss counts the border and padding inside Style.Width, so setting it on
-// the box silently gave the rows two columns less than they need and every
-// count wrapped onto its own line.
 func TestCategoryBoxDoesNotWrapItsRows(t *testing.T) {
 	_, list := openCategories(t, catalogWorld())
 
@@ -566,8 +533,6 @@ func TestCategoryBoxDoesNotWrapItsRows(t *testing.T) {
 	}
 }
 
-// The box does not fill the screen the way a huh form does, so it has to be
-// placed rather than left in the corner of the space it was given.
 func TestCategoryBoxIsCentred(t *testing.T) {
 	m, _ := openCategories(t, catalogWorld())
 

@@ -19,14 +19,7 @@ import (
 
 var monthGroups = [...]catalog.ConceptKind{catalog.Income, catalog.Expense, catalog.Saving, catalog.Chore}
 
-// Column budget, left to right: cursor gutter, checkbox, name, gap, category,
-// gap, currency, gap, amount. tableWidth is their sum. The rail beside it
-// sizes itself to its figures, so the composition's full width is measured
-// at render time rather than fixed here.
-//
-// Every width here except the checkbox is shared with the Concepts screen,
-// which lists the same concepts: a column that moved between the two would
-// cost a reader the place they had already found.
+// Month and Concepts share column widths; totals use the remaining space.
 const (
 	checkWidth    = 4
 	nameWidth     = 30
@@ -37,9 +30,6 @@ const (
 	tableWidth = gutterWidth + checkWidth + nameWidth + colGap + categoryWidth +
 		colGap + currencyWidth + colGap + amountWidth
 
-	// railMinInterior is the floor for a totals box's content width, between
-	// its two border columns. A box grows past it to hold a figure that does
-	// not fit; it never shrinks below it, so a quiet month keeps its shape.
 	railMinInterior = 19
 
 	monthGap = 6
@@ -144,9 +134,6 @@ func (m Model) renderMonth() string {
 	sidebar := m.renderRail(totals, rate) + "\n\n" + m.monthMeta(totals)
 	body := joinRowsAndSidebar(rows, sidebar)
 
-	// The whole card travels together: nothing inside it shifts against
-	// anything else, and the slack the month leaves over sits half above it
-	// and half below rather than pooling at the bottom.
 	card := m.periodHeading() + "\n\n" + m.monthColumnHeader() + "\n" + body
 	top := max(0, (m.bodyHeight(0)-lipgloss.Height(card))/2)
 	left := max(0, (m.contentWidth()-lipgloss.Width(body))/2)
@@ -154,10 +141,7 @@ func (m Model) renderMonth() string {
 	return lipgloss.NewStyle().MarginLeft(left).Render(strings.Repeat("\n", top) + card)
 }
 
-// joinRowsAndSidebar places the sidebar beside the rows. The rows stay flush
-// at the top, since the column header sits right above them; the sidebar,
-// which has no header of its own to stay glued to, centers against the
-// rows when it's the shorter of the two.
+// Keep rows aligned with the column header; center a shorter sidebar beside them.
 func joinRowsAndSidebar(rows, sidebar string) string {
 	if pad := (lipgloss.Height(rows) - lipgloss.Height(sidebar)) / 2; pad > 0 {
 		sidebar = strings.Repeat("\n", pad) + sidebar
@@ -165,8 +149,6 @@ func joinRowsAndSidebar(rows, sidebar string) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, rows, strings.Repeat(" ", monthGap), sidebar)
 }
 
-// monthMeta collects the facts that are not money: the checklist count and
-// how many lines the month arithmetic had to drop.
 func (m Model) monthMeta(totals month.Totals) string {
 	done, total := month.DoneCount(m.lines)
 	lines := []string{m.theme.Muted.Render(fmt.Sprintf("done  %d / %d", done, total))}
@@ -183,14 +165,10 @@ func (m Model) monthColumnHeader() string {
 	return m.theme.Muted.Render(row)
 }
 
-// leftCol left-aligns s inside width and appends one column gap.
 func leftCol(width int, s string) string {
 	return lipgloss.NewStyle().Width(width).Render(s) + strings.Repeat(" ", colGap)
 }
 
-// monthAvailHeight is the space left for the rows once the title, its blank
-// line, and the column header are accounted for. It is the ceiling on the
-// viewport: past it the list scrolls instead of growing.
 func (m Model) monthAvailHeight() int {
 	const titleLine, columnHeaderLine, blankLine = 1, 1, 1
 	return m.bodyHeight(titleLine + blankLine + columnHeaderLine)
@@ -212,34 +190,19 @@ func (m Model) monthRows() ([]string, []int) {
 	return groupedRows(groups)
 }
 
-// kindHeader is structural, not categorical: bold foreground and a muted
-// rule, so hue on this screen means category and nothing else. The rule ends
-// in the block's confirmed total, aligned with the amount column above it, so
-// the month's story reads off the table: this much in, this much out, this
-// much put away.
-//
-// The subtotal counts confirmed lines only, like every other figure on the
-// screen. It sums the bright amounts in the column and agrees with the rail;
-// a block with nothing ticked yet carries no total rather than a zero.
 func (m Model) kindHeader(kind catalog.ConceptKind, subtotal decimal.Decimal) string {
 	label := strings.ToUpper(kind.String())
 	if subtotal.IsZero() {
 		return m.ruleHeader(label, tableWidth)
 	}
 
-	// The figure takes the label's weight rather than a hue of its own. It is
-	// part of the header, not another row amount, and bold is what already
-	// separates the two: every colour on this screen names a category, and a
-	// ninth one that named something else would undo that.
 	amount := formatAmount(subtotal)
 	rule := strings.Repeat("─", max(tableWidth-len(label)-len(amount)-2, 0))
 	return m.theme.Title.Render(label) + " " + m.theme.Muted.Render(rule) + " " +
 		m.theme.Title.Render(amount)
 }
 
-// linesOfKind sorts by category name so the category column reads as bands
-// within a kind block; orderedLines and monthRows must use the same order,
-// since the cursor is a flat index over it.
+// Keep this order shared by row rendering and cursor selection.
 func linesOfKind(lines []month.Line, categories []catalog.Category, kind catalog.ConceptKind) []month.Line {
 	var out []month.Line
 	for _, l := range lines {
@@ -281,9 +244,6 @@ func (m Model) renderLine(l month.Line, selected bool) string {
 		return row + lipgloss.NewStyle().Width(amountWidth).Align(lipgloss.Right).Render(edit.View())
 	}
 
-	// Bright means the figure was typed; muted means it is still the
-	// concept's base. Whether it counts is the checkbox's job, two columns
-	// to the left.
 	style := m.theme.Muted
 	if l.Money.Overridden {
 		style = m.theme.Bright
@@ -291,9 +251,6 @@ func (m Model) renderLine(l month.Line, selected bool) string {
 	return row + style.Width(amountWidth).Align(lipgloss.Right).Render(formatAmount(l.Money.Amount.Amount()))
 }
 
-// renderRail is the three totals boxes, each an ARS figure with its USD
-// conversion as a muted subline. No box carries palette hue; the only
-// valence on the screen is Pocket's sign.
 func (m Model) renderRail(totals month.Totals, rate month.Rate) string {
 	boxes := m.railBoxes(totals, rate)
 	interior := m.railInterior(boxes)
@@ -329,11 +286,7 @@ func (m Model) railBoxes(totals month.Totals, rate month.Rate) []railBox {
 	}
 }
 
-// shortfall is how a negative figure is spoken about. The two causes are not
-// the same news, and only one of them is worth colouring: putting away more
-// than the month had spare is a decision, spending past what came in is a
-// loss. A zero shortfall means the figure is not negative and the box stays
-// plain. The label and the alert travel together so neither can appear alone.
+// Overspending uses an alert; saving beyond the remainder uses a neutral label.
 type shortfall struct {
 	label string
 	alert bool
@@ -371,10 +324,7 @@ func (m Model) totalsBox(title string, ars, usd decimal.Decimal, hasRate bool, s
 	}}
 }
 
-// railInterior is the content width every box shares, wide enough for the
-// longest figure the month produced: eight digits widen the rail rather than
-// spilling out of it. It never shrinks below railMinInterior, and never grows
-// past the room the terminal leaves beside the table.
+// Size all boxes for the widest figure, bounded by the space beside the table.
 func (m Model) railInterior(boxes []railBox) int {
 	interior := railMinInterior
 	for _, b := range boxes {
@@ -389,7 +339,7 @@ func (m Model) railInterior(boxes []railBox) int {
 
 func (m Model) renderBox(b railBox, interior int) string {
 	border := m.theme.Muted
-	dashes := max(interior-2-len([]rune(b.title)), 1) // interior less the space either side of the title
+	dashes := max(interior-2-len([]rune(b.title)), 1)
 
 	rendered := []string{
 		border.Render("┌ ") + m.theme.Title.Render(b.title) + border.Render(" "+strings.Repeat("─", dashes)+"┐"),
@@ -400,23 +350,10 @@ func (m Model) renderBox(b railBox, interior int) string {
 	return strings.Join(append(rendered, border.Render("└"+strings.Repeat("─", interior)+"┘")), "\n")
 }
 
-// railField is a box line: a leading space, the label, the value pushed to
-// the right, and two trailing spaces. It pads by hand rather than through
-// Style.Width, because a figure past the box's width must overflow on one
-// line rather than wrap inside it.
+// Pad without Style.Width so wide amounts stay on one line.
 func railField(l railLine, interior int) string {
 	pad := max(interior-3-l.width(), 1)
 	return l.style.Render(" " + l.label + strings.Repeat(" ", pad) + l.value + "  ")
-}
-
-// spread justifies left against right across the content width; used by the
-// views that still run a single-line header (Rates, Year).
-func (m Model) spread(left, right string) string {
-	gap := m.contentWidth() - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		gap = 1
-	}
-	return left + strings.Repeat(" ", gap) + right
 }
 
 func formatAmount(d decimal.Decimal) string {

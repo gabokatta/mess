@@ -8,8 +8,6 @@ import (
 	"github.com/gabokatta/mess/internal/fixture"
 )
 
-// noteGroups is the one place the list's shape is decided: which notes show,
-// under which label, in which order.
 func TestNoteGroupsLabelPinnedAndThisMonth(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{
@@ -39,8 +37,6 @@ func TestNoteGroupsLabelPinnedAndThisMonth(t *testing.T) {
 	}
 }
 
-// The only checkboxes on this card belong to a note's own task list. A note's
-// own state is a word, so the two can never be confused for each other.
 func TestNoteRowsCarryStatusInsteadOfACheckbox(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{
@@ -64,8 +60,6 @@ func TestNoteRowsCarryStatusInsteadOfACheckbox(t *testing.T) {
 	}
 }
 
-// Done is the status cell's job alone. Greying the title as well would spend
-// the brightness channel restating it.
 func TestADoneNoteKeepsAPlainTitle(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{{Title: "Renew car insurance", Done: true}},
@@ -78,8 +72,6 @@ func TestADoneNoteKeepsAPlainTitle(t *testing.T) {
 	}
 }
 
-// Width wraps what overflows; the scroller's cursor math assumes one line per
-// row, so a wrapped title lands the cursor on the wrong note.
 func TestLongNoteTitleStaysOnOneLine(t *testing.T) {
 	m := modelFor(t, fixture.World{
 		Notes: []catalog.Note{
@@ -104,8 +96,6 @@ func TestLongNoteTitleStaysOnOneLine(t *testing.T) {
 	}
 }
 
-// The column header names every column once, above the scroller, and does not
-// repeat inside it.
 func TestNoteColumnHeaderRendersOnceAboveTheList(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 	m.view = viewNotes
@@ -119,8 +109,6 @@ func TestNoteColumnHeaderRendersOnceAboveTheList(t *testing.T) {
 	}
 }
 
-// Group headers are structural: bold foreground and a muted rule, with no
-// palette hue: on this app, colour names a category and nothing else.
 func TestNoteGroupHeadersCarryNoPaletteHue(t *testing.T) {
 	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas"}}}, minUsableWidth, 32)
 	m.view = viewNotes
@@ -133,8 +121,6 @@ func TestNoteGroupHeadersCarryNoPaletteHue(t *testing.T) {
 	}
 }
 
-// The period the screen shows is named once, as the heading, not repeated as a
-// group label two lines under it.
 func TestTheShownPeriodIsNamedOnce(t *testing.T) {
 	m := modelFor(t, fixture.World{Notes: []catalog.Note{{Title: "Ideas", Period: september}}}, minUsableWidth, 32)
 	m.view = viewNotes

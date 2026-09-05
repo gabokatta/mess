@@ -8,10 +8,11 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 func TestNotePinnedAndStampedRoundTrip(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 
 	if _, err := catalog.CreateNote(db, catalog.Note{Title: "Ideas", BodyMD: "- [ ] buy a lamp"}); err != nil {
 		t.Fatalf("CreateNote() unexpected error: %v", err)
@@ -39,8 +40,8 @@ func TestNotePinnedAndStampedRoundTrip(t *testing.T) {
 }
 
 func TestSetNotePeriodPinsAndUnpins(t *testing.T) {
-	db := fixture.DB(t)
-	created := fixture.MustLoad(t, db, fixture.World{
+	db := testutil.DB(t)
+	created := testutil.MustLoad(t, db, fixture.World{
 		Notes: []catalog.Note{{Title: "Ideas", Period: fixture.Period}},
 	}).Notes["Ideas"]
 
@@ -68,8 +69,8 @@ func TestSetNotePeriodPinsAndUnpins(t *testing.T) {
 }
 
 func TestSetNoteBodyAndDone(t *testing.T) {
-	db := fixture.DB(t)
-	created := fixture.MustLoad(t, db, fixture.World{
+	db := testutil.DB(t)
+	created := testutil.MustLoad(t, db, fixture.World{
 		Notes: []catalog.Note{{Title: "Ideas"}},
 	}).Notes["Ideas"]
 

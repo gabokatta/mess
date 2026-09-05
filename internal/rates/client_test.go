@@ -56,7 +56,6 @@ func TestOnReturnsTheHousesMessModels(t *testing.T) {
 	}
 }
 
-// venta is the field to read: you are the one buying dollars.
 func TestSellPicksVenta(t *testing.T) {
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(board))
@@ -75,7 +74,6 @@ func TestSellPicksVenta(t *testing.T) {
 	}
 }
 
-// A completed month's rate is the quote on its last day.
 func TestMonthCloseAsksForTheLastDayOfTheMonth(t *testing.T) {
 	var path string
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -105,9 +103,6 @@ func TestOnReportsANonOKStatus(t *testing.T) {
 	}
 }
 
-// The market is shut on weekends and holidays and the API has no route for
-// the latest quote, so asking for a Saturday has to walk back to Friday rather
-// than leave the app with nothing.
 func TestOnWalksBackToTheLastTradingDay(t *testing.T) {
 	var asked []string
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +133,6 @@ func TestOnWalksBackToTheLastTradingDay(t *testing.T) {
 	}
 }
 
-// A week of silence is an outage, not a long weekend, and it is reported.
 func TestOnGivesUpAfterAWeekOfClosedDays(t *testing.T) {
 	var calls int
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -154,8 +148,6 @@ func TestOnGivesUpAfterAWeekOfClosedDays(t *testing.T) {
 	}
 }
 
-// A 500 is the API failing, not the market being shut, so it is not retried
-// against yesterday.
 func TestOnDoesNotWalkBackPastARealFailure(t *testing.T) {
 	var calls int
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -171,8 +163,6 @@ func TestOnDoesNotWalkBackPastARealFailure(t *testing.T) {
 	}
 }
 
-// A month ending on a weekend has no quote on its last date, and roughly two
-// months in seven end that way.
 func TestMonthCloseReadsTheLastTradingDayOfTheMonth(t *testing.T) {
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		// February 2026 ends on Saturday the 28th.

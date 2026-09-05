@@ -19,9 +19,6 @@ import (
 const (
 	readableColumn = 76
 
-	// Column budget, left to right: cursor gutter, title, gap, progress, gap,
-	// status. The progress column measures the figures it holds, so the list
-	// width is asked for rather than declared.
 	noteTitleWidth  = 30
 	noteMinProg     = 5
 	noteStatusWidth = 6
@@ -40,8 +37,6 @@ const (
 	focusBody
 )
 
-// noteProgWidth is the progress column's width: wide enough for the longest
-// "done / total" the shown list holds, never narrower than its header.
 func (m Model) noteProgWidth() int {
 	width := noteMinProg
 	for _, n := range m.shownNotes() {
@@ -52,9 +47,6 @@ func (m Model) noteProgWidth() int {
 	return width
 }
 
-// noteListWidth is 56 for every note anyone is likely to write. It is asked
-// for rather than declared because the progress column measures its figures:
-// a note running to "10 / 12" widens the list by two rather than clipping.
 func (m Model) noteListWidth() int {
 	return gutterWidth + noteTitleWidth + colGap + m.noteProgWidth() +
 		colGap + noteStatusWidth + colGap + noteFromWidth
@@ -62,16 +54,12 @@ func (m Model) noteListWidth() int {
 
 func formatProgress(done, total int) string { return fmt.Sprintf("%d / %d", done, total) }
 
-// notePaneWidth is the room left beside the list, capped at the column prose
-// stays readable in and floored so a narrow terminal costs the pane before it
-// costs the list its columns.
+// The list has fixed columns; the body takes the remaining readable width.
 func (m Model) notePaneWidth() int {
 	room := m.contentWidth() - m.noteListWidth() - notesGap
 	return min(max(room, notePaneFloor), readableColumn)
 }
 
-// editorWidth is the writer's column, not the reader's. The editor is
-// full-screen, so it must not inherit the pane's narrower width.
 func (m Model) editorWidth() int { return min(m.contentWidth(), readableColumn) }
 
 // noteGroup is one labelled block of the list. Membership is a query, so a
@@ -81,8 +69,6 @@ type noteGroup struct {
 	notes []catalog.Note
 }
 
-// noteGroups decides the whole shape of the list: which notes show, under
-// which label, in which order. Every other reader flattens it.
 func (m Model) noteGroups() []noteGroup {
 	carried := m.selectNotes(m.carried)
 	// Oldest first: the thing avoided longest leads the block.
@@ -105,9 +91,7 @@ func (m Model) noteGroups() []noteGroup {
 	return groups
 }
 
-// carried is the one group whose membership is a state rather than an
-// identity: open, and filed to a month earlier than the one on screen. Closing
-// a note is therefore what removes it from the list.
+// Closing an older note removes it from this period's carried-over group.
 func (m Model) carried(n catalog.Note) bool {
 	return !n.Done && !n.Period.IsZero() && n.Period.Before(m.period)
 }
@@ -119,11 +103,10 @@ func (m Model) selectNotes(keep func(catalog.Note) bool) []catalog.Note {
 			out = append(out, n)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
 	return out
 }
 
-// shownNotes is the flat list the cursor indexes, in the order it renders.
+// Flatten the displayed groups in cursor order.
 func (m Model) shownNotes() []catalog.Note {
 	var out []catalog.Note
 	for _, g := range m.noteGroups() {
@@ -304,9 +287,6 @@ func (m Model) renderNotes() string {
 	return lipgloss.NewStyle().MarginLeft(left).Render(strings.Repeat("\n", top) + card)
 }
 
-// renderNotePane is the cursor note itself: a title, the facts about it, and
-// its rendered body. It has a heading of its own, so it stays flush with the
-// top of the list rather than centering against it.
 func (m Model) renderNotePane() string {
 	n, ok := m.cursorNote()
 	if !ok {
@@ -318,8 +298,6 @@ func (m Model) renderNotePane() string {
 	return title + "\n" + facts + "\n" + m.detail.View() + m.scrollHint(m.detail, gutterWidth)
 }
 
-// noteFacts is what the pane says about a note besides its body: whether it is
-// closed, where it belongs, and how far into its task list you are.
 func (m Model) noteFacts(n catalog.Note) []string {
 	facts := []string{noteStatusWord(n)}
 	switch {
@@ -341,8 +319,6 @@ func (m Model) noteColumnHeader() string {
 	return m.theme.Muted.Render(row)
 }
 
-// notesMeta is how much of the shown writing is closed out. It sits below the
-// list, away from the notes themselves.
 func (m Model) notesMeta() string {
 	shown := m.shownNotes()
 	done, carried := 0, 0
@@ -356,45 +332,23 @@ func (m Model) notesMeta() string {
 	}
 
 	lines := []string{m.theme.Muted.Render(fmt.Sprintf("done  %d / %d", done, len(shown)))}
-	// The count is the receipt for a row that vanishes when you close it, and
-	// the one figure on this screen worth acting on. Colouring every overdue
-	// row instead would stop meaning anything by the third one.
 	if carried > 0 {
 		lines = append(lines, m.theme.Alert.Render(fmt.Sprintf("carried  %d", carried)))
 	}
 	return strings.Join(lines, "\n")
 }
 
-// notesAvailHeight is the room a block beside the heading gets, once the
-// heading, its blank line, and a line kept back for a scroll hint are spent.
-// Both blocks take their viewport height from it, so the card's two halves
-// cannot drift apart.
 func (m Model) notesAvailHeight() int {
 	const headingLine, blankLine = 1, 1
 	return max(m.bodyHeight(headingLine+blankLine), 1)
 }
 
-// notesListHeight is the list block whole: its column header, its rows, the
-// blank line, and the meta cluster. The cluster grows a line when the month is
-// carrying something, so it is measured rather than assumed.
 func (m Model) notesListHeight(rows int) int {
 	const columnHeaderLine, metaBlank = 1, 1
 	return min(columnHeaderLine+rows+metaBlank+lipgloss.Height(m.notesMeta()), m.notesAvailHeight())
 }
 
-// notesLeading is how far each block is pushed down inside the card, given how
-// tall the two of them came out.
-//
-// A pane that fits beside the list starts level with the list's column header:
-// two headings side by side, which is what makes the card read as one thing. A
-// pane too tall for that room stops hanging off the list's top edge and centres
-// on it instead, growing into the empty rows above the list as well as the ones
-// below, so a long note spends the whole screen rather than half of it.
-//
-// The list does not move between those two cases. Its own offset absorbs
-// exactly half of whatever the pane grew by, and the card's centring gives
-// back the other half, so the arithmetic cancels: wherever the list sits for a
-// one-line note is where it sits for a forty-line one.
+// Keep the list's position stable while a taller body uses the space above and below it.
 func (m Model) notesLeading(list, pane int) (listLead, paneLead int) {
 	const headingLines = 2
 	if extra := pane - list; extra > 0 {
@@ -408,9 +362,6 @@ func (m Model) listViewHeight(rows int) int {
 	return max(m.notesListHeight(rows)-columnHeaderLine-metaBlank-lipgloss.Height(m.notesMeta()), 1)
 }
 
-// paneViewHeight is the whole body less the pane's own title and facts line.
-// The pane may use every row the screen has; where it ends up sitting is
-// notesLeading's problem, not its size's.
 func (m Model) paneViewHeight() int {
 	const titleLine, factsLine = 1, 1
 	return max(m.bodyHeight(0)-titleLine-factsLine, 1)
@@ -432,9 +383,6 @@ func (m Model) noteRows() ([]string, []int) {
 }
 
 func (m Model) renderNoteRow(n catalog.Note, selected bool) string {
-	// One cursor is live at a time. The list keeps a muted marker while the
-	// body has focus, so you can still see which note is on screen without
-	// two accented gutters claiming the keys.
 	cursor := strings.Repeat(" ", gutterWidth)
 	if selected {
 		style := m.theme.Accent
@@ -466,10 +414,6 @@ func (m Model) renderNoteRow(n catalog.Note, selected bool) string {
 		strings.Repeat(" ", colGap) + m.theme.Muted.Width(noteFromWidth).Render(from)
 }
 
-// renderNoteStatus is the one cell a keypress changes, so it changes word and
-// weight together: feedback you can miss from the far side of the card is not
-// feedback. The title beside it stays plain either way, since restating done
-// in a second channel would spend a signal to say nothing new.
 func (m Model) renderNoteStatus(n catalog.Note) string {
 	style := m.theme.Bright
 	if n.Done {
@@ -485,17 +429,13 @@ func noteStatusWord(n catalog.Note) string {
 	return "open"
 }
 
-// bodyLine is one rendered display line of a note, carrying the ordinal of the
-// checkbox it starts, or -1 when it starts none. Movement stops on every line
-// so the whole note is reachable; the ordinal is what space needs to act.
+// box is the source checkbox index, or -1 for a non-actionable display line.
 type bodyLine struct {
 	text string
 	box  int
 }
 
-// ticks reports the checkbox this line starts, if it starts one. Only an
-// item's first line does: a wrapped continuation carries no glyph, so space
-// does nothing there and the muted gutter says so.
+// Only a checkbox's first display line is actionable, not wrapped continuations.
 func (l bodyLine) ticks() (int, bool) { return l.box, l.box >= 0 }
 
 func (m Model) noteBodyLines() []bodyLine {
@@ -529,9 +469,6 @@ func (m Model) noteBodyLines() []bodyLine {
 	return lines
 }
 
-// noteDetailRows paints the gutter. It is drawn only in the focused block, so
-// one cursor is live at a time, and it takes the accent only where space will
-// act, so a line you can tick reads differently from a line you are reading.
 func (m Model) noteBodyRows(lines []bodyLine) ([]string, []int) {
 	rows := make([]string, len(lines))
 	for i, l := range lines {

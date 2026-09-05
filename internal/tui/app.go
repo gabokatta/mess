@@ -44,6 +44,8 @@ type Model struct {
 	lines    []month.Line
 	year     month.Year
 	notes    []catalog.Note
+	monthSeq uint64
+	yearSeq  uint64
 
 	concepts   []catalog.Concept
 	categories []catalog.Category
@@ -67,9 +69,7 @@ type Model struct {
 	// top one sees input and only the top one renders.
 	modals []modal
 
-	// A refusal has to outlive the reload that follows it. flashSeq is what
-	// lets the newest message win: an older one's timer carries an older
-	// sequence and clears nothing.
+	// Timer sequence numbers prevent an older timer from clearing a newer flash.
 	flash    string
 	flashSeq int
 }
@@ -80,8 +80,7 @@ const flashDuration = 4 * time.Second
 
 type flashExpired struct{ seq int }
 
-// flashError puts an error under the body and schedules its removal. A nil
-// error is not an event, so it neither shows nor clears anything.
+// A nil error leaves the current flash and its timer alone.
 func (m Model) flashError(err error) (Model, tea.Cmd) {
 	if err == nil {
 		return m, nil
@@ -92,8 +91,7 @@ func (m Model) flashError(err error) (Model, tea.Cmd) {
 	return m, tea.Tick(flashDuration, func(time.Time) tea.Msg { return flashExpired{seq: seq} })
 }
 
-// clearFlash drops the message and orphans its timer, so an action that
-// succeeded takes the refusal before it off the screen.
+// Invalidate the pending timer as well as clearing the message.
 func (m Model) clearFlash() Model {
 	m.flash = ""
 	m.flashSeq++
@@ -114,8 +112,7 @@ func New(db *sql.DB) Model {
 	}
 }
 
-// Init reads through the savedMsg that seeding reports, so the first catalog
-// read cannot race the seed.
+// The seed's savedMsg starts the first load after default categories exist.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		tea.RequestBackgroundColor,
@@ -125,10 +122,9 @@ func (m Model) Init() tea.Cmd {
 	)
 }
 
-func (m Model) reload() tea.Cmd {
+func (m *Model) reload() tea.Cmd {
 	return tea.Batch(
-		loadMonth(m.db, m.period),
-		loadYear(m.db, m.period.Year(), m.fx()),
+		m.loadMonth(),
 		loadNotes(m.db),
 		loadCatalog(m.db),
 		loadRates(m.db),
@@ -158,30 +154,50 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		return m.handleKey(msg)
 
 	case monthMsg:
+		if msg.seq != m.monthSeq {
+			return m, nil
+		}
+		if msg.err != nil {
+			return m.flashError(msg.err)
+		}
 		m.lines = msg.lines
-		return m.flashError(msg.err)
 
 	case yearMsg:
+		if msg.seq != m.yearSeq {
+			return m, nil
+		}
+		if msg.err != nil {
+			return m.flashError(msg.err)
+		}
 		m.year = msg.year
-		return m.flashError(msg.err)
 
 	case notesMsg:
+		if msg.err != nil {
+			return m.flashError(msg.err)
+		}
 		m.notes = msg.notes
-		return m.flashError(msg.err)
 
 	case catalogMsg:
+		if msg.err != nil {
+			return m.flashError(msg.err)
+		}
 		m.concepts, m.categories = msg.concepts, msg.categories
-		return m.flashError(msg.err)
 
 	case ratesMsg:
+		if msg.err != nil {
+			return m.flashError(msg.err)
+		}
 		m.stored, m.settings = msg.stored, msg.settings
-		next, cmd := m.flashError(msg.err)
-		return next, tea.Batch(cmd, loadYear(next.db, next.period.Year(), next.fx()))
+		cmd := m.loadYear()
+		return m, cmd
 
 	case quotesMsg:
+		if msg.err != nil {
+			return m.flashError(msg.err)
+		}
 		m.quotes = msg.quotes
-		next, cmd := m.flashError(msg.err)
-		return next, tea.Batch(cmd, loadYear(next.db, next.period.Year(), next.fx()))
+		cmd := m.loadYear()
+		return m, cmd
 
 	case backfilledMsg:
 		if msg.saved == 0 {
@@ -201,7 +217,8 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 			m = m.clearFlash()
 		}
 		next, cmd := m.flashError(msg.err)
-		return next, tea.Batch(cmd, next.reload())
+		reload := next.reload()
+		return next, tea.Batch(cmd, reload)
 
 	default:
 		return m.forwardToModal(msg)
@@ -216,8 +233,7 @@ func (m Model) topModal() modal {
 	return m.modals[len(m.modals)-1]
 }
 
-// A modal's Update says what should be on top when it returns: itself to stay,
-// nil to close, and anything else to open over it.
+// Update returns itself to stay open, nil to close, or another modal to push.
 func (m Model) forwardToModal(msg tea.Msg) (Model, tea.Cmd) {
 	top := m.topModal()
 	if top == nil {
@@ -313,13 +329,15 @@ func (m Model) shiftPeriod(delta int) (Model, tea.Cmd) {
 func (m Model) goTo(p domain.Period) (Model, tea.Cmd) {
 	previousYear := m.period.Year()
 	m.period = p
+	m.lines = nil
+	m.year = month.Year{Year: p.Year()}
 	m.monthList.cursor = 0
 	m.yearList.cursor = 0
 	m.notesList.cursor = 0
 	m.ratesList.cursor = int(p.Month()) - 1
 	m.notesFocus = focusList
 
-	cmds := []tea.Cmd{loadMonth(m.db, m.period), loadYear(m.db, m.period.Year(), m.fx())}
+	cmds := []tea.Cmd{m.loadMonth(), m.loadYear()}
 	if m.period.Year() != previousYear {
 		cmds = append(cmds, backfillCloses(m.db, m.client, m.period.Year(), m.today))
 	}
@@ -361,15 +379,8 @@ func (m Model) sync() Model {
 	case viewMonth:
 		m.monthList.cursor = clamp(m.monthList.cursor, len(m.lines))
 		rows, anchors := m.monthRows()
-		// A month that fits gets a viewport its own size, so renderMonth can
-		// centre the card rather than pad it out; a month that doesn't fills
-		// the screen, keeping a line back for the scroll hint.
-		avail := m.monthAvailHeight()
-		height := max(len(rows), 1)
-		if len(rows) > avail {
-			height = max(avail-1, 1)
-		}
-		m.monthList = m.monthList.show(rows, anchors, tableWidth, height)
+		m.monthList = m.monthList.show(rows, anchors, tableWidth,
+			viewportHeight(len(rows), m.monthAvailHeight()))
 	case viewYear:
 		// The list has no cursor of its own to render: up and down pan the
 		// viewport, since nothing on this screen opens.
@@ -386,9 +397,7 @@ func (m Model) sync() Model {
 		m.notesList = m.notesList.show(rows, anchors, m.noteListWidth(),
 			viewportHeight(len(rows), m.listViewHeight(len(rows))))
 
-		// The body is rendered once and then painted: the cursor has to be
-		// clamped before the gutter is drawn, and running the markdown through
-		// glamour twice a frame to get there is not worth it.
+		// Clamp before painting the gutter, using the same rendered lines.
 		lines := m.noteBodyLines()
 		m.detail.cursor = clamp(m.detail.cursor, len(lines))
 		body, stops := m.noteBodyRows(lines)
@@ -408,9 +417,6 @@ func (m Model) sync() Model {
 	return m
 }
 
-// Set above what the layout strictly needs: mess is full-screen only. The
-// floor is Year's: two twelve-month charts beside each other, then a category
-// ranking beside four totals boxes, all on one card.
 const (
 	minUsableWidth        = 135
 	minUsableHeight       = 30

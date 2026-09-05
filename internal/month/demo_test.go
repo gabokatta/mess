@@ -9,16 +9,15 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
-// June is the one anchor whose eighteen months of history land exactly on a
-// calendar year boundary, so the year before it comes back full.
 func TestDemoIsAWorldWorthOpening(t *testing.T) {
 	anchor := domain.NewPeriod(2026, time.June)
 	oldest := anchor.AddMonths(-17)
 
-	db := fixture.DB(t)
-	fixture.MustLoad(t, db, fixture.Demo(anchor))
+	db := testutil.DB(t)
+	testutil.MustLoad(t, db, fixture.Demo(anchor))
 
 	anchorMonth, err := Load(db, anchor)
 	if err != nil {

@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 
 	"github.com/gabokatta/mess/internal/backup"
-	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
 	"github.com/gabokatta/mess/internal/store"
@@ -41,7 +41,7 @@ func run(args []string, stdout io.Writer) error {
 }
 
 func runTUI(args []string) error {
-	fs := flag.NewFlagSet("mess", flag.ExitOnError)
+	fs := flag.NewFlagSet("mess", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "database path (default: user config dir)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -63,7 +63,7 @@ func runTUI(args []string) error {
 }
 
 func runExport(args []string, stdout io.Writer) error {
-	fs := flag.NewFlagSet("mess export", flag.ExitOnError)
+	fs := flag.NewFlagSet("mess export", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "database path (default: user config dir)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -84,16 +84,13 @@ func runExport(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := json.NewEncoder(stdout).Encode(data); err != nil {
-		return err
-	}
-	return catalog.MarkExported(s.DB(), time.Now())
+	return json.NewEncoder(stdout).Encode(data)
 }
 
 type confirm func(dbPath string) (bool, error)
 
 func runImport(args []string, stdout io.Writer, ask confirm) error {
-	fs := flag.NewFlagSet("mess import", flag.ExitOnError)
+	fs := flag.NewFlagSet("mess import", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "database path (default: user config dir)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -102,12 +99,13 @@ func runImport(args []string, stdout io.Writer, ask confirm) error {
 		return fmt.Errorf("usage: mess import <file>")
 	}
 
-	raw, err := os.ReadFile(fs.Arg(0))
+	file, err := os.Open(fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	var data backup.Data
-	if err := json.Unmarshal(raw, &data); err != nil {
+	defer file.Close()
+	data, err := backup.Decode(file)
+	if err != nil {
 		return err
 	}
 
@@ -153,24 +151,20 @@ func confirmReplace(dbPath string) (bool, error) {
 }
 
 func runSeed(args []string, stdout io.Writer) error {
-	fs := flag.NewFlagSet("mess seed", flag.ExitOnError)
-	dbPath := fs.String("db", "", "database path (default: user config dir)")
+	fs := flag.NewFlagSet("mess seed", flag.ContinueOnError)
+	dbPath := fs.String("db", "", "database path to replace with demo data (required)")
 	periodFlag := fs.String("period", "", "pin the anchor month, YYYY-MM (default: the current month)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	path, err := resolveDBPath(*dbPath)
-	if err != nil {
-		return err
+	if *dbPath == "" || fs.NArg() != 0 {
+		return fmt.Errorf("usage: mess seed --db <path> [--period YYYY-MM]")
 	}
+	path := *dbPath
 
 	anchor, err := resolveAnchor(*periodFlag)
 	if err != nil {
-		return err
-	}
-
-	if err := removeDatabaseFiles(path); err != nil {
 		return err
 	}
 
@@ -180,8 +174,26 @@ func runSeed(args []string, stdout io.Writer) error {
 	}
 	defer s.Close()
 
-	loaded, err := fixture.Load(s.DB(), fixture.Demo(anchor))
+	dir, err := os.MkdirTemp("", "mess-seed-")
 	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	demo, err := store.Open(filepath.Join(dir, "demo.db"))
+	if err != nil {
+		return err
+	}
+	defer demo.Close()
+
+	loaded, err := fixture.Load(demo.DB(), fixture.Demo(anchor))
+	if err != nil {
+		return err
+	}
+	data, err := backup.Export(demo.DB())
+	if err != nil {
+		return err
+	}
+	if err := backup.Import(s.DB(), data); err != nil {
 		return err
 	}
 
@@ -195,16 +207,6 @@ func resolveAnchor(override string) (domain.Period, error) {
 		return domain.ParsePeriod(override)
 	}
 	return domain.PeriodFromTime(time.Now()), nil
-}
-
-// Exact names rather than a glob, since path's directory also holds snapshots.
-func removeDatabaseFiles(path string) error {
-	for _, suffix := range []string{"", "-wal", "-shm", ".lock"} {
-		if err := os.Remove(path + suffix); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("seed: remove %s: %w", path+suffix, err)
-		}
-	}
-	return nil
 }
 
 func resolveDBPath(override string) (string, error) {

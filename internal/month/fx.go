@@ -30,21 +30,6 @@ type Rate struct {
 
 func (r Rate) OK() bool { return r.Origin != RateNone }
 
-func (r Rate) Label() string {
-	switch r.Origin {
-	case RateLive:
-		return "live"
-	case RateClose:
-		return "close"
-	case RateManual:
-		return "manual"
-	case RateInherited:
-		return "inherited from " + r.From.String()
-	default:
-		return "no rate"
-	}
-}
-
 // FxTable is every period's rate at once: stored closes plus today's quote
 // for the running month. Conversion is read-time, so corrections cascade.
 type FxTable struct {

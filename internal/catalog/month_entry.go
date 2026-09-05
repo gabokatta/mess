@@ -8,22 +8,16 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 )
 
-// MonthEntry is one concept's state in one period. Amount overrides the
-// concept's base; Done is the tick, and the tick is what makes the line count
-// toward the month's arithmetic, whether the amount is typed or the base.
+// Only Done entries contribute to totals. A nil Amount uses the concept's base.
 type MonthEntry struct {
 	ConceptID int64
 	Period    domain.Period
-	Amount    *decimal.Decimal // nil means the concept's base stands
+	Amount    *decimal.Decimal
 	Done      bool
 }
 
-// SetMonthEntryAmount sets the override for concept in period, or clears it
-// when amount is nil. Typing a figure ticks the line: entering a value is
-// accepting it, and a correction that silently did not count would be the
-// same trap as a base that could not be accepted. Clearing back to the base
-// leaves the tick alone, since the base is a value the line can still stand
-// on. Unticking stays an explicit act.
+// Setting an amount confirms the entry. Clearing it restores the base without
+// changing Done; unconfirming requires SetMonthEntryDone.
 func SetMonthEntryAmount(db *sql.DB, conceptID int64, period domain.Period, amount *decimal.Decimal) error {
 	_, err := db.Exec(`
 		INSERT INTO month_entry (concept_id, period, amount, done)
@@ -54,8 +48,14 @@ func nullableAmount(amount *decimal.Decimal) any {
 }
 
 func MonthEntries(db *sql.DB, period domain.Period) ([]MonthEntry, error) {
+	return MonthEntriesBetween(db, period, period)
+}
+
+// MonthEntriesBetween includes both endpoint months.
+func MonthEntriesBetween(db *sql.DB, first, last domain.Period) ([]MonthEntry, error) {
 	rows, err := db.Query(`
-		SELECT concept_id, period, amount, done FROM month_entry WHERE period = ?`, period.String())
+		SELECT concept_id, period, amount, done FROM month_entry
+		WHERE period >= ? AND period <= ?`, first.String(), last.String())
 	if err != nil {
 		return nil, err
 	}

@@ -10,10 +10,11 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 func TestSaveFxCloseInsertsWhenAbsent(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	august := domain.NewPeriod(fixture.Year, time.August)
 
 	if err := catalog.SaveFxClose(db, august, decimal.NewFromInt(1200), domain.Blue); err != nil {
@@ -31,9 +32,8 @@ func TestSaveFxCloseInsertsWhenAbsent(t *testing.T) {
 	}
 }
 
-// A stored close is final, and a manual rate is never replaced automatically.
 func TestSaveFxCloseNeverOverwrites(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	august := domain.NewPeriod(fixture.Year, time.August)
 
 	if err := catalog.SetManualFxRate(db, august, decimal.NewFromInt(1300)); err != nil {
@@ -54,7 +54,7 @@ func TestSaveFxCloseNeverOverwrites(t *testing.T) {
 }
 
 func TestSetManualFxRateOverwritesAStoredClose(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	august := domain.NewPeriod(fixture.Year, time.August)
 
 	if err := catalog.SaveFxClose(db, august, decimal.NewFromInt(1200), domain.Blue); err != nil {
@@ -75,7 +75,7 @@ func TestSetManualFxRateOverwritesAStoredClose(t *testing.T) {
 }
 
 func TestFxRatesComeBackInPeriodOrder(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	for _, m := range []time.Month{time.March, time.January, time.February} {
 		if err := catalog.SaveFxClose(db, domain.NewPeriod(fixture.Year, m), decimal.NewFromInt(1000), domain.Blue); err != nil {
 			t.Fatalf("SaveFxClose(%s) unexpected error: %v", m, err)
@@ -94,7 +94,7 @@ func TestFxRatesComeBackInPeriodOrder(t *testing.T) {
 }
 
 func TestSaveFxCloseRecordsTheHouseItFetchedAt(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	august := domain.NewPeriod(fixture.Year, time.August)
 
 	if err := catalog.SaveFxClose(db, august, decimal.NewFromInt(1200), domain.MEP); err != nil {
@@ -112,10 +112,8 @@ func TestSaveFxCloseRecordsTheHouseItFetchedAt(t *testing.T) {
 	}
 }
 
-// A rate typed by hand was quoted by nobody, so it carries no house rather
-// than the zero one, which would read as Blue.
 func TestSetManualFxRateComesFromNoHouse(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	august := domain.NewPeriod(fixture.Year, time.August)
 
 	if err := catalog.SaveFxClose(db, august, decimal.NewFromInt(1200), domain.Blue); err != nil {
@@ -134,10 +132,8 @@ func TestSetManualFxRateComesFromNoHouse(t *testing.T) {
 	}
 }
 
-// Clearing is how a mistyped manual rate and a close fetched at the wrong
-// house are both undone: the row goes, and backfill refetches it.
 func TestClearFxRateLetsBackfillFillTheHoleAgain(t *testing.T) {
-	db := fixture.DB(t)
+	db := testutil.DB(t)
 	august := domain.NewPeriod(fixture.Year, time.August)
 
 	if err := catalog.SetManualFxRate(db, august, decimal.NewFromInt(1450)); err != nil {

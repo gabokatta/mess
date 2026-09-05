@@ -4,7 +4,9 @@ package backup
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
@@ -25,16 +27,37 @@ type Data struct {
 	Tables map[string][]map[string]any `json:"tables"`
 }
 
+func Decode(r io.Reader) (Data, error) {
+	decoder := json.NewDecoder(r)
+	decoder.UseNumber()
+	decoder.DisallowUnknownFields()
+	var data Data
+	if err := decoder.Decode(&data); err != nil {
+		return Data{}, err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return Data{}, fmt.Errorf("backup: expected one JSON document")
+	}
+	return data, nil
+}
+
 func Export(db *sql.DB) (Data, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return Data{}, err
+	}
+	defer tx.Rollback()
+
 	data := Data{Tables: make(map[string][]map[string]any, len(tableOrder))}
 	for _, table := range tableOrder {
-		rows, err := dumpTable(db, table)
+		rows, err := dumpTable(tx, table)
 		if err != nil {
 			return Data{}, err
 		}
 		data.Tables[table] = rows
 	}
-	return data, nil
+	return data, tx.Commit()
 }
 
 // Snapshot copies the database beside dbPath, timestamped so repeated
@@ -50,6 +73,15 @@ func Snapshot(db *sql.DB, dbPath string) (string, error) {
 // Import replaces every table with data.Tables. There is no version guard: a
 // row shaped for an unknown schema fails its INSERT and rolls the lot back.
 func Import(db *sql.DB, data Data) error {
+	for _, table := range tableOrder {
+		if _, ok := data.Tables[table]; !ok {
+			return fmt.Errorf("backup: missing table %q", table)
+		}
+	}
+	if len(data.Tables) != len(tableOrder) {
+		return fmt.Errorf("backup: contains unknown tables")
+	}
+
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -79,21 +111,30 @@ func insertRow(tx *sql.Tx, table string, row map[string]any) error {
 	sort.Strings(cols)
 
 	vals := make([]any, len(cols))
+	quoted := make([]string, len(cols))
 	placeholders := make([]string, len(cols))
 	for i, c := range cols {
 		vals[i] = row[c]
+		if number, ok := vals[i].(json.Number); ok {
+			value, err := number.Int64()
+			if err != nil {
+				return fmt.Errorf("backup: %s.%s: %w", table, c, err)
+			}
+			vals[i] = value
+		}
+		quoted[i] = `"` + strings.ReplaceAll(c, `"`, `""`) + `"`
 		placeholders[i] = "?"
 	}
 
-	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, strings.Join(quoted, ", "), strings.Join(placeholders, ", "))
 	_, err := tx.Exec(query, vals...)
 	return err
 }
 
 // table is always a tableOrder constant, never caller-supplied, so the
 // interpolation cannot carry injected SQL.
-func dumpTable(db *sql.DB, table string) ([]map[string]any, error) {
-	rows, err := db.Query("SELECT * FROM " + table)
+func dumpTable(tx *sql.Tx, table string) ([]map[string]any, error) {
+	rows, err := tx.Query("SELECT * FROM " + table)
 	if err != nil {
 		return nil, err
 	}

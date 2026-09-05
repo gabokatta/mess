@@ -17,13 +17,7 @@ import (
 	"github.com/gabokatta/mess/internal/rates"
 )
 
-// Column budget, left to right: cursor gutter, month, gap, rate, gap, delta,
-// gap, source, gap, house. The month cell renders three letters and headers as
-// five: the year is on the title line and the arrows step by year, so the long
-// form buys nothing and two columns is cheap for a header that reads.
-//
-// The rate column is measured against the year's own figures, floored here.
-// Everything else is a label and is fixed.
+// Measure the rate column against its values; other columns have fixed widths.
 const (
 	rateMonthWidth  = 5
 	rateAmountMin   = 9
@@ -33,9 +27,7 @@ const (
 	rateSpreadWidth = 4
 )
 
-// The pane is fixed, not measured: it holds labels and short figures, and 35
-// is what a house row needs beside its sell and its spread. Concepts settled
-// that rule.
+// Keep the pane width stable as the selected rate changes.
 const (
 	ratePaneWidth = 35
 	ratePaneLabel = 10
@@ -54,10 +46,7 @@ const (
 	statusPending   rateStatus = "pending"
 )
 
-// rateRow is one month of the shown year, resolved the way every other screen
-// resolves it. House is the quote a stored close was drawn from, and stays nil
-// for every other status: an inherited row stores nothing of its own, and a
-// manual one came from nobody.
+// House is present for stored closes and live quotes, absent for manual and inherited rates.
 type rateRow struct {
 	period   domain.Period
 	rate     month.Rate
@@ -69,16 +58,14 @@ type rateRow struct {
 	current  bool
 }
 
-// measured is a row carrying a rate of its own rather than one resolved for
-// it: the close that was fetched, the value that was typed, today's quote.
+// Inherited rates have no new measurement and do not contribute a monthly delta.
 func (r rateRow) measured() bool {
 	return r.status == statusClose || r.status == statusManual || r.status == statusLive
 }
 
 var hundred = decimal.NewFromInt(100)
 
-// rateRows is the one place the table's shape is decided. renderRates draws
-// what this returns and decides nothing itself.
+// Resolve table rows once per call, with future months left pending.
 func (m Model) rateRows() []rateRow {
 	fx := m.fx()
 	stored := make(map[domain.Period]catalog.FxRate, len(m.stored))
@@ -92,9 +79,6 @@ func (m Model) rateRows() []rateRow {
 		p := domain.NewPeriod(m.period.Year(), time.Month(i+1))
 		row := rateRow{period: p, current: p.Equal(m.period)}
 
-		// A month nobody has reached takes no rate at all. FxTable inherits
-		// forward without end, so December would otherwise resolve to the last
-		// close stored and read as a fact about December.
 		if !p.After(m.today) {
 			row.rate = fx.At(p)
 		}
@@ -109,9 +93,6 @@ func (m Model) rateRows() []rateRow {
 		}
 		row.mismatch = row.house != nil && *row.house != m.settings.FxHouse
 
-		// Only a month that was measured moves. An inherited row carries the
-		// month before it verbatim, so a delta there would report a flat
-		// market where there was no measurement at all.
 		if row.measured() && !row.rate.Value.IsZero() {
 			if !previous.IsZero() {
 				row.delta = row.rate.Value.Sub(previous).Div(previous).Mul(hundred)
@@ -139,7 +120,6 @@ func statusOf(rate month.Rate) rateStatus {
 	}
 }
 
-// cursorRate is the row the gutter is on, which is what e and d act upon.
 func (m Model) cursorRate() rateRow {
 	rows := m.rateRows()
 	return rows[clamp(m.ratesList.cursor, len(rows))]
@@ -201,8 +181,6 @@ func (m Model) manualRateForm(period domain.Period) *form {
 		})
 }
 
-// rateAmountWidth measures the rate column against the year's own figures, so
-// a rate that outgrows the column widens it rather than overflowing the row.
 func (m Model) rateAmountWidth() int {
 	width := rateAmountMin
 	for _, r := range m.rateRows() {
@@ -243,10 +221,7 @@ func (m Model) rateTableRow(r rateRow, onCursor bool, amount int) string {
 		gutter = m.theme.Accent.Render("> ")
 	}
 
-	// The month the rest of the app is showing is underlined, since accent is
-	// the cursor and this row has to stay marked while the cursor is elsewhere.
-	// Only the three letters carry the rule; padding it would draw a five-wide
-	// underscore under a three-letter word.
+	// Underline only the month text, keeping padding outside the style.
 	label := m.theme.Bright
 	if r.current {
 		label = label.Underline(true)
@@ -282,9 +257,7 @@ func (m Model) rateTableRow(r rateRow, onCursor bool, amount int) string {
 		houseStyle.Render(house)
 }
 
-// signedPercent always carries its sign, so a column of moves reads as
-// direction before it reads as size. The decimal separator is the comma every
-// other figure in the app is written with.
+// Include the sign and use the same decimal comma as other displayed amounts.
 func signedPercent(d decimal.Decimal) string {
 	s := strings.Replace(d.StringFixed(1), ".", ",", 1) + "%"
 	if !d.IsNegative() {
@@ -310,9 +283,6 @@ func (m Model) renderRates() string {
 
 	card := title + "\n\n" + body + "\n\n" + m.renderDeltaChart(m.ratesCardWidth(), m.ratesPlot())
 
-	// The plot stops growing at yearPlotHeight, so a tall terminal has slack
-	// left over. It goes to the margins above and below rather than under the
-	// chart, where it read as the card having fallen off the top.
 	top := max(0, (m.bodyHeight(0)-lipgloss.Height(card))/2)
 	left := max(0, (m.contentWidth()-m.ratesCardWidth())/2)
 	return lipgloss.NewStyle().MarginLeft(left).Render(strings.Repeat("\n", top) + card)
@@ -320,9 +290,6 @@ func (m Model) renderRates() string {
 
 func (m Model) ratesCardWidth() int { return m.ratesTableWidth() + ratesGap + ratePaneWidth }
 
-// rateHeader is the year with a breakdown of where its rates came from. It
-// names only the states that occurred, so a year of clean closes reads as one
-// count rather than as five, four of them zero.
 func (m Model) rateHeader() string {
 	counts := make(map[rateStatus]int, 5)
 	mismatched := 0
@@ -389,12 +356,6 @@ func quoteFor(quotes []rates.Quote, house domain.FxHouse) (rates.Quote, bool) {
 	return rates.Quote{}, false
 }
 
-// ratePane is the cursor month's provenance and nothing else. What a rate went
-// on to convert lives on Month and Year, one tab away.
-//
-// A line is left out rather than blanked when the row has no such fact: a
-// manual rate was quoted by nobody on no day, and an inherited one stores
-// nothing of its own.
 func (m Model) ratePane(r rateRow) string {
 	lines := []string{
 		m.theme.Title.Render(strings.ToUpper(r.period.Month().String()) + " " + strconv.Itoa(r.period.Year())),
@@ -433,10 +394,6 @@ func (m Model) paneLine(label, value string) string {
 	return m.theme.Muted.Render(padRight(label, ratePaneLabel)) + m.theme.Bright.Render(value)
 }
 
-// rateDeltaBars is the table's Δ column as a chart. Levels would draw a solid
-// block: a year running 1.050 to 1.520 puts every bar between 69 and 100
-// percent of the tallest. The move has shape, and the month the peso ran is
-// visible in it.
 func (m Model) rateDeltaBars() []yearBar {
 	rows := m.rateRows()
 	bars := make([]yearBar, len(rows))
@@ -451,8 +408,7 @@ func (m Model) rateDeltaBars() []yearBar {
 	return bars
 }
 
-// steepestMove is the largest move of the year either way, so a month the peso
-// strengthened hard in can win the marker as well as one it collapsed in.
+// Compare absolute changes so a decrease can be the year's largest move.
 func (m Model) steepestMove() (rateRow, bool) {
 	var best rateRow
 	found := false
@@ -464,9 +420,7 @@ func (m Model) steepestMove() (rateRow, bool) {
 	return best, found
 }
 
-// yearDrift is the whole year in one figure: the last month carrying a rate
-// against the first, which is what the old "since january" line was reaching
-// for on a screen where January is not always the first month with a rate.
+// Compare the first and last available rates, even when January has none.
 func (m Model) yearDrift() (decimal.Decimal, bool) {
 	var first, last decimal.Decimal
 	for _, r := range m.rateRows() {
@@ -493,8 +447,6 @@ func (m Model) renderDeltaChart(card, plot int) string {
 	return head + "\n\n" + m.renderPlot(bars, barWidth, plot) + "\n" + m.renderAxis(bars, barWidth, width)
 }
 
-// deltaChartNote gives the plot's shape two numbers: the month it turns at,
-// and what the whole year came to.
 func (m Model) deltaChartNote(room int) string {
 	var left, right string
 	if steepest, ok := m.steepestMove(); ok {
@@ -517,14 +469,8 @@ func shortMonth(m time.Month) string { return strings.ToLower(m.String()[:3]) }
 // anybody has reached the end of it.
 const ratesMonths = 12
 
-// ratesListHeight is what the table gets after the title, its blank line and
-// the column header. The card below it is drawn from whatever is left.
 func (m Model) ratesListHeight() int { return m.bodyHeight(3) }
 
-// ratesPlot is what the chart gets after the column header, the twelve rows,
-// the blank between them and the chart, and the chart's own five lines of
-// chrome: its title, the caption, a blank, the axis rule and the labels. It
-// gives way before anything else does on a short terminal, the way Year's does.
 func (m Model) ratesPlot() int {
 	const chrome = 1 + ratesMonths + 1 + 5
 	return min(max(m.bodyHeight(2)-chrome, yearPlotMin), yearPlotHeight)

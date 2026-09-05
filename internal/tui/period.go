@@ -18,10 +18,6 @@ func periodStatus(p, today domain.Period) string {
 	}
 }
 
-// periodHeading is a period screen's one heading: the month it shows and where
-// that sits relative to today. Underlined, so it reads as the page's title
-// rather than as another structural label like the group headers below it,
-// which share its bold weight but not its underline.
 func (m Model) periodHeading() string {
 	title := m.theme.Title.Underline(true).
 		Render(strings.ToUpper(m.period.Month().String()) + " " + fmt.Sprint(m.period.Year()))

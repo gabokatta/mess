@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	glamour "charm.land/glamour/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var checkboxGlyphs = []string{"[ ] ", "[✓] "}
@@ -21,24 +22,10 @@ func renderMarkdown(body string, width int, dark bool) (string, error) {
 	return r.Render(body)
 }
 
-// Only a leading glyph counts: a "[ ] " inside prose would take a cursor
-// position and shift every toggle after it onto the wrong line.
+// Only a leading glyph counts; glyphs inside prose must not shift checkbox indices.
 func startsWithCheckbox(line string) bool {
-	for i := 0; i < len(line); i++ {
-		switch {
-		case line[i] == ' ' || line[i] == '\t':
-		case line[i] == escape:
-			for i < len(line) && line[i] != 'm' {
-				i++
-			}
-		default:
-			return hasCheckboxGlyph(line[i:])
-		}
-	}
-	return false
+	return hasCheckboxGlyph(strings.TrimLeft(ansi.Strip(line), " \t"))
 }
-
-const escape = 0x1b
 
 func hasCheckboxGlyph(s string) bool {
 	for _, g := range checkboxGlyphs {

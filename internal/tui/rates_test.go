@@ -12,8 +12,6 @@ import (
 	"github.com/gabokatta/mess/internal/month"
 )
 
-// Three houses do not need a cursor: h walks them and commits, and the arrows
-// belong to the table.
 func TestRatesHouseKeyCyclesAndCommits(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m.view = viewRates
@@ -34,7 +32,6 @@ func TestRatesHouseKeyCyclesAndCommits(t *testing.T) {
 	}
 }
 
-// Adopting a house changes every total that runs through a rate.
 func TestFxTableFollowsTheAdoptedHouse(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m.view = viewRates
@@ -50,8 +47,6 @@ func TestFxTableFollowsTheAdoptedHouse(t *testing.T) {
 	}
 }
 
-// e prefills the by-hand editor with the rate currently in effect, for the
-// month under the cursor.
 func TestManualRateFormOpensOnTheCursorPeriod(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m.view = viewRates
@@ -67,8 +62,6 @@ func TestManualRateFormOpensOnTheCursorPeriod(t *testing.T) {
 	}
 }
 
-// A manual rate beats the live quote and, conversion being read-time,
-// cascades through that month's totals.
 func TestManualRateOverridesTheLiveQuote(t *testing.T) {
 	m := modelFor(t, fixture.World{}, 90, 30)
 	m.view = viewRates
@@ -88,9 +81,6 @@ func TestManualRateOverridesTheLiveQuote(t *testing.T) {
 	}
 }
 
-// A weekend has no quotes of its own, so the ones on screen are the last day
-// the market traded. The screen says which day that was rather than letting
-// Friday's numbers pass for today's.
 func TestRatesScreenNamesTheDayItsQuotesAreFrom(t *testing.T) {
 	m := modelFor(t, richWorld(), minUsableWidth, 32)
 	m.view = viewRates

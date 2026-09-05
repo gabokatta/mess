@@ -11,6 +11,7 @@ import (
 	"github.com/gabokatta/mess/internal/domain"
 	"github.com/gabokatta/mess/internal/fixture"
 	"github.com/gabokatta/mess/internal/rates"
+	"github.com/gabokatta/mess/internal/testutil"
 )
 
 // quotedOn is a weekday inside fixture.Period, since a quote always carries
@@ -27,8 +28,8 @@ var defaultQuotes = []rates.Quote{
 // and quotes first, since loadYear reads m.fx().
 func modelFor(t *testing.T, world fixture.World, width, height int) Model {
 	t.Helper()
-	db := fixture.DB(t)
-	fixture.MustLoad(t, db, world)
+	db := testutil.DB(t)
+	testutil.MustLoad(t, db, world)
 
 	m := New(db)
 	// No test reaches the quote API: a refused connection keeps the backfill
@@ -40,11 +41,12 @@ func modelFor(t *testing.T, world fixture.World, width, height int) Model {
 
 	m, _ = send(t, m, tea.WindowSizeMsg{Width: width, Height: height})
 	m, _ = send(t, m, runCmd(t, loadRates(db)), quotesMsg{quotes: defaultQuotes})
+	monthLoad, yearLoad := m.loadMonth(), m.loadYear()
 	m, _ = send(t, m,
-		runCmd(t, loadMonth(db, m.period)),
+		runCmd(t, monthLoad),
 		runCmd(t, loadCatalog(db)),
 		runCmd(t, loadNotes(db)),
-		runCmd(t, loadYear(db, m.period.Year(), m.fx())),
+		runCmd(t, yearLoad),
 	)
 	return m
 }

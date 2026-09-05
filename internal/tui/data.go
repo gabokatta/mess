@@ -15,11 +15,13 @@ import (
 
 type monthMsg struct {
 	lines []month.Line
+	seq   uint64
 	err   error
 }
 
 type yearMsg struct {
 	year month.Year
+	seq  uint64
 	err  error
 }
 
@@ -53,17 +55,21 @@ type backfilledMsg struct {
 	saved int
 }
 
-func loadMonth(db *sql.DB, period domain.Period) tea.Cmd {
+func (m *Model) loadMonth() tea.Cmd {
+	m.monthSeq++
+	db, period, seq := m.db, m.period, m.monthSeq
 	return func() tea.Msg {
 		loaded, err := month.Load(db, period)
-		return monthMsg{lines: loaded.Lines, err: err}
+		return monthMsg{lines: loaded.Lines, seq: seq, err: err}
 	}
 }
 
-func loadYear(db *sql.DB, year int, fx month.FxTable) tea.Cmd {
+func (m *Model) loadYear() tea.Cmd {
+	m.yearSeq++
+	db, year, fx, seq := m.db, m.period.Year(), m.fx(), m.yearSeq
 	return func() tea.Msg {
 		y, err := month.LoadYear(db, year, fx)
-		return yearMsg{year: y, err: err}
+		return yearMsg{year: y, seq: seq, err: err}
 	}
 }
 
@@ -134,11 +140,7 @@ func backfillCloses(db *sql.DB, client *rates.Client, year int, today domain.Per
 	}
 }
 
-// clearRate deletes one period's rate and then refills the hole in the same
-// command, so a row cleared because it was fetched at the wrong house comes
-// straight back at the right one. The backfill's own message is dropped: the
-// savedMsg that follows reloads everything either way, including the case
-// where the refetch found nothing and the month stays empty.
+// Refetch after clearing, then reload even if no replacement quote was available.
 func clearRate(db *sql.DB, client *rates.Client, period, today domain.Period) tea.Cmd {
 	return func() tea.Msg {
 		if err := catalog.ClearFxRate(db, period); err != nil {

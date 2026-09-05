@@ -8,9 +8,6 @@ import (
 	"github.com/gabokatta/mess/internal/catalog"
 )
 
-// Okabe-Ito: distinguishable under common color blindness, on either ground.
-// Its size is the catalog's PaletteSize, which is what a category's stored
-// color_index is pinned to, so a category always names a real slot here.
 var _ [catalog.PaletteSize]color.Color = palette
 
 var palette = [8]color.Color{
@@ -24,8 +21,6 @@ var palette = [8]color.Color{
 	lipgloss.Color("#999999"),
 }
 
-// Reads the category's own colour, so the order categories are listed in has
-// nothing to do with the hue any of them renders in.
 func categoryColor(categories []catalog.Category, categoryID int64) color.Color {
 	for _, c := range categories {
 		if c.ID == categoryID {
