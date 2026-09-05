@@ -48,6 +48,10 @@ type Model struct {
 	concepts   []catalog.Concept
 	categories []catalog.Category
 
+	// Retired concepts are hidden until asked for: the only reason to look at
+	// one is to bring it back, and the meta cluster says how many there are.
+	showRetired bool
+
 	stored []catalog.FxRate
 	quotes []rates.Quote
 	house  int
@@ -59,8 +63,41 @@ type Model struct {
 	detail       scroller
 	notesFocus   notesFocusArea
 
-	modal   modal
-	lastErr error
+	// A stack, so a confirm can open over a modal and return to it. Only the
+	// top one sees input and only the top one renders.
+	modals []modal
+
+	// A refusal has to outlive the reload that follows it. flashSeq is what
+	// lets the newest message win: an older one's timer carries an older
+	// sequence and clears nothing.
+	flash    string
+	flashSeq int
+}
+
+// flashDuration is how long a refusal stays on screen: long enough to read a
+// sentence, short enough to be gone before the next thing you do.
+const flashDuration = 4 * time.Second
+
+type flashExpired struct{ seq int }
+
+// flashError puts an error under the body and schedules its removal. A nil
+// error is not an event, so it neither shows nor clears anything.
+func (m Model) flashError(err error) (Model, tea.Cmd) {
+	if err == nil {
+		return m, nil
+	}
+	m.flash = err.Error()
+	m.flashSeq++
+	seq := m.flashSeq
+	return m, tea.Tick(flashDuration, func(time.Time) tea.Msg { return flashExpired{seq: seq} })
+}
+
+// clearFlash drops the message and orphans its timer, so an action that
+// succeeded takes the refusal before it off the screen.
+func (m Model) clearFlash() Model {
+	m.flash = ""
+	m.flashSeq++
+	return m
 }
 
 func New(db *sql.DB) Model {
@@ -118,24 +155,30 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		return m.handleKey(msg)
 
 	case monthMsg:
-		m.lines, m.lastErr = msg.lines, msg.err
+		m.lines = msg.lines
+		return m.flashError(msg.err)
 
 	case yearMsg:
-		m.year, m.lastErr = msg.year, msg.err
+		m.year = msg.year
+		return m.flashError(msg.err)
 
 	case notesMsg:
-		m.notes, m.lastErr = msg.notes, msg.err
+		m.notes = msg.notes
+		return m.flashError(msg.err)
 
 	case catalogMsg:
-		m.concepts, m.categories, m.lastErr = msg.concepts, msg.categories, msg.err
+		m.concepts, m.categories = msg.concepts, msg.categories
+		return m.flashError(msg.err)
 
 	case ratesMsg:
-		m.stored, m.settings, m.lastErr = msg.stored, msg.settings, msg.err
-		return m, loadYear(m.db, m.period.Year(), m.fx())
+		m.stored, m.settings = msg.stored, msg.settings
+		next, cmd := m.flashError(msg.err)
+		return next, tea.Batch(cmd, loadYear(next.db, next.period.Year(), next.fx()))
 
 	case quotesMsg:
-		m.quotes, m.lastErr = msg.quotes, msg.err
-		return m, loadYear(m.db, m.period.Year(), m.fx())
+		m.quotes = msg.quotes
+		next, cmd := m.flashError(msg.err)
+		return next, tea.Batch(cmd, loadYear(next.db, next.period.Year(), next.fx()))
 
 	case backfilledMsg:
 		if msg.saved == 0 {
@@ -143,9 +186,19 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, loadRates(m.db)
 
+	case flashExpired:
+		if msg.seq == m.flashSeq {
+			m.flash = ""
+		}
+
 	case savedMsg:
-		m.lastErr = msg.err
-		return m, m.reload()
+		// The reload that follows reports success on five messages, and every
+		// one of them used to overwrite the refusal that started it.
+		if msg.err == nil {
+			m = m.clearFlash()
+		}
+		next, cmd := m.flashError(msg.err)
+		return next, tea.Batch(cmd, next.reload())
 
 	default:
 		return m.forwardToModal(msg)
@@ -153,12 +206,31 @@ func (m Model) update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) topModal() modal {
+	if len(m.modals) == 0 {
+		return nil
+	}
+	return m.modals[len(m.modals)-1]
+}
+
+// A modal's Update says what should be on top when it returns: itself to stay,
+// nil to close, and anything else to open over it.
 func (m Model) forwardToModal(msg tea.Msg) (Model, tea.Cmd) {
-	if m.modal == nil {
+	top := m.topModal()
+	if top == nil {
 		return m, nil
 	}
-	next, cmd := m.modal.Update(msg)
-	m.modal = next
+
+	next, cmd := top.Update(msg)
+	switch {
+	case next == nil:
+		m.modals = m.modals[:len(m.modals)-1]
+	case next != top:
+		// A modal opened over another still has to start, the same as one
+		// opened from a screen.
+		m.modals = append(m.modals, next)
+		cmd = tea.Batch(cmd, next.Init())
+	}
 	return m, cmd
 }
 
@@ -166,7 +238,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		return m, tea.Quit
 	}
-	if m.modal != nil {
+	if m.topModal() != nil {
 		return m.forwardToModal(msg)
 	}
 	switch msg.String() {
@@ -208,7 +280,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) openModal(next modal) (Model, tea.Cmd) {
-	m.modal = next
+	m.modals = append(m.modals, next)
 	return m, next.Init()
 }
 
@@ -274,7 +346,12 @@ func (m Model) moveCursor(delta int) Model {
 }
 
 func (m Model) sync() Model {
-	width := m.contentWidth()
+	// A modal holding its own copy of the catalog reads it back after every
+	// write, so the list never shows state the database has moved past.
+	if categories, ok := m.topModal().(*categoryList); ok {
+		categories.refresh(m.categories, m.conceptCounts())
+	}
+
 	switch m.view {
 	case viewMonth:
 		m.monthList.cursor = clamp(m.monthList.cursor, len(m.lines))
@@ -314,7 +391,9 @@ func (m Model) sync() Model {
 	case viewConcepts:
 		m.conceptsList.cursor = clamp(m.conceptsList.cursor, len(m.concepts))
 		rows, anchors := m.conceptRows()
-		m.conceptsList = m.conceptsList.show(rows, anchors, width, m.bodyHeight(2))
+		// Title, its blank line, and the column header sit above the list.
+		m.conceptsList = m.conceptsList.show(rows, anchors, conceptsTableWidth,
+			viewportHeight(len(rows), m.bodyHeight(3)))
 	}
 	return m
 }
@@ -410,16 +489,23 @@ func (m Model) viewContent() string {
 	height := m.contentHeight() - 1 - lipgloss.Height(help)
 	body := lipgloss.NewStyle().Height(height).MaxHeight(height).Render(m.renderBody())
 
+	// Alert, not muted: this line only ever says that something you asked for
+	// did not happen, and the one before it was easy to miss.
 	status := ""
-	if m.lastErr != nil {
-		status = m.theme.Muted.Render(m.lastErr.Error())
+	if m.flash != "" {
+		status = m.theme.Alert.Bold(true).Render(m.flash)
 	}
 	return body + "\n" + status + "\n" + m.helpRow()
 }
 
 func (m Model) renderBody() string {
-	if _, inline := m.modal.(*amountEdit); m.modal != nil && !inline {
-		return m.viewTitle() + "\n\n" + m.modal.View()
+	// A modal that sizes itself to its own content has to be placed, or it
+	// draws in the corner of whatever space it was handed.
+	switch top := m.topModal(); top.(type) {
+	case nil, *amountEdit:
+		// Nothing: the screen renders, and an amount edit draws inside its row.
+	default:
+		return m.viewTitle() + "\n\n" + m.centerInBox(top.View(), 2)
 	}
 	switch m.view {
 	case viewMonth:
@@ -440,8 +526,8 @@ func (m Model) viewTitle() string {
 }
 
 func (m Model) help() string {
-	if m.modal != nil {
-		return m.modal.Help()
+	if top := m.topModal(); top != nil {
+		return top.Help()
 	}
 	keys := m.viewKeys()
 	if m.wandered() {
@@ -462,7 +548,11 @@ func (m Model) viewKeys() []string {
 		}
 		return []string{"↑/↓", "enter read", "space close", "p pin", "n new", "←/→ month"}
 	case viewConcepts:
-		return []string{"↑/↓", "n new", "e edit", "d delete"}
+		keys := []string{"↑/↓", "n new", "e edit", "d delete", "c categories"}
+		if m.retiredCount() > 0 {
+			keys = append(keys, "r retired")
+		}
+		return keys
 	default:
 		return []string{"↑/↓", "enter use house", "e set rate", "←/→ month"}
 	}

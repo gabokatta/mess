@@ -34,7 +34,8 @@ func TestOnReturnsTheHousesMessModels(t *testing.T) {
 		w.Write([]byte(board))
 	})
 
-	quotes, err := client.On(context.Background(), time.Date(2026, time.September, 2, 0, 0, 0, 0, time.UTC))
+	asked := time.Date(2026, time.September, 2, 0, 0, 0, 0, time.UTC)
+	quotes, err := client.On(context.Background(), asked)
 	if err != nil {
 		t.Fatalf("On() unexpected error: %v", err)
 	}
@@ -46,9 +47,9 @@ func TestOnReturnsTheHousesMessModels(t *testing.T) {
 		t.Fatalf("On() returned %d quotes, want 3 (cripto is not a house mess models)", len(quotes))
 	}
 	want := []Quote{
-		{House: domain.Blue, Buy: decimal.NewFromInt(1520), Sell: decimal.NewFromInt(1540)},
-		{House: domain.Official, Buy: decimal.NewFromInt(1485), Sell: decimal.NewFromInt(1535)},
-		{House: domain.MEP, Buy: decimal.NewFromInt(1532), Sell: decimal.NewFromInt(1535)},
+		{House: domain.Blue, Buy: decimal.NewFromInt(1520), Sell: decimal.NewFromInt(1540), Date: asked},
+		{House: domain.Official, Buy: decimal.NewFromInt(1485), Sell: decimal.NewFromInt(1535), Date: asked},
+		{House: domain.MEP, Buy: decimal.NewFromInt(1532), Sell: decimal.NewFromInt(1535), Date: asked},
 	}
 	if diff := cmp.Diff(want, quotes); diff != "" {
 		t.Errorf("On() mismatch (-want +got):\n%s", diff)
@@ -101,5 +102,93 @@ func TestOnReportsANonOKStatus(t *testing.T) {
 
 	if _, err := client.On(context.Background(), time.Now()); err == nil {
 		t.Error("On() should report a non-200 response as an error")
+	}
+}
+
+// The market is shut on weekends and holidays and the API has no route for
+// the latest quote, so asking for a Saturday has to walk back to Friday rather
+// than leave the app with nothing.
+func TestOnWalksBackToTheLastTradingDay(t *testing.T) {
+	var asked []string
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.URL.Path)
+		if r.URL.Path != "/v1/cotizaciones/dolares/2026/09/04" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Write([]byte(board))
+	})
+
+	saturday := time.Date(2026, time.September, 5, 0, 0, 0, 0, time.UTC)
+	quotes, err := client.On(context.Background(), saturday)
+	if err != nil {
+		t.Fatalf("On() unexpected error: %v", err)
+	}
+	if len(quotes) != 3 {
+		t.Fatalf("On() returned %d quotes, want 3", len(quotes))
+	}
+
+	friday := saturday.AddDate(0, 0, -1)
+	if !quotes[0].Date.Equal(friday) {
+		t.Errorf("quote is dated %s, want the Friday it was actually quoted on", quotes[0].Date)
+	}
+	want := []string{"/v1/cotizaciones/dolares/2026/09/05", "/v1/cotizaciones/dolares/2026/09/04"}
+	if diff := cmp.Diff(want, asked); diff != "" {
+		t.Errorf("requests (-want +got):\n%s", diff)
+	}
+}
+
+// A week of silence is an outage, not a long weekend, and it is reported.
+func TestOnGivesUpAfterAWeekOfClosedDays(t *testing.T) {
+	var calls int
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	if _, err := client.On(context.Background(), time.Now()); err == nil {
+		t.Fatal("On() returned no error after a week with no quotes")
+	}
+	if calls != lookback+1 {
+		t.Errorf("made %d requests, want %d — the day asked for plus a week behind it", calls, lookback+1)
+	}
+}
+
+// A 500 is the API failing, not the market being shut, so it is not retried
+// against yesterday.
+func TestOnDoesNotWalkBackPastARealFailure(t *testing.T) {
+	var calls int
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	if _, err := client.On(context.Background(), time.Now()); err == nil {
+		t.Fatal("On() swallowed a 500")
+	}
+	if calls != 1 {
+		t.Errorf("made %d requests, want 1 — an outage is not a closed market", calls)
+	}
+}
+
+// A month ending on a weekend has no quote on its last date, and roughly two
+// months in seven end that way.
+func TestMonthCloseReadsTheLastTradingDayOfTheMonth(t *testing.T) {
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		// February 2026 ends on Saturday the 28th.
+		if r.URL.Path != "/v1/cotizaciones/dolares/2026/02/27" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Write([]byte(board))
+	})
+
+	close, err := client.MonthClose(context.Background(),
+		domain.NewPeriod(2026, time.February), domain.Blue)
+	if err != nil {
+		t.Fatalf("MonthClose() unexpected error: %v", err)
+	}
+	if !close.Equal(decimal.NewFromInt(1540)) {
+		t.Errorf("MonthClose() = %s, want Friday's blue venta 1540", close)
 	}
 }

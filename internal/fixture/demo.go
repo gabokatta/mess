@@ -51,7 +51,8 @@ func demoLastExport(anchor domain.Period) time.Time {
 }
 
 func demoLines(anchor, oldest domain.Period) []demoLine {
-	endedEarly := anchor.AddMonths(-3)
+	endedEarly, endedLongAgo := anchor.AddMonths(-3), anchor.AddMonths(-8)
+	startsLater := anchor.AddMonths(2)
 
 	return []demoLine{
 		{entries: true, concept: Concept{
@@ -72,7 +73,7 @@ func demoLines(anchor, oldest domain.Period) []demoLine {
 			Currency: domain.ARS, Base: "210000", From: oldest,
 		}},
 		{entries: true, concept: Concept{
-			Name: "Refacción Completa del Techo", Category: "Home", Kind: catalog.Expense,
+			Name: "Refacción Completa del Techo de la Casa", Category: "Home", Kind: catalog.Expense,
 			Currency: domain.ARS, Base: "95000", From: oldest,
 		}},
 		{entries: true, concept: Concept{
@@ -119,7 +120,20 @@ func demoLines(anchor, oldest domain.Period) []demoLine {
 		}},
 		{entries: true, concept: Concept{
 			Name: "School Semester Fee", Category: "Subscriptions", Kind: catalog.Expense,
-			Currency: domain.ARS, Base: "150000", Months: domain.Aguinaldo, From: oldest,
+			Currency: domain.ARS, Base: "150000", Months: domain.NewCadence(time.June, time.December), From: oldest,
+		}},
+
+		// Two sparse cadences either side of the cell's cutoff: two months
+		// are named, three or more are counted.
+		{entries: true, concept: Concept{
+			Name: "Property Tax", Category: "Home", Kind: catalog.Expense,
+			Currency: domain.ARS, Base: "240000", From: oldest,
+			Months: domain.NewCadence(time.March, time.June, time.September, time.December),
+		}},
+		{entries: true, concept: Concept{
+			Name: "Vehicle Tax", Category: "Transport", Kind: catalog.Expense,
+			Currency: domain.ARS, Base: "90000", From: oldest,
+			Months: domain.NewCadence(time.February, time.June, time.October),
 		}},
 
 		{entries: true, pending: true, concept: Concept{
@@ -164,6 +178,18 @@ func demoLines(anchor, oldest domain.Period) []demoLine {
 		{entries: true, concept: Concept{
 			Name: "Personal Loan", Category: "Debt", Kind: catalog.Expense,
 			Currency: domain.ARS, Base: "120000", From: oldest, Until: endedEarly,
+		}},
+
+		// One window closed a while back, one closed recently, and one has not
+		// opened yet: the retired block has an order to show and the status
+		// column has all three of its words.
+		{entries: true, concept: Concept{
+			Name: "Gym Membership", Category: "Health", Kind: catalog.Expense,
+			Currency: domain.ARS, Base: "45000", From: oldest, Until: endedLongAgo,
+		}},
+		{concept: Concept{
+			Name: "New Lease", Category: "Home", Kind: catalog.Expense,
+			Currency: domain.ARS, Base: "1100000", From: startsLater,
 		}},
 
 		{entries: true, concept: Concept{

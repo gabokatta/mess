@@ -97,7 +97,12 @@ func (m Model) renderHouses() string {
 		}
 		rows[i] = cursor + name + pair + using
 	}
-	return strings.Join(rows, "\n")
+
+	// The market is shut at weekends and on holidays, so these are the last
+	// day it traded, which is not always today. The date says which.
+	quoted := m.theme.Muted.Render(strings.Repeat(" ", gutterWidth) +
+		"quoted " + m.quotes[0].Date.Format(time.DateOnly))
+	return strings.Join(rows, "\n") + "\n\n" + quoted
 }
 
 func (m Model) yearCloses() []decimal.Decimal {

@@ -76,7 +76,7 @@ func Load(db *sql.DB, w World) (Loaded, error) {
 	}
 
 	for _, c := range w.Concepts {
-		category, err := catalog.FindOrCreateCategory(db, c.Category)
+		category, err := findOrCreateCategory(db, c.Category)
 		if err != nil {
 			return Loaded{}, fmt.Errorf("fixture: category %q: %w", c.Category, err)
 		}
@@ -170,4 +170,20 @@ func Load(db *sql.DB, w World) (Loaded, error) {
 	}
 
 	return loaded, nil
+}
+
+// findOrCreateCategory lets a world name its categories instead of creating
+// them first. That convenience belongs to fixtures: the app creates a category
+// deliberately, through catalog.AppendCategory, and has one path for it.
+func findOrCreateCategory(db *sql.DB, name string) (catalog.Category, error) {
+	categories, err := catalog.Categories(db)
+	if err != nil {
+		return catalog.Category{}, err
+	}
+	for _, c := range categories {
+		if c.Name == name {
+			return c, nil
+		}
+	}
+	return catalog.AppendCategory(db, name)
 }

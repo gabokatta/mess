@@ -33,5 +33,3 @@ func (c Cadence) Months() []time.Month {
 	}
 	return months
 }
-
-var Aguinaldo = NewCadence(time.June, time.December)

@@ -10,10 +10,10 @@ import (
 func TestCreateAndListCategories(t *testing.T) {
 	db := fixture.DB(t)
 
-	if _, err := catalog.CreateCategory(db, "Utilities", 1); err != nil {
+	if _, err := catalog.CreateCategory(db, "Utilities", 1, 1); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
-	if _, err := catalog.CreateCategory(db, "Home", 0); err != nil {
+	if _, err := catalog.CreateCategory(db, "Home", 0, 0); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 
@@ -39,56 +39,37 @@ func TestCreateAndListCategories(t *testing.T) {
 func TestCreateCategoryDuplicateNameFails(t *testing.T) {
 	db := fixture.DB(t)
 
-	if _, err := catalog.CreateCategory(db, "Home", 0); err != nil {
+	if _, err := catalog.CreateCategory(db, "Home", 0, 0); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
-	if _, err := catalog.CreateCategory(db, "Home", 1); err == nil {
+	if _, err := catalog.CreateCategory(db, "Home", 1, 1); err == nil {
 		t.Error("CreateCategory() with a duplicate name should fail the UNIQUE constraint")
 	}
 }
 
-func TestFindOrCreateCategoryReturnsExistingByName(t *testing.T) {
+// Appending puts a category at the end of the list with a colour nobody is
+// using, which is everything the create form has to know.
+func TestAppendCategoryGoesLastWithAFreeColour(t *testing.T) {
 	db := fixture.DB(t)
-	want, err := catalog.CreateCategory(db, "Home", 0)
-	if err != nil {
+	if _, err := catalog.CreateCategory(db, "Home", 0, 0); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 
-	got, err := catalog.FindOrCreateCategory(db, "Home")
+	got, err := catalog.AppendCategory(db, "Utilities")
 	if err != nil {
-		t.Fatalf("FindOrCreateCategory() unexpected error: %v", err)
-	}
-	if got != want {
-		t.Errorf("FindOrCreateCategory() = %+v, want the existing %+v", got, want)
-	}
-
-	all, err := catalog.Categories(db)
-	if err != nil {
-		t.Fatalf("Categories() unexpected error: %v", err)
-	}
-	if len(all) != 1 {
-		t.Errorf("Categories() returned %d rows, want 1 (no duplicate created)", len(all))
-	}
-}
-
-func TestFindOrCreateCategoryCreatesWhenMissing(t *testing.T) {
-	db := fixture.DB(t)
-	if _, err := catalog.CreateCategory(db, "Home", 0); err != nil {
-		t.Fatalf("CreateCategory() unexpected error: %v", err)
-	}
-
-	got, err := catalog.FindOrCreateCategory(db, "Utilities")
-	if err != nil {
-		t.Fatalf("FindOrCreateCategory() unexpected error: %v", err)
+		t.Fatalf("AppendCategory() unexpected error: %v", err)
 	}
 	if got.Name != "Utilities" {
-		t.Errorf("FindOrCreateCategory().Name = %q, want Utilities", got.Name)
+		t.Errorf("AppendCategory().Name = %q, want Utilities", got.Name)
 	}
 	if got.SortOrder != 1 {
-		t.Errorf("FindOrCreateCategory().SortOrder = %d, want 1 (appended)", got.SortOrder)
+		t.Errorf("AppendCategory().SortOrder = %d, want 1 (appended)", got.SortOrder)
+	}
+	if got.ColorIndex != 1 {
+		t.Errorf("AppendCategory().ColorIndex = %d, want the lowest free slot 1", got.ColorIndex)
 	}
 	if got.ID == 0 {
-		t.Error("FindOrCreateCategory() should assign a non-zero ID")
+		t.Error("AppendCategory() should assign a non-zero ID")
 	}
 }
 
@@ -115,7 +96,7 @@ func TestEnsureDefaultCategoriesSeedsAnEmptyTable(t *testing.T) {
 
 func TestEnsureDefaultCategoriesLeavesAnExistingTableAlone(t *testing.T) {
 	db := fixture.DB(t)
-	if _, err := catalog.CreateCategory(db, "Custom", 0); err != nil {
+	if _, err := catalog.CreateCategory(db, "Custom", 0, 0); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 
@@ -129,5 +110,14 @@ func TestEnsureDefaultCategoriesLeavesAnExistingTableAlone(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Name != "Custom" {
 		t.Errorf("Categories() = %+v, want only the pre-existing Custom row", got)
+	}
+}
+
+// The palette has eight slots and the schema says so, which is why paletteAt
+// indexes rather than wrapping defensively.
+func TestColorIndexIsPinnedToThePalette(t *testing.T) {
+	db := fixture.DB(t)
+	if _, err := db.Exec(`INSERT INTO category (name, sort_order, color_index) VALUES ('Bad', 0, 99)`); err == nil {
+		t.Error("a colour index outside the palette should be refused by the schema")
 	}
 }

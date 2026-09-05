@@ -55,11 +55,11 @@ func TestManualRateFormOpensOnTheShownPeriod(t *testing.T) {
 	m, _ = send(t, m, ratesMsg{settings: catalog.Settings{FxHouse: domain.Blue}})
 
 	m, _ = send(t, m, key("e"))
-	if _, ok := m.modal.(*form); !ok {
-		t.Fatalf("modal = %T, want *form", m.modal)
+	if _, ok := m.topModal().(*form); !ok {
+		t.Fatalf("modal = %T, want *form", m.topModal())
 	}
-	if !strings.Contains(m.modal.View(), september.String()) {
-		t.Errorf("form view does not name the shown period:\n%s", m.modal.View())
+	if !strings.Contains(m.topModal().View(), september.String()) {
+		t.Errorf("form view does not name the shown period:\n%s", m.topModal().View())
 	}
 }
 
@@ -105,5 +105,18 @@ func TestYearClosesLeavesUnknownMonthsAtZero(t *testing.T) {
 	}
 	if !closes[8].Equal(decimal.NewFromInt(1540)) {
 		t.Errorf("september = %s, want the live quote", closes[8])
+	}
+}
+
+// A weekend has no quotes of its own, so the ones on screen are the last day
+// the market traded. The screen says which day that was rather than letting
+// Friday's numbers pass for today's.
+func TestRatesScreenNamesTheDayItsQuotesAreFrom(t *testing.T) {
+	m := modelFor(t, richWorld(), minUsableWidth, 32)
+	m.view = viewRates
+	m = m.sync()
+
+	if !strings.Contains(stripANSI(m.renderRates()), "quoted 2026-09-02") {
+		t.Errorf("the rates screen does not date its quotes:\n%s", stripANSI(m.renderRates()))
 	}
 }

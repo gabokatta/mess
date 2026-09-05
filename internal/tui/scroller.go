@@ -82,6 +82,10 @@ func (s scroller) hidden() (above, below int) {
 // scrollHint says how much list is off screen, so a cut-off list reads as
 // scrollable rather than as finished. It is empty when everything fits.
 func (m Model) scrollHint(s scroller, indent int) string {
+	return m.theme.scrollHint(s, indent)
+}
+
+func (t Theme) scrollHint(s scroller, indent int) string {
 	above, below := s.hidden()
 	if above == 0 && below == 0 {
 		return ""
@@ -94,7 +98,7 @@ func (m Model) scrollHint(s scroller, indent int) string {
 	if below > 0 {
 		marks = append(marks, fmt.Sprintf("↓ %d", below))
 	}
-	return "\n" + m.theme.Muted.Render(strings.Repeat(" ", indent)+strings.Join(marks, " · ")+" more")
+	return "\n" + t.Muted.Render(strings.Repeat(" ", indent)+strings.Join(marks, " · ")+" more")
 }
 
 // viewportHeight is a list's viewport height: its own size when the content

@@ -14,7 +14,7 @@ import (
 
 func TestCreateAndListConcepts(t *testing.T) {
 	db := fixture.DB(t)
-	cat, err := catalog.CreateCategory(db, "Home", 0)
+	cat, err := catalog.CreateCategory(db, "Home", 0, 0)
 	if err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
@@ -47,11 +47,11 @@ func TestCreateAndListConcepts(t *testing.T) {
 
 func TestConceptsOrderByCategoryThenName(t *testing.T) {
 	db := fixture.DB(t)
-	home, err := catalog.CreateCategory(db, "Home", 0)
+	home, err := catalog.CreateCategory(db, "Home", 0, 0)
 	if err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
-	utilities, err := catalog.CreateCategory(db, "Utilities", 1)
+	utilities, err := catalog.CreateCategory(db, "Utilities", 1, 1)
 	if err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}

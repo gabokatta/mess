@@ -103,34 +103,34 @@ func TestNoteEditorGuardsAModifiedBody(t *testing.T) {
 	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"), key("e"))
-	editor, ok := m.modal.(*noteEditor)
+	editor, ok := m.topModal().(*noteEditor)
 	if !ok {
-		t.Fatalf("modal = %T, want *noteEditor", m.modal)
+		t.Fatalf("modal = %T, want *noteEditor", m.topModal())
 	}
 
 	m, _ = send(t, m, key("esc"))
-	if m.modal != nil {
+	if m.topModal() != nil {
 		t.Error("esc on an unchanged body should close the editor outright")
 	}
 
 	m, _ = send(t, m, key("e"))
-	editor = m.modal.(*noteEditor)
+	editor = m.topModal().(*noteEditor)
 	editor.area.SetValue("- [x] milk")
 
 	m, _ = send(t, m, key("esc"))
-	if m.modal == nil {
+	if m.topModal() == nil {
 		t.Fatal("esc on a changed body should ask before discarding it")
 	}
-	if !strings.Contains(m.modal.Help(), "discard") {
-		t.Errorf("help = %q, want the discard prompt", m.modal.Help())
+	if !strings.Contains(m.topModal().Help(), "discard") {
+		t.Errorf("help = %q, want the discard prompt", m.topModal().Help())
 	}
 
 	m, _ = send(t, m, key("n"))
-	if m.modal == nil {
+	if m.topModal() == nil {
 		t.Error("n should keep editing")
 	}
 	m, _ = send(t, m, key("esc"), key("y"))
-	if m.modal != nil {
+	if m.topModal() != nil {
 		t.Error("y should discard and close")
 	}
 }
@@ -140,10 +140,10 @@ func TestNoteEditorSavesOnCtrlS(t *testing.T) {
 	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"), key("e"))
-	m.modal.(*noteEditor).area.SetValue("- [x] milk\n- [ ] bread")
+	m.topModal().(*noteEditor).area.SetValue("- [x] milk\n- [ ] bread")
 
 	m, cmd := send(t, m, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
-	if m.modal != nil {
+	if m.topModal() != nil {
 		t.Error("ctrl+s should save and return")
 	}
 	if err := runWrite(t, cmd); err != nil {
@@ -161,8 +161,8 @@ func TestNewNoteFormCreatesInTheShownPeriod(t *testing.T) {
 	m.view = viewNotes
 
 	m, cmd := send(t, m, key("n"))
-	if _, ok := m.modal.(*form); !ok {
-		t.Fatalf("modal = %T, want *form", m.modal)
+	if _, ok := m.topModal().(*form); !ok {
+		t.Fatalf("modal = %T, want *form", m.topModal())
 	}
 	m, _ = pump(t, m, cmd)
 
@@ -173,7 +173,7 @@ func TestNewNoteFormCreatesInTheShownPeriod(t *testing.T) {
 
 	m, cmd = send(t, m, key("enter"))
 	m, writes := pump(t, m, cmd)
-	if m.modal != nil {
+	if m.topModal() != nil {
 		t.Fatal("completing the form should close it")
 	}
 	if len(writes) != 1 || writes[0].err != nil {
@@ -258,10 +258,10 @@ func TestOpenModalFollowsAResize(t *testing.T) {
 	m.view = viewNotes
 
 	m, _ = send(t, m, key("enter"), key("e"))
-	before := m.modal.(*noteEditor).area.Width()
+	before := m.topModal().(*noteEditor).area.Width()
 
 	m, _ = send(t, m, tea.WindowSizeMsg{Width: 40, Height: 20})
-	if after := m.modal.(*noteEditor).area.Width(); after == before {
+	if after := m.topModal().(*noteEditor).area.Width(); after == before {
 		t.Errorf("editor width stayed at %d through a resize", after)
 	}
 }

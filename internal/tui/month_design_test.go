@@ -156,7 +156,7 @@ func TestAmountEditStaysInsideTheAmountColumn(t *testing.T) {
 	m, _ = send(t, m, key("e"))
 	editRow := stripANSI(m.renderLine(before, false))
 
-	prefixWidth := gutterWidth + checkWidth + monthNameWidth + colGap + categoryWidth + colGap + currencyWidth + colGap
+	prefixWidth := gutterWidth + checkWidth + nameWidth + colGap + categoryWidth + colGap + currencyWidth + colGap
 	if got, want := editRow[:prefixWidth], staticRow[:prefixWidth]; got != want {
 		t.Errorf("editing moved the category/currency cells: got %q, want %q", got, want)
 	}

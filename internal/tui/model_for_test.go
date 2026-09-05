@@ -2,6 +2,7 @@ package tui
 
 import (
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/shopspring/decimal"
@@ -11,10 +12,14 @@ import (
 	"github.com/gabokatta/mess/internal/rates"
 )
 
+// quotedOn is a weekday inside fixture.Period, since a quote always carries
+// the day the market was open on.
+var quotedOn = time.Date(fixture.Year, time.September, 2, 0, 0, 0, 0, time.UTC)
+
 var defaultQuotes = []rates.Quote{
-	{House: domain.Blue, Buy: decimal.NewFromInt(1520), Sell: decimal.NewFromInt(1540)},
-	{House: domain.Official, Buy: decimal.NewFromInt(1485), Sell: decimal.NewFromInt(1535)},
-	{House: domain.MEP, Buy: decimal.NewFromInt(1532), Sell: decimal.NewFromInt(1535)},
+	{House: domain.Blue, Buy: decimal.NewFromInt(1520), Sell: decimal.NewFromInt(1540), Date: quotedOn},
+	{House: domain.Official, Buy: decimal.NewFromInt(1485), Sell: decimal.NewFromInt(1535), Date: quotedOn},
+	{House: domain.MEP, Buy: decimal.NewFromInt(1532), Sell: decimal.NewFromInt(1535), Date: quotedOn},
 }
 
 // modelFor runs the app's own load commands in Init's dependency order: rates

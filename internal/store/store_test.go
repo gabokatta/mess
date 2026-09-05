@@ -1,6 +1,8 @@
 package store
 
 import (
+	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -104,4 +106,50 @@ func TestOpenAfterCloseReleasesLock(t *testing.T) {
 		t.Fatalf("Open() after Close() should succeed, got: %v", err)
 	}
 	s2.Close()
+}
+
+// SQLite's foreign_keys pragma is per connection and database/sql keeps a
+// pool, so a pragma run once after opening reaches one connection and leaves
+// every later one without it. That silently turns off every foreign key in the
+// schema: a category holding concepts could be deleted, and the concepts it
+// held vanished from the app, since every read joins them to their category.
+func TestForeignKeysAreOnForEveryConnection(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "mess.db"))
+	if err != nil {
+		t.Fatalf("Open() unexpected error: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	conns := make([]*sql.Conn, 4)
+	for i := range conns {
+		if conns[i], err = s.DB().Conn(ctx); err != nil {
+			t.Fatalf("Conn(%d) unexpected error: %v", i, err)
+		}
+		defer conns[i].Close()
+	}
+
+	for i, c := range conns {
+		var on int
+		if err := c.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&on); err != nil {
+			t.Fatalf("connection %d: %v", i, err)
+		}
+		if on != 1 {
+			t.Errorf("connection %d has foreign_keys off", i)
+		}
+	}
+}
+
+// A path the pragmas are appended to still has to open.
+func TestOpenHandlesAPathWithSpaces(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my notes & data")
+	s, err := Open(filepath.Join(dir, "mess.db"))
+	if err != nil {
+		t.Fatalf("Open() unexpected error: %v", err)
+	}
+	defer s.Close()
+
+	if err := s.DB().Ping(); err != nil {
+		t.Errorf("Ping() unexpected error: %v", err)
+	}
 }

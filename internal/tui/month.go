@@ -19,22 +19,22 @@ import (
 
 var monthGroups = [...]catalog.ConceptKind{catalog.Income, catalog.Expense, catalog.Saving, catalog.Chore}
 
-// nameWidth is the Concepts screen's name column; Month has its own, wider
-// column now that the redesign no longer shares a layout with it.
-const nameWidth = 26
-
 // Column budget, left to right: cursor gutter, checkbox, name, gap, category,
 // gap, currency, gap, amount. tableWidth is their sum. The rail beside it
 // sizes itself to its figures, so the composition's full width is measured
 // at render time rather than fixed here.
+//
+// Every width here except the checkbox is shared with the Concepts screen,
+// which lists the same concepts: a column that moved between the two would
+// cost a reader the place they had already found.
 const (
-	checkWidth     = 4
-	monthNameWidth = 30
-	categoryWidth  = 13
-	currencyWidth  = 3
-	amountWidth    = 14
+	checkWidth    = 4
+	nameWidth     = 30
+	categoryWidth = 13
+	currencyWidth = 3
+	amountWidth   = 14
 
-	tableWidth = gutterWidth + checkWidth + monthNameWidth + colGap + categoryWidth +
+	tableWidth = gutterWidth + checkWidth + nameWidth + colGap + categoryWidth +
 		colGap + currencyWidth + colGap + amountWidth
 
 	// railMinInterior is the floor for a totals box's content width, between
@@ -178,7 +178,7 @@ func (m Model) monthMeta(totals month.Totals) string {
 
 func (m Model) monthColumnHeader() string {
 	row := strings.Repeat(" ", gutterWidth+checkWidth) +
-		leftCol(monthNameWidth, "CONCEPT") + leftCol(categoryWidth, "CATEGORY") + leftCol(currencyWidth, "CUR") +
+		leftCol(nameWidth, "CONCEPT") + leftCol(categoryWidth, "CATEGORY") + leftCol(currencyWidth, "CUR") +
 		lipgloss.NewStyle().Width(amountWidth).Align(lipgloss.Right).Render("AMOUNT")
 	return m.theme.Muted.Render(row)
 }
@@ -264,8 +264,8 @@ func (m Model) renderLine(l month.Line, selected bool) string {
 	}
 	// Truncated before Style.Width sees it: Width wraps what overflows onto a
 	// second line, which desyncs the scroller's one-line-per-row cursor math.
-	name := lipgloss.NewStyle().Width(monthNameWidth).
-		Render(ansi.Truncate(l.Concept.Name, monthNameWidth, "…"))
+	name := lipgloss.NewStyle().Width(nameWidth).
+		Render(ansi.Truncate(l.Concept.Name, nameWidth, "…"))
 	category := categoryStyle(m.categories, l.Concept.CategoryID).Width(categoryWidth).
 		Render(ansi.Truncate(categoryName(m.categories, l.Concept.CategoryID), categoryWidth, "…"))
 	row := cursor + check + name + strings.Repeat(" ", colGap) + category + strings.Repeat(" ", colGap)
@@ -277,7 +277,7 @@ func (m Model) renderLine(l month.Line, selected bool) string {
 	currency := m.theme.Muted.Width(currencyWidth).Render(l.Money.Amount.Currency().String())
 	row += currency + strings.Repeat(" ", colGap)
 
-	if edit, ok := m.modal.(*amountEdit); ok && edit.conceptID == l.Concept.ID {
+	if edit, ok := m.topModal().(*amountEdit); ok && edit.conceptID == l.Concept.ID {
 		return row + lipgloss.NewStyle().Width(amountWidth).Align(lipgloss.Right).Render(edit.View())
 	}
 

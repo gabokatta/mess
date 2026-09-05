@@ -16,7 +16,8 @@ func TestMonthlyOccursEveryMonth(t *testing.T) {
 	}
 }
 
-func TestAguinaldoOccursOnlyInJuneAndDecember(t *testing.T) {
+func TestSparseCadenceOccursOnlyInItsMonths(t *testing.T) {
+	c := NewCadence(time.June, time.December)
 	tests := []struct {
 		month time.Month
 		want  bool
@@ -28,9 +29,9 @@ func TestAguinaldoOccursOnlyInJuneAndDecember(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := Aguinaldo.Occurs(NewPeriod(2026, tt.month))
+		got := c.Occurs(NewPeriod(2026, tt.month))
 		if got != tt.want {
-			t.Errorf("Aguinaldo.Occurs(%v) = %v, want %v", tt.month, got, tt.want)
+			t.Errorf("NewCadence(June, December).Occurs(%v) = %v, want %v", tt.month, got, tt.want)
 		}
 	}
 }

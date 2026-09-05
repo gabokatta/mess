@@ -176,7 +176,7 @@ func TestSnapshotWritesARestorableCopyBesideTheOriginal(t *testing.T) {
 		t.Fatalf("store.Open() unexpected error: %v", err)
 	}
 	t.Cleanup(func() { s.Close() })
-	if _, err := catalog.CreateCategory(s.DB(), "Home", 0); err != nil {
+	if _, err := catalog.CreateCategory(s.DB(), "Home", 0, 0); err != nil {
 		t.Fatalf("CreateCategory() unexpected error: %v", err)
 	}
 

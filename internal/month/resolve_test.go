@@ -104,17 +104,17 @@ func TestResolveOccurrence(t *testing.T) {
 			want:    true,
 		},
 		{
-			name: "aguinaldo skips a month outside its mask",
+			name: "a sparse cadence skips a month outside its mask",
 			concept: concept(1, catalog.Income, 100, func(c *catalog.Concept) {
-				c.MonthMask = domain.Aguinaldo
+				c.MonthMask = domain.NewCadence(time.June, time.December)
 			}),
 			period: september,
 			want:   false,
 		},
 		{
-			name: "aguinaldo occurs in june",
+			name: "sparse cadence occurs in june",
 			concept: concept(1, catalog.Income, 100, func(c *catalog.Concept) {
-				c.MonthMask = domain.Aguinaldo
+				c.MonthMask = domain.NewCadence(time.June, time.December)
 			}),
 			period: june,
 			want:   true,

@@ -215,16 +215,16 @@ func TestEditOpensTheInlineAmountEditAndEscCloses(t *testing.T) {
 	}, 90, 30)
 
 	m, _ = send(t, m, key("e"))
-	edit, ok := m.modal.(*amountEdit)
+	edit, ok := m.topModal().(*amountEdit)
 	if !ok {
-		t.Fatalf("modal = %T, want *amountEdit", m.modal)
+		t.Fatalf("modal = %T, want *amountEdit", m.topModal())
 	}
 	if edit.input.Value() != "785000.00" {
 		t.Errorf("edit box opened with %q, want the baseline prefilled", edit.input.Value())
 	}
 
 	m, _ = send(t, m, key("esc"))
-	if m.modal != nil {
+	if m.topModal() != nil {
 		t.Error("esc should close the edit")
 	}
 }
@@ -236,8 +236,8 @@ func TestEditIsANoOpOnAChore(t *testing.T) {
 	}, 90, 30)
 
 	m, _ = send(t, m, key("e"))
-	if m.modal != nil {
-		t.Errorf("modal = %T, want none on a chore", m.modal)
+	if m.topModal() != nil {
+		t.Errorf("modal = %T, want none on a chore", m.topModal())
 	}
 }
 
@@ -247,10 +247,10 @@ func TestAmountEditCommitsTheTypedValue(t *testing.T) {
 	}, 90, 30)
 
 	m, _ = send(t, m, key("e"))
-	m.modal.(*amountEdit).input.SetValue("812000")
+	m.topModal().(*amountEdit).input.SetValue("812000")
 	m, cmd := send(t, m, key("enter"))
 
-	if m.modal != nil {
+	if m.topModal() != nil {
 		t.Error("enter should close the edit")
 	}
 	if err := runWrite(t, cmd); err != nil {
@@ -375,7 +375,7 @@ func TestOpenModalKeepsTheArrows(t *testing.T) {
 	if !m.period.Equal(before) {
 		t.Errorf("period moved to %s while a form was open", m.period)
 	}
-	if m.modal == nil {
+	if m.topModal() == nil {
 		t.Error("the form should still be open")
 	}
 }
